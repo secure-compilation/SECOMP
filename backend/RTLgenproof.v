@@ -418,6 +418,16 @@ Proof.
 Qed.
 
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSL). eauto.
+Qed.
+
+
 Lemma allowed_call_translated:
   forall cp vf vf' tf,
     Val.lessdef vf vf' ->
@@ -768,6 +778,7 @@ Lemma transl_expr_Ebuiltin_correct:
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
+  Genv.allowed_syscall ge cp ef ->
   transl_expr_prop le (Ebuiltin ef al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -782,6 +793,7 @@ Proof.
   eapply eval_builtin_args_trivial.
   rewrite <- COMP.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- COMP; eapply allowed_syscall_translated; eauto.
   traceEq.
 (* Match-env *)
   split. eauto with rtlg.
@@ -801,6 +813,7 @@ Lemma transl_expr_Eexternal_correct:
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
+  Genv.allowed_syscall ge cp ef ->
   (* forall (INTRA: Genv.type_of_call cp (comp_of ef) <> Genv.CrossCompartmentCall), *)
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
@@ -833,6 +846,7 @@ Proof.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   clear H3; subst cp. eauto.
+  rewrite <- COMP; eapply allowed_syscall_translated; eauto.
   apply star_one. apply exec_return.
   unfold Genv.type_of_call.
   destruct (flowsto_dec bottom (comp_of f)); try congruence.
@@ -1580,6 +1594,7 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   rewrite <- COMP.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  rewrite <- COMP; eapply allowed_syscall_translated; eauto.
   traceEq.
   econstructor; eauto. constructor.
   eapply match_env_update_res; eauto.
@@ -1702,6 +1717,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply allowed_syscall_translated; eauto.
   constructor; auto.
 
   (* return *)

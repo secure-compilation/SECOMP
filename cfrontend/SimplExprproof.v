@@ -121,6 +121,16 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  destruct TRANSL.
+  eapply (Genv.match_genvs_allowed_syscalls H0). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -982,8 +992,9 @@ Proof.
   intros [A B]. subst bf.
   change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
   econstructor. econstructor. eauto.
-  simpl. unfold sem_cast. simpl. eauto. constructor. auto.
+  simpl. unfold sem_cast. simpl. eauto. constructor.
   simpl. econstructor; eauto.
+  unfold Genv.allowed_syscall; now simpl.
 (* nonvolatile case *)
   intros [A B]. subst t. constructor. eapply eval_Elvalue; eauto.
 Qed.
@@ -1004,8 +1015,9 @@ Proof.
   intros [A B]. subst bf. change le with (set_opttemp None Vundef le) at 2. econstructor.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto.
-  econstructor; eauto. rewrite H3; eauto. constructor. auto.
+  econstructor; eauto. rewrite H3; eauto. constructor.
   simpl. econstructor; eauto.
+  unfold Genv.allowed_syscall; now simpl.
 (* nonvolatile case *)
   intros [A B]. subst t. econstructor; eauto. congruence.
 Qed.
@@ -2202,6 +2214,7 @@ Ltac NOTIN :=
   rewrite CO; eauto.
   rewrite CO; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite CO; eauto using allowed_syscall_translated.
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S. constructor. simpl; auto. auto.
@@ -2214,6 +2227,7 @@ Ltac NOTIN :=
   rewrite CO; eauto.
   rewrite CO; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite CO; eauto using allowed_syscall_translated.
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S.
@@ -2539,6 +2553,8 @@ Proof.
   specialize (MK (prog_comp_env cu)).
   exploit match_cont_call_comp; eauto. intros <-.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  specialize (MK (prog_comp_env cu)).
+  exploit match_cont_call_comp; eauto. intros <-. eauto using allowed_syscall_translated.
   apply match_returnstates. auto.
 
 - (* return *)

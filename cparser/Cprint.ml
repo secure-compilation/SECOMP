@@ -572,15 +572,23 @@ let expor pp g =
         ident id1
         ident id2
 
-let program pp (defs, (imports, exports)) =
+let sys_imp pp g =
+  match g with
+  | ImportSyscall(id, str) ->
+      fprintf pp "%a imports syscall %s@."
+        ident id
+        str
+
+let program pp (defs, (imports, exports, syscall_imports)) =
   fprintf pp "@[<v 0>";
   List.iter (globdecl pp) defs;
   fprintf pp "@]@."
 
-let program' pp (defs, (imports, exports)) =
+let program' pp (defs, (imports, exports, syscall_imports)) =
   fprintf pp "@[<v 0>";
   List.iter (imp pp) imports;
   List.iter (expor pp) exports;
+  List.iter (sys_imp pp) syscall_imports;
   fprintf pp "@]@."
 
 

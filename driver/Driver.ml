@@ -53,7 +53,7 @@ let compile_c_file sourcename ifile ofile =
   set_dest PrintLTL.destination option_dltl ".ltl";
   set_dest PrintMach.destination option_dmach ".mach";
   set_dest PrintCapAsm.destination option_dcapasm ".cap_asm";
-  set_dest PrintAsm.destination option_dasm ".s.intf";
+  (* set_dest PrintAsm.destination option_dasm ".s.intf"; *)
   set_dest AsmToJSON.destination option_sdump !sdump_suffix;
   (* Parse the ast *)
   let csyntax = parse_c_file sourcename ifile in

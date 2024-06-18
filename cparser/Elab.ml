@@ -74,6 +74,7 @@ let elab_loc l = (l.filename, l.lineno)
 let top_declarations = ref ([] : globdecl list)
 let top_imports = ref ([] : C.import list)
 let top_exports = ref ([] : C.export list)
+let top_sys_imports = ref ([] : C.syscall_import list)
 
 (* Environment that records the top declarations of functions and
    variables with external or internal linkage.  Used for
@@ -122,6 +123,12 @@ let emit_export exp =
   | C.Export(id1, id2) ->
     top_exports := exp :: !top_exports
 
+(* TODO: integrate it better with the rest of CompCert *)
+let emit_sys_import imp =
+  match imp with
+  | C.ImportSyscall(id, str) ->
+    top_sys_imports := imp :: !top_sys_imports
+
 let reset() = top_declarations := []; top_imports := []; top_exports := [];
   top_environment := Env.empty; global_defines := StringSet.empty
 
@@ -129,12 +136,14 @@ let elaborated_program () =
   let p = !top_declarations in
   let imports = !top_imports in
   let exports = !top_exports in
+  let syscall_imports = !top_sys_imports in
   top_declarations := [];
   top_imports := [];
   top_exports := [];
+  top_sys_imports := [];
   (* let imports: C.import list = (\* TODO *\) failwith "NOT IMPLEMENTED YET" in *)
   (* Reverse it and eliminate unreferenced declarations *)
-  Cleanup.program (p, (imports, exports))
+  Cleanup.program (p, (imports, exports, syscall_imports))
 
 (* Monadic map for functions env -> 'a -> 'b * env *)
 
@@ -3044,6 +3053,12 @@ let elab_export (exp: Cabs.export): unit =
     let id2 = Env.fresh_ident name2 in
     emit_export(C.Export(id1, id2))
 
+let elab_sys_import (imp: Cabs.syscall_import): unit =
+  match imp with
+  | Cabs.ImportSyscall(name1, name2) ->
+    let id1 = Env.fresh_ident name1 in
+    emit_sys_import(C.ImportSyscall(id1, name2))
+
 (* Extended asm *)
 
 let elab_asm_operand ctx loc env (ASMOPERAND(label, wide, chars, e)) =
@@ -3359,13 +3374,17 @@ let _ = elab_funbody_f := elab_funbody
 
 (** * Entry point *)
 
-let elab_file (prog, (imports, exports)) =
+let elab_file (prog, pol) =
+  let imports = pol.imports in
+  let exports = pol.exports in
+  let syscall_imports = pol.syscall_imports in
   reset();
   let env = Env.initial () in
   let elab_def env d = snd (elab_definition false false false env d) in
   ignore (List.fold_left elab_def env prog);
   ignore (List.iter elab_import imports);
   ignore (List.iter elab_export exports);
+  ignore (List.iter elab_sys_import syscall_imports);
   let p = elaborated_program () in
   Checks.unused_variables p;
   Checks.unknown_attrs_program p;

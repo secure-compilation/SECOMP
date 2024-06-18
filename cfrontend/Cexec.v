@@ -561,6 +561,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
       match is_val_list rargs with
       | Some vtl =>
           do vargs <- sem_cast_arguments vtl tyargs m;
+          check (Genv.allowed_syscall_b ge cp ef);
           (* check (Pos.eqb (comp_of ef) cp); *)
           match do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m with
           | None => stuck
@@ -681,6 +682,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists vargs t vres m' w',
          cast_arguments m rargs tyargs vargs
       /\ external_call ef ge cp vargs m t vres m'
+      /\ Genv.allowed_syscall ge cp ef
       /\ possible_trace w t w'
   | _ => True
   end.
@@ -1245,7 +1247,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   exploit is_val_list_all_values; eauto. intros ALLVAL.
   (* top *)
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
-  (* destruct (Pos.eqb (comp_of ef) cp) eqn:?... *)
+  destruct (Genv.allowed_syscall_b ge cp ef) eqn:?...
   destruct (do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m) as [[[[? ?] v] m'] | ] eqn:?...
   exploit do_ef_external_sound; eauto. intros [EC PT].
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
@@ -1255,6 +1257,8 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   assert (x = vargs).
     exploit sem_cast_arguments_complete; eauto. intros [vtl' [A B]]. congruence.
   subst x. exploit do_ef_external_complete; eauto. congruence.
+  apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
+  unfold Genv.allowed_syscall in H1; now congruence.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   (* subst. now rewrite Pos.eqb_refl in Heqb. *)
   (* apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. *)
@@ -1358,7 +1362,7 @@ Proof.
 (* builtin *)
   exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
   exploit do_ef_external_complete; eauto. intros C.
-  rewrite A. rewrite B. rewrite C. econstructor; eauto.
+  rewrite A. rewrite B. rewrite C. rewrite ALLOWED. econstructor; eauto.
 Qed.
 
 Lemma callred_topred:
@@ -1815,6 +1819,7 @@ Definition do_step (w: world) (s: state) : list transition :=
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs (fn_comp f);
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ tres _) vargs k m =>
+      check (Genv.allowed_syscall_b ge (call_comp k) ef);
       match do_external _ _ ge do_external_function do_inline_assembly ef (call_comp k) w vargs m with
       | None => nil
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (rettype_of_type tres) bottom) :: nil
@@ -1895,6 +1900,7 @@ Proof with try (left; right; econstructor; eauto; fail).
   (* external *)
   destruct p as [[[w' tr] v] m']. myinv. left; right; constructor.
   eapply do_ef_external_sound; eauto.
+  eapply Heqb.
 (* returnstate *)
   destruct k; myinv... left; right; constructor.
   simpl.
@@ -1996,6 +2002,7 @@ Proof with (unfold ret; eauto with coqlib).
   rewrite pred_dec_true; auto. setoid_rewrite (do_alloc_variables_complete _ _ _ _ _ _ H1).
   rewrite (sem_bind_parameters_complete _ _ _ _ _ _ _ H2)...
   constructor; auto.
+  rewrite ALLOWED.
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
   assert (match Genv.type_of_call (comp_of f) cp with
            | Genv.CrossCompartmentCall => not_ptr_b v

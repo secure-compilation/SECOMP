@@ -954,7 +954,7 @@ let rec convertExpr cp env e =
       convertExpr cp env arg1
 
   | C.ECall({edesc = C.EVar {name = "printf"}}, args)
-    when !Clflags.option_interp ->
+    when !Clflags.option_interp || !Clflags.option_interp_asm ->
       let targs = convertTypArgs env [] args
       and tres = convertTyp env e.etyp in
       let sg =
@@ -964,7 +964,7 @@ let rec convertExpr cp env e =
                targs, convertExprList cp env args, tres)
 
   | C.ECall({edesc = C.EVar {name = "fgets"}}, [arg1; arg2; arg3])
-    when !Clflags.option_interp ->
+    when !Clflags.option_interp || !Clflags.option_interp_asm ->
       (* drop third argument *)
       let targs = convertTypArgs env [] [arg1; arg2]
       and tres = convertTyp env e.etyp in
@@ -1494,7 +1494,7 @@ let of_list' l =
 (* FIXME: this is very ad-hoc. I'm worried that by generating new names using "intern_string", we might be doing something bad. Ideally, we should inspect *)
 (* the rest of the file and figure out how the translation between C.ident and AST.ident works. *)
 let build_policy (gl: (AST.ident * ('f Ctypes.fundef, Ctypes.coq_type) AST.globdef) list)
-    (imports: C.import list) (exports: C.export list): AST.Policy.t =
+    (imports: C.import list) (exports: C.export list) (syscall_imports: C.syscall_import list): AST.Policy.t =
   let open AST.Policy in
   let exports' = List.map (function Export(id1, id2) -> (Comp (intern_string id1.name), intern_string id2.name)) exports in
   let exports'': AST.ident list CompTree.t = of_list' exports' in
@@ -1505,7 +1505,10 @@ let build_policy (gl: (AST.ident * ('f Ctypes.fundef, Ctypes.coq_type) AST.globd
   let p = { policy_comps = Maps.PTree_Properties.of_list (List.map (function (id, gd) ->
       (id, AST.comp_of (AST.comp_of (AST.has_comp_globdef (Ctypes.has_comp_fundef Csyntax.has_comp_function))) gd)) gl);
       policy_export = exports'';
-      policy_import = imports'' } in
+      policy_import = imports'';
+      policy_syscalls = of_list' (List.map (function ImportSyscall(id, sys_name) -> (Comp (intern_string id.name), coqstring_of_camlstring sys_name))
+          syscall_imports)
+    } in
   p
 
 (** Complete the debug information of struct/unions *)
@@ -1557,7 +1560,7 @@ let list_comps p =
   List.map intern_string l3
 
 (** Convert a [C.program] into a [Csyntax.program] *)
-let convertProgram (p, (imports, exports)) =
+let convertProgram (p, (imports, exports, syscall_imports)) =
   Diagnostics.reset();
   stringNum := 0;
   Hashtbl.clear decl_atom;
@@ -1579,7 +1582,7 @@ let convertProgram (p, (imports, exports)) =
         let gl3 = add_helper_functions cps gl2 in
         comp_env := Maps.PTree.empty;
         let p' =
-          { prog_pol = build_policy gl3 imports exports ;
+          { prog_pol = build_policy gl3 imports exports syscall_imports;
             prog_defs = gl3;
             prog_public = public_globals gl3;
             prog_main = intern_string !Clflags.main_function_name;

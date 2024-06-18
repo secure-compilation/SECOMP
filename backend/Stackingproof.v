@@ -1710,6 +1710,15 @@ Proof.
   eapply (Genv.match_genvs_find_comp_in_genv TRANSF).
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 Lemma find_function_translated':
   forall j ls rs m ros f,
   agree_regs j ls rs ->
@@ -2352,7 +2361,10 @@ Proof.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
     change (comp_of (Internal tf)) with (comp_of tf).
     erewrite <- transf_function_comp; eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.  
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
+    change (comp_of (Internal tf)) with (comp_of tf).
+    erewrite <- transf_function_comp; eauto using allowed_syscall_translated.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_res; auto. apply agree_regs_undef_regs; auto. eapply agree_regs_inject_incr; eauto.
@@ -2465,6 +2477,7 @@ Proof.
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    eauto using allowed_syscall_translated.
   eapply match_states_return with (j := j').
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_undef_caller_save_regs. 

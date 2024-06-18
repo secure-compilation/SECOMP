@@ -443,6 +443,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -1190,6 +1199,7 @@ Ltac UseTransfer :=
   exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  rewrite <- comp_transf_function; eauto using allowed_syscall_translated.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
   eapply mextends_agree; eauto.
@@ -1247,6 +1257,7 @@ Ltac UseTransfer :=
   econstructor; split.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eauto using allowed_syscall_translated.
   econstructor; eauto.
 
 - (* return *)

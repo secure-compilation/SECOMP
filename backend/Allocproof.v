@@ -2521,6 +2521,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -3209,6 +3218,7 @@ Proof.
   rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   eauto.
+  rewrite <- comp_transf_function; eauto using allowed_syscall_translated.
   eapply star_right. eexact A3.
   econstructor.
   reflexivity. reflexivity. reflexivity. traceEq.
@@ -3320,7 +3330,7 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge); eauto. apply senv_preserved.
-  (* erewrite <- match_stackframes_call_comp; eauto. *)
+  eauto using allowed_syscall_translated.
   econstructor; eauto.
   simpl. destruct (loc_result (ef_sig ef)) eqn:RES; simpl.
   rewrite Locmap.gss; auto.
@@ -3333,7 +3343,6 @@ Proof.
     red; intros.
     rewrite (AG l H0).
     rewrite locmap_get_set_loc_result_callee_save by auto.
-    (* rewrite locmap_get_set_loc_result_callee_save by auto. *)
     unfold undef_caller_save_regs. destruct l; simpl in H0.
     destruct r; discriminate.
     destruct sl; auto; congruence.

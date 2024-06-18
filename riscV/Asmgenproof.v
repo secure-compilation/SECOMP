@@ -85,6 +85,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 
 (** * Properties of control flow *)
 
@@ -1162,8 +1171,8 @@ Local Transparent destroyed_by_op.
   rewrite <- (comp_transl_partial _ H3).
   erewrite Genv.find_funct_ptr_find_comp_of_block in A; eauto. simpl in A.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  (* rewrite <- (comp_transl_partial _ H3). *)
-  (* unfold_find_comp_in_genv CURCOMP FIND. rewrite <- CURCOMP. reflexivity. *)
+  erewrite Genv.find_funct_ptr_find_comp_of_block in ALLOWED; eauto. simpl in ALLOWED.
+  rewrite <- comp_transf_function; eauto using allowed_syscall_translated.
   eauto.
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
@@ -1350,10 +1359,9 @@ Local Transparent destroyed_at_function_entry.
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  (* unfold_find_comp_in_genv STACKS_COMP H. subst cp. *)
+  eauto using allowed_syscall_translated.
   econstructor; eauto.
   erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto.
-  (* Simpl. rewrite ATLR. eauto. *)
   eapply agree_set_other; eauto.
   eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto.
 

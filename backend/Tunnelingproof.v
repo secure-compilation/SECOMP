@@ -291,6 +291,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSL). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -743,6 +752,7 @@ Proof.
   eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved. 
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  eapply allowed_syscall_translated; eauto.
   econstructor; eauto using locmap_setres_lessdef, locmap_undef_regs_lessdef.
 - (* Lbranch (preserved) *)
   left; simpl; econstructor; split.
@@ -798,11 +808,7 @@ Proof.
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
   assert (CALLEE : comp_of f = comp_of (tunnel_function f)).
   { reflexivity. }
-  (* rewrite type_of_call_translated, CALLER, CALLEE. *)
-  (* destruct (Genv.type_of_call tge (call_comp ts) (comp_of (tunnel_function f))). *)
-  (* simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef. *)
   simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_ext_lessdef.
-  (* simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef. *)
 - (* external function *)
   exploit external_call_mem_extends; eauto using locmap_getpairs_lessdef.
   intros (tvres & tm' & A & B & C & D).
@@ -811,6 +817,7 @@ Proof.
   replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
+  eapply allowed_syscall_translated; eauto.
   econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.

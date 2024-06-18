@@ -316,6 +316,7 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
   | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
       external_call ef ge cp vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
 
@@ -481,6 +482,7 @@ Proof.
   constructor.
 - red. red. rewrite LK. constructor. simpl. rewrite <- EQ.
   destruct b; auto.
+- unfold Genv.allowed_syscall; now simpl.
 Qed.
 
 Lemma ctx_selection_1:
@@ -821,6 +823,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
 
   | step_external_function: forall ef targs tres cc vargs k m vres t m',
       external_call ef ge (call_comp k) vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (call_comp k) ef),
       sstep (Callstate (External ef targs tres cc) vargs k m)
           t (Returnstate vres k m' (rettype_of_type tres) bottom)
           (* sig_res (ef_sig ef) *)

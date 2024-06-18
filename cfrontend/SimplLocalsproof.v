@@ -97,6 +97,16 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  destruct TRANSF.
+  eapply (Genv.match_genvs_allowed_syscalls H0). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -362,6 +372,7 @@ Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. eauto. simpl. eapply cast_typeconv; eauto. constructor.
   simpl. constructor.
+  unfold Genv.allowed_syscall; now simpl.
 Qed.
 
 Lemma step_Sdebug_var:
@@ -374,6 +385,7 @@ Proof.
   econstructor. constructor. constructor. eauto.
   simpl. reflexivity. constructor.
   simpl. constructor.
+  unfold Genv.allowed_syscall; now simpl.
 Qed.
 
 Lemma step_Sset_debug:
@@ -2263,6 +2275,7 @@ Proof.
   rewrite <- (comp_transl_partial _ TRF); eauto.
 
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (comp_transl_partial _ TRF); eauto using allowed_syscall_translated.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
@@ -2454,6 +2467,7 @@ Proof.
   specialize (MCONT (VSet.empty) top).
   exploit match_cont_call_comp; eauto. intros G.
   apply plus_one. econstructor; eauto. rewrite <- G. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- G; eauto using allowed_syscall_translated.
   econstructor; eauto.
   intros. apply match_cont_incr_bounds with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_cont_extcall; eauto. extlia. extlia.

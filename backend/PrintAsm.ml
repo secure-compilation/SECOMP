@@ -66,6 +66,12 @@ module Printer(Target:TARGET) =
       | [t;l;j] -> (t, l, j)
       |    _    -> (Section_text, Section_literal 0, Section_jumptable)
 
+    let string_of_comp c =
+      match c with
+      | COMP.Coq_bottom' -> "Compartment ⊥"
+      | COMP.Coq_top' -> "Compartment ⊤"
+      | COMP.Comp id -> "Compartment " ^ Int32.to_string (P.to_int32 id)
+
     let print_function oc name fn =
       Hashtbl.clear current_function_labels;
       Debug.symbol_printed (extern_atom name);
@@ -82,7 +88,7 @@ module Printer(Target:TARGET) =
       else
         -1,-1 in
       print_debug_label oc s;
-      fprintf oc "%a:\n" Target.symbol name;
+      fprintf oc "%a: # %s\n" Target.symbol name (string_of_comp fn.Asm.fn_comp);
       print_location oc (C2C.atom_location name);
       Target.cfi_startproc oc;
       Target.print_instructions oc fn;
@@ -135,6 +141,7 @@ module Printer(Target:TARGET) =
       else
         List.iter (print_init oc) id
 
+
     let print_var oc name v =
       match v.gvar_init with
       | [] -> ()
@@ -154,7 +161,7 @@ module Printer(Target:TARGET) =
             Target.print_align oc align;
             if not (C2C.atom_is_static name) then
               fprintf oc "	.globl	%a\n" Target.symbol name;
-            fprintf oc "%a:\n" Target.symbol name;
+            fprintf oc "%a: # %s\n" Target.symbol name (string_of_comp v.gvar_comp);
             print_init_data oc name v.gvar_init;
             Target.print_var_info oc name;
           end else
@@ -189,6 +196,39 @@ module Printer(Target:TARGET) =
         List.iter (annot oc) annots
       end
 
+    let rec print_exports oc (exports: (AST.COMP.compartment' * BinNums.positive list) list) =
+      match exports with
+      | [] -> ()
+      | (c, []) :: exports' -> print_exports oc exports'
+      | (c, f :: t) :: exports' ->
+        fprintf oc "# %s exports %a\n" (string_of_comp c) Target.symbol f;
+        print_exports oc ((c, t) :: exports')
+
+    let rec print_imports oc (imports: (AST.COMP.compartment' * (AST.COMP.compartment' * BinNums.positive) list) list) =
+      match imports with
+      | [] -> ()
+      | (c, []) :: imports' -> print_imports oc imports'
+      | (c, (c', f) :: t) :: imports' ->
+        fprintf oc "# %s imports %s[%a]\n" (string_of_comp c) (string_of_comp c') Target.symbol f;
+        print_imports oc ((c, t) :: imports')
+
+    let rec print_syscalls oc syscalls =
+      match syscalls with
+      | [] -> ()
+      | (c, []) :: syscalls' -> print_syscalls oc syscalls'
+      | (c, s :: t) :: syscalls' ->
+        fprintf oc "# %s imports system call %s\n" (string_of_comp c) (camlstring_of_coqstring s);
+        print_syscalls oc ((c, t) :: syscalls')
+
+    (* TODO list vs tree *)
+    let print_interfaces oc Policy.{ policy_export; policy_import; policy_syscalls } =
+      let exports = AST.COMP.CompTree.elements policy_export in
+      let imports = AST.COMP.CompTree.elements policy_import in
+      let syscalls = AST.COMP.CompTree.elements policy_syscalls in
+      print_exports oc exports;
+      print_imports oc imports;
+      print_syscalls oc syscalls
+
     module DwarfTarget: DwarfTypes.DWARF_TARGET =
       struct
         let label = Target.label
@@ -206,6 +246,9 @@ let print_program oc p =
   let module Printer = Printer(Target) in
   Fileinfo.reset_filenames ();
   print_version_and_options oc Target.comment;
+  fprintf oc "\n\n# Interfaces\n";
+  Printer.print_interfaces oc p.prog_pol;
+  fprintf oc "\n\n";
   Target.print_prologue oc;
   List.iter (Printer.print_globdef oc) p.prog_defs;
   Target.print_epilogue oc;
@@ -226,377 +269,76 @@ let print_program oc p =
     end;
   Fileinfo.close_filenames ()
 
-(* ... *)
+(* let print_calling_convention_asm p AST.{ cc_vararg; cc_unproto; cc_structret } = *)
+(*   Format.fprintf p "{|@ cc_vararg@ :=@ "; *)
+(*   print_option_asm p print_Z_asm cc_vararg; *)
+(*   Format.fprintf p ";@ cc_unproto@ :=@ "; *)
+(*   Format.pp_print_bool p cc_unproto; *)
+(*   Format.fprintf p ";@ cc_structret@ :=@ "; *)
+(*   Format.pp_print_bool p cc_structret; *)
+(*   Format.fprintf p "|}@," *)
 
-(* module PrinterAsm(Target:TARGET) =
- *   struct *)
-
-(* begin module contents *)
-
-(* from TargetPrinter, internal *)
-    (* let int_reg_num_name = function *)
-    let int_reg_num_name r =
-      Asm.(match r with
-                     | X1  -> "x1"  | X2  -> "x2"  | X3  -> "x3"
-      | X4  -> "x4"  | X5  -> "x5"  | X6  -> "x6"  | X7  -> "x7"
-      | X8  -> "x8"  | X9  -> "x9"  | X10 -> "x10" | X11 -> "x11"
-      | X12 -> "x12" | X13 -> "x13" | X14 -> "x14" | X15 -> "x15"
-      | X16 -> "x16" | X17 -> "x17" | X18 -> "x18" | X19 -> "x19"
-      | X20 -> "x20" | X21 -> "x21" | X22 -> "x22" | X23 -> "x23"
-      | X24 -> "x24" | X25 -> "x25" | X26 -> "x26" | X27 -> "x27"
-      | X28 -> "x28" | X29 -> "x29" | X30 -> "x30" | X31 -> "x31"
-      )
-
-let print_option_asm p f = function
-  | Some x ->
-      Format.fprintf p "Some@ ";
-      f p x
-  | None ->
-      Format.fprintf p "None"
-
-let print_list_asm p f xs =
-  Format.fprintf p "@[(";
-  List.iter (fun x -> f p x; Format.fprintf p "@ ::@ ") xs;
-  Format.fprintf p "nil)@]"
-
-let print_Z_asm p n =
-  Format.fprintf p "%s" (Z.to_string n)
-
-let print_float32_asm p n =
-  Format.fprintf p "%.15Ff" (camlfloat_of_coqfloat32 n)
-let print_float64_asm p n =
-  Format.fprintf p "%.15F" (camlfloat_of_coqfloat n)
-
-(* TODO to_string *)
-let print_ident_asm p id =
-  Format.fprintf p "%ld" (P.to_int32 id)
+(* let print_signature_asm p AST.{ sig_args; sig_res; sig_cc } = *)
+(*   Format.fprintf p "{|@ sig_args@ :=@ "; *)
+(*   print_list_asm p print_typ_asm sig_args; *)
+(*   Format.fprintf p ";@ sig_res@ :=@ "; *)
+(*   print_rettype_asm p sig_res; *)
+(*   Format.fprintf p ";@ sig_cc@ :=@ "; *)
+(*   print_calling_convention_asm p sig_cc; *)
+(*   Format.fprintf p "|}@," *)
 
 
-let string_of_ident_asm id =
-  Int32.to_string (P.to_int32 id)
 
-let print_comp_asm p c =
-  match c with
-  | COMP.Coq_bottom' -> Format.fprintf p "CompBottom"
-  | COMP.Coq_top' -> Format.fprintf p "CompTop"
-  | COMP.Comp id -> Format.fprintf p "Comp%ld" (P.to_int32 id)
-
-let string_of_comp_asm c =
-  match c with
-  | COMP.Coq_bottom' -> "CompBottom"
-  | COMP.Coq_top' -> "CompTop"
-  | COMP.Comp id -> "Comp" ^ Int32.to_string (P.to_int32 id)
-
-let print_string_asm p s =
-  Format.fprintf p "\"%s\"%%string" (camlstring_of_coqstring s)
-
-let print_typ_asm p = function
-  | Tint ->
-      Format.fprintf p "Tint"
-  | Tfloat ->
-      Format.fprintf p "Tfloat"
-  | Tlong ->
-      Format.fprintf p "Tlong"
-  | Tsingle ->
-      Format.fprintf p "Tsingle"
-  | Tany32 ->
-      Format.fprintf p "Tany32"
-  | Tany64 ->
-      Format.fprintf p "Tany64"
-
-let print_rettype_asm p = function
-  | Tret ty ->
-      Format.fprintf p "Tret@ ";
-      print_typ_asm p ty
-  | Tint8signed ->
-      Format.fprintf p "Tint8signed"
-  | Tint8unsigned ->
-      Format.fprintf p "Tint8unsigned"
-  | Tint16signed ->
-      Format.fprintf p "Tint16signed"
-  | Tint16unsigned ->
-      Format.fprintf p "Tint16unsigned"
-  | Tvoid ->
-      Format.fprintf p "Tvoid"
-
-let print_calling_convention_asm p AST.{ cc_vararg; cc_unproto; cc_structret } =
-  Format.fprintf p "{|@ cc_vararg@ :=@ ";
-  print_option_asm p print_Z_asm cc_vararg;
-  Format.fprintf p ";@ cc_unproto@ :=@ ";
-  Format.pp_print_bool p cc_unproto;
-  Format.fprintf p ";@ cc_structret@ :=@ ";
-  Format.pp_print_bool p cc_structret;
-  Format.fprintf p "|}@,"
-
-let print_signature_asm p AST.{ sig_args; sig_res; sig_cc } =
-  Format.fprintf p "{|@ sig_args@ :=@ ";
-  print_list_asm p print_typ_asm sig_args;
-  Format.fprintf p ";@ sig_res@ :=@ ";
-  print_rettype_asm p sig_res;
-  Format.fprintf p ";@ sig_cc@ :=@ ";
-  print_calling_convention_asm p sig_cc;
-  Format.fprintf p "|}@,"
-
-(* TODO parameterize on target, helpers hidden by module type *)
-let print_ireg_asm p r =
-  Format.fprintf p "%s" (String.uppercase_ascii (int_reg_num_name r))
-
-let print_ireg0_asm p = function
-  | Asm.X0 ->
-      Format.fprintf p "X0";
-  | Asm.X r ->
-      Format.fprintf p "(X@ ";
-      print_ireg_asm p r;
-      Format.fprintf p ")@,"
-
-let print_offset_asm p = function
-  | Asm.Ofsimm ofs ->
-      Format.fprintf p "Ofsimm@ ";
-      print_Z_asm p ofs
-  | Asm.Ofslow (id, ofs) ->
-      Format.fprintf p "Ofslow@ (";
-      print_ident_asm p id;
-      Format.fprintf p ",@ ";
-      print_Z_asm p ofs;
-      Format.fprintf p ")@,"
-
-(* TODO cases *)
-(* TODO tuples *)
-(* TODO offsets, smart parenthesis insertion *)
-let print_instruction_asm p = function
-  | Asm.Pallocframe (sz, pos) ->
-      Format.fprintf p "Pallocframe@ ";
-      print_Z_asm p sz;
-      Format.fprintf p "@ ";
-      (* TODO function *)
-      print_Z_asm p pos;
-  | Asm.Pfreeframe (sz, pos) ->
-      Format.fprintf p "Pfreeframe@ ";
-      print_Z_asm p sz;
-      Format.fprintf p "@ ";
-      print_Z_asm p pos
-  | Asm.Paddiw (rd, rs, imm) ->
-      Format.fprintf p "Paddiw@ ";
-      print_ireg_asm p rd;
-      Format.fprintf p "@ ";
-      print_ireg0_asm p rs;
-      Format.fprintf p "@ ";
-      print_Z_asm p imm
-  | Asm.Pj_r (r, sg, iscl) ->
-      Format.fprintf p "Pj_r@ ";
-      print_ireg_asm p r;
-      Format.fprintf p "@ ";
-      print_signature_asm p sg;
-      Format.fprintf p "@ ";
-      Format.pp_print_bool p iscl
-  | Asm.Pld (rd, ra, ofs, priv) ->
-      Format.fprintf p "Pld@ ";
-      print_ireg_asm p rd;
-      Format.fprintf p "@ ";
-      print_ireg_asm p ra;
-      Format.fprintf p "@ (";
-      print_offset_asm p ofs;
-      Format.fprintf p ")@ ";
-      Format.pp_print_bool p priv
-  | Asm.Psw (rs, ra, ofs) ->
-      Format.fprintf p "Psw@ ";
-      print_ireg_asm p rs;
-      Format.fprintf p "@ ";
-      print_ireg_asm p ra;
-      Format.fprintf p "@ (";
-      print_offset_asm p ofs;
-      Format.fprintf p ")@ ";
-  | Asm.Psd (rs, ra, ofs) ->
-      Format.fprintf p "Psd@ ";
-      print_ireg_asm p rs;
-      Format.fprintf p "@ ";
-      print_ireg_asm p ra;
-      Format.fprintf p "@ (";
-      print_offset_asm p ofs;
-      Format.fprintf p ")@ ";
-  | Asm.Ploadsymbol_high (rd, s, ofs) ->
-      Format.fprintf p "Ploadsymbol_high@ ";
-      print_ireg_asm p rd;
-      Format.fprintf p "@ ";
-      print_ident_asm p s;
-      Format.fprintf p "@ ";
-      print_Z_asm p ofs;
-      Format.fprintf p "@ ";
-  | _ ->
-      Format.fprintf p "<instr>"
-
-let print_coq_function_asm p Asm.{ fn_comp; fn_sig; fn_code } =
-  Format.fprintf p "{|@ fn_comp@ :=@ ";
-  print_comp_asm p fn_comp;
-  Format.fprintf p ";@ fn_sig@ :=@ ";
-  print_signature_asm p fn_sig;
-  Format.fprintf p ";@ fn_code@ :=@ ";
-  print_list_asm p print_instruction_asm fn_code;
-  Format.fprintf p "|}@,"
-
-(* TODO cases *)
-let print_external_function_asm p = function
-  | EF_external (str, fsig) ->
-      Format.fprintf p "EF_external@ (";
-      print_string_asm p str;
-      Format.fprintf p ",@ ";
-      print_signature_asm p fsig;
-      Format.fprintf p ")"
-  | EF_builtin (str, fsig) ->
-      Format.fprintf p "EF_builtin@ (";
-      print_string_asm p str;
-      Format.fprintf p ",@ ";
-      print_signature_asm p fsig;
-      Format.fprintf p ")"
-  | EF_runtime (str, fsig) ->
-      Format.fprintf p "EF_runtime@ (";
-      print_string_asm p str;
-      Format.fprintf p ",@ ";
-      print_signature_asm p fsig;
-      Format.fprintf p ")"
-  (* | _ -> *)
-  (*     failwith "unimplemented external function" *)
-  | EF_vload chunk ->
-      Format.fprintf p "EF_vload _"
-  | EF_vstore chunk ->
-      Format.fprintf p "EF_vstore _"
-  | EF_malloc ->
-      Format.fprintf p "EF_malloc _"
-  | EF_free ->
-      Format.fprintf p "EF_free _"
-  | EF_memcpy (n1, n2) ->
-      Format.fprintf p "EF_memcpy _"
-  | EF_annot (lvl, str, tys) ->
-      Format.fprintf p "EF_annot _"
-  | EF_annot_val (lvl, str, tys) ->
-      Format.fprintf p "EF_annot_val _"
-  | EF_inline_asm (str, fsig, strs) ->
-      Format.fprintf p "EF_inline_asm _"
-  | EF_debug (lvl, id, tys) ->
-      Format.fprintf p "EF_debug _"
-
-let print_fundef_asm p = function
-  | Internal f ->
-      Format.fprintf p "Internal@ @[";
-      print_coq_function_asm p f;
-      Format.fprintf p "@]@,"
-  | External e ->
-      Format.fprintf p "External@ (";
-      print_external_function_asm p e;
-      Format.fprintf p ")@,"
-
-let print_init_data_asm p = function
-  | Init_int8 n ->
-      Format.fprintf p "Init_int8@ ";
-      print_Z_asm p n
-  | Init_int16 n ->
-      Format.fprintf p "Init_int816@ ";
-      print_Z_asm p n
-  | Init_int32 n ->
-      Format.fprintf p "Init_int32@ ";
-      print_Z_asm p n
-  | Init_int64 n ->
-      Format.fprintf p "Init_int64@ ";
-      print_Z_asm p n
-  | Init_float32 n ->
-      Format.fprintf p "Init_float32@ ";
-      print_float32_asm p n
-  | Init_float64 n ->
-      Format.fprintf p "Init_float64@ ";
-      print_float64_asm p n
-  | Init_space z ->
-      Format.fprintf p "Init_space@ ";
-      print_Z_asm p z
-  | Init_addrof _ ->
-      Format.fprintf p "Init_addrof@ "
-  (* | _ -> *)
-  (*     failwith "unimplemented initial data" *)
-  (* | Init_float32 of float32
-   * | Init_float64 of float
-   * | Init_space of coq_Z
-   * | Init_addrof of ident * Ptrofs.int *)
-
-let print_globvar_asm
-  p AST.{ (* gvar_info; *) gvar_comp; gvar_init; gvar_readonly; gvar_volatile } =
-  (* TODO unit *)
-  Format.fprintf p "{|@ gvar_info@ := tt;@ ";
-  Format.fprintf p ";@ gvar_comp@ :=@ ";
-  print_comp_asm p gvar_comp;
-  Format.fprintf p ";@ gvar_init@ :=@ ";
-  print_list_asm p print_init_data_asm gvar_init;
-  Format.fprintf p ";@ gvar_readonly@ :=@ ";
-  Format.pp_print_bool p gvar_readonly;
-  Format.fprintf p ";@ gvar_volatile@ :=@ ";
-  Format.pp_print_bool p gvar_volatile;
-  Format.fprintf p "|}@,"
-
-let print_globdef_asm p = function
-  | Gfun f ->
-      Format.fprintf p "Gfun@ @[(";
-      print_fundef_asm p f;
-      Format.fprintf p ")@]@,"
-  | Gvar v ->
-      Format.fprintf p "Gvar @[";
-      print_globvar_asm p v;
-      Format.fprintf p "@]@,"
-
-let print_prog_def_asm p (id, glob) =
-  Format.fprintf p "@[(";
-  print_ident_asm p id;
-  Format.fprintf p ",@ ";
-  print_globdef_asm p glob;
-  Format.fprintf p ")@]@,"
-
-let rec string_of_exports (exports: (AST.COMP.compartment' * BinNums.positive list) list): string =
-  match exports with
-  | [] -> "]"
-  | (c, []) :: exports' -> string_of_exports exports'
-  | (c, f :: t) :: exports' ->
-    let rest = string_of_exports ((c, t) :: exports') in
-    (string_of_comp_asm c ^ " exports " ^ string_of_ident_asm f ^ (if rest = "]" then "]" else "\n" ^ rest))
+(* let rec string_of_exports (exports: (AST.COMP.compartment' * BinNums.positive list) list): string = *)
+(*   match exports with *)
+(*   | [] -> "]" *)
+(*   | (c, []) :: exports' -> string_of_exports exports' *)
+(*   | (c, f :: t) :: exports' -> *)
+(*     let rest = string_of_exports ((c, t) :: exports') in *)
+(*     (string_of_comp_asm c ^ " exports " ^ string_of_ident_asm f ^ (if rest = "]" then "]" else "\n" ^ rest)) *)
 
 
-let rec string_of_imports (imports: (AST.COMP.compartment' * (AST.COMP.compartment' * BinNums.positive) list) list): string =
-  match imports with
-  | [] -> "]"
-  | (c, []) :: imports' -> string_of_imports imports'
-  | (c, (c', f) :: t) :: imports' ->
-    let rest = string_of_imports ((c, t) :: imports') in
-    (string_of_comp_asm c ^ " imports " ^ string_of_ident_asm f ^ " from " ^ string_of_comp_asm c' ^ (if rest = "]" then "]" else "\n" ^ rest))
+(* let rec string_of_imports (imports: (AST.COMP.compartment' * (AST.COMP.compartment' * BinNums.positive) list) list): string = *)
+(*   match imports with *)
+(*   | [] -> "]" *)
+(*   | (c, []) :: imports' -> string_of_imports imports' *)
+(*   | (c, (c', f) :: t) :: imports' -> *)
+(*     let rest = string_of_imports ((c, t) :: imports') in *)
+(*     (string_of_comp_asm c ^ " imports " ^ string_of_ident_asm f ^ " from " ^ string_of_comp_asm c' ^ (if rest = "]" then "]" else "\n" ^ rest)) *)
 
-(* TODO list vs tree *)
-let print_policy_asm p Policy.{ policy_export; policy_import } =
-  let exports = AST.COMP.CompTree.elements policy_export in
-  let imports = AST.COMP.CompTree.elements policy_import in
-  Format.fprintf p "{| policy_export := [";
-  Format.pp_print_string p (string_of_exports exports);
-  (* TODO *)
-  Format.fprintf p ";\n policy_import := [";
-  Format.pp_print_string p (string_of_imports imports);
-  (* TODO *)
-  Format.fprintf p "|}@,"
+(* (\* TODO list vs tree *\) *)
+(* let print_policy_asm p Policy.{ policy_export; policy_import } = *)
+(*   let exports = AST.COMP.CompTree.elements policy_export in *)
+(*   let imports = AST.COMP.CompTree.elements policy_import in *)
+(*   Format.fprintf p "{| policy_export := ["; *)
+(*   Format.pp_print_string p (string_of_exports exports); *)
+(*   (\* TODO *\) *)
+(*   Format.fprintf p ";\n policy_import := ["; *)
+(*   Format.pp_print_string p (string_of_imports imports); *)
+(*   (\* TODO *\) *)
+(*   Format.fprintf p "|}@," *)
 
-let destination : string option ref = ref None
+(* let destination : string option ref = ref None *)
 
-let print_program_asm oc prog =
-  let p = Format.formatter_of_out_channel oc in
-  Format.fprintf p "@[{|@.prog_defs :=@.@[";
-  print_list_asm p print_prog_def_asm prog.prog_defs;
-  Format.fprintf p "@];@.prog_public :=@.@[";
-  print_list_asm p print_ident_asm prog.prog_public;
-  Format.fprintf p "@];@.prog_main :=@.@[";
-  print_ident_asm p prog.prog_main;
-  Format.fprintf p "@];@.prog_pol :=@.@[";
-  print_policy_asm p prog.prog_pol;
-  Format.fprintf p "|}@]@."
+(* let print_program_asm oc prog = *)
+(*   let p = Format.formatter_of_out_channel oc in *)
+(*   Format.fprintf p "@[{|@.prog_defs :=@.@["; *)
+(*   print_list_asm p print_prog_def_asm prog.prog_defs; *)
+(*   Format.fprintf p "@];@.prog_public :=@.@["; *)
+(*   print_list_asm p print_ident_asm prog.prog_public; *)
+(*   Format.fprintf p "@];@.prog_main :=@.@["; *)
+(*   print_ident_asm p prog.prog_main; *)
+(*   Format.fprintf p "@];@.prog_pol :=@.@["; *)
+(*   print_policy_asm p prog.prog_pol; *)
+(*   Format.fprintf p "|}@]@." *)
 
-let print_if prog =
-  match !destination with
-  | None -> ()
-  | Some f ->
-      let oc = open_out f in
-      print_program_asm oc prog;
-      close_out oc
+(* let print_if prog = *)
+(*   match !destination with *)
+(*   | None -> () *)
+(*   | Some f -> *)
+(*       let oc = open_out f in *)
+(*       print_program_asm oc prog; *)
+(*       close_out oc *)
 
 (* end module contents *)
 

@@ -383,6 +383,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       leftcontext RV RV C ->
       eval_simple_list e (comp_of f) m rargs tyargs vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
 
@@ -592,6 +593,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists vargs, exists t, exists vres, exists m',
          cast_arguments m rargs tyargs vargs
       /\ external_call ef ge cp vargs m t vres m'
+      /\ Genv.allowed_syscall ge cp ef
   | _ => True
   end.
 
@@ -1402,7 +1404,7 @@ Proof.
   eapply safe_steps. eexact H.
   apply (eval_simple_list_steps f k e m rargs vl E C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [vargs [t [vres [m' [U V]]]]].
+  intros [vargs [t [vres [m' [U [V W]]]]]].
   econstructor; econstructor; eapply step_builtin; eauto.
   eapply can_eval_simple_list; eauto.
 + (* paren *)
@@ -1941,6 +1943,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       eval_funcall cp m (Internal f) vargs t m4 vres f.(fn_return)
   | eval_funcall_external: forall cp m ef targs tres cconv vargs t vres m',
       external_call ef ge cp vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       eval_funcall cp m (External ef targs tres cconv) vargs t m' vres tres.
 
 Scheme eval_expression_ind5 := Minimality for eval_expression Sort Prop
@@ -2658,7 +2661,7 @@ Proof.
 (* call external *)
   apply star_one. right; apply step_external_function; auto.
   subst; auto.
-  (* congruence. *)
+  subst; auto.
 Qed.
 
 Lemma eval_expression_to_steps:

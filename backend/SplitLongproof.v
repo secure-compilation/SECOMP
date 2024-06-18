@@ -71,6 +71,7 @@ Proof.
   rewrite <- Genv.find_funct_ptr_iff in Q.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
+  unfold Genv.allowed_syscall; auto.
 Qed.
 
 Corollary eval_helper_1:
@@ -106,6 +107,7 @@ Remark eval_builtin_1:
 Proof.
   intros. econstructor. econstructor. eauto. constructor.
   simpl. red. rewrite H0. constructor. auto.
+  unfold Genv.allowed_syscall; auto.
 Qed.
 
 Remark eval_builtin_2:
@@ -118,6 +120,7 @@ Remark eval_builtin_2:
 Proof.
   intros. econstructor. constructor; eauto. constructor; eauto. constructor.
   simpl. red. rewrite H1. constructor. auto.
+  unfold Genv.allowed_syscall; auto.
 Qed.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=

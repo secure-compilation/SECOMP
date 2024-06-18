@@ -542,7 +542,8 @@ Module Policy.
   Record t: Type := mkpolicy {
     policy_comps: PTree.t compartment;
     policy_export: CompTree.t (list ident);
-    policy_import: CompTree.t (list (compartment * ident))
+    policy_import: CompTree.t (list (compartment * ident));
+    policy_syscalls: CompTree.t (list string);
   }.
 
   Definition in_pub_exports (pol: t) (pubs: list ident) : Prop :=
@@ -569,6 +570,7 @@ Module Policy.
         CompTree.map1
           (filter (fun p : compartment * ident => in_dec ident_eq (snd p) pubs))
           pol.(policy_import);
+      policy_syscalls := pol.(policy_syscalls);
     |}.
 
   Lemma enforce_in_pub_correct :
@@ -589,7 +591,9 @@ Module Policy.
 
   (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
   Definition empty_pol: t := mkpolicy (PTree.empty compartment)
-                               (CompTree.empty (list ident)) (CompTree.empty (list (compartment * ident))).
+                               (CompTree.empty (list ident))
+                               (CompTree.empty (list (compartment * ident)))
+                               (CompTree.empty (list string)).
 
   (* Decidable equality for the elements contained in the policies *)
   Definition list_id_eq: forall (x y: list ident),
@@ -598,6 +602,14 @@ Module Policy.
     intros x y.
     decide equality.
     apply Pos.eq_dec.
+  Qed.
+
+  Definition list_string_eq: forall (x y: list string),
+      {x = y} + {x <> y}.
+  Proof.
+    intros x y.
+    decide equality.
+    apply string_dec.
   Qed.
 
   Definition list_cpt_id_eq: forall (x y: list (compartment * ident)),
@@ -615,7 +627,8 @@ Module Policy.
   Definition eqb (t1 t2: t): bool :=
     PTree.beq cp_eq_dec t1.(policy_comps) t2.(policy_comps) &&
     CompTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
-    CompTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
+    CompTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import) &&
+    CompTree.beq list_string_eq t1.(policy_syscalls) t2.(policy_syscalls).
 
   (* Properties of an equivalence relation: reflexivity, commutativity, transitivity *)
   Lemma eqb_refl: forall pol, eqb pol pol = true.
@@ -629,8 +642,11 @@ Module Policy.
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_export pol) ! x); auto.
     destruct (list_id_eq l l); auto.
+    assert (PTree.beq list_string_eq (policy_syscalls pol) (policy_syscalls pol) = true).
+    rewrite PTree.beq_correct.
+    intros x. destruct ((policy_syscalls pol) ! x); auto. destruct list_string_eq; auto.
     unfold CompTree.beq.
-    rewrite H, H0. simpl.
+    rewrite H, H0, H1. simpl. rewrite andb_true_r.
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_import pol) ! x); auto.
     destruct (list_cpt_id_eq l l); auto.
@@ -642,29 +658,36 @@ Module Policy.
     unfold eqb in *.
     apply andb_prop in H as [H2 H3].
     apply andb_prop in H2 as [H1 H2].
+    apply andb_prop in H1 as [H0 H1].
     assert (H1': PTree.beq cp_eq_dec (policy_comps pol') (policy_comps pol) = true).
-    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H1.
-    intros x. specialize (H1 x). destruct ((policy_comps pol') ! x); auto.
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H0.
+    intros x. specialize (H0 x). destruct ((policy_comps pol') ! x); auto.
     destruct ((policy_comps pol) ! x); auto.
     destruct (cp_eq_dec c0 c); subst.
     destruct (cp_eq_dec c c); auto.
     destruct (cp_eq_dec c c0); auto.
     assert (H2': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol) = true).
-    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
-    intros x. specialize (H2 x). destruct ((policy_export pol') ! x); auto.
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H1.
+    intros x. specialize (H1 x). destruct ((policy_export pol') ! x); auto.
     destruct ((policy_export pol) ! x); auto.
     destruct (list_id_eq l0 l); subst.
     destruct (list_id_eq l l); auto.
     destruct (list_id_eq l l0); auto.
     assert (H3': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol') (policy_import pol) = true).
-    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H3.
-    intros x. specialize (H3 x). destruct ((policy_import pol') ! x); auto.
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
+    intros x. specialize (H2 x). destruct ((policy_import pol') ! x); auto.
     destruct ((policy_import pol) ! x); auto.
     destruct (list_cpt_id_eq l0 l); subst.
     destruct (list_cpt_id_eq l l); auto.
     destruct (list_cpt_id_eq l l0); auto.
     unfold CompTree.beq.
-    rewrite H1', H2', H3'. auto.
+    rewrite H1', H2', H3'. simpl.
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H3.
+    intros x. specialize (H3 x). destruct ((policy_syscalls pol') ! x); auto.
+    destruct ((policy_syscalls pol) ! x); auto.
+    destruct (list_string_eq l0 l); subst; auto.
+    destruct (list_string_eq l l); auto.
+    destruct (list_string_eq l l0); subst; auto.
   Qed.
 
   Lemma eqb_trans: forall pol pol' pol'', eqb pol pol' = true ->
@@ -672,8 +695,10 @@ Module Policy.
   Proof.
     intros pol pol' pol'' H1 H2.
     unfold eqb in *.
+    apply andb_prop in H1 as [H1 H1'''].
     apply andb_prop in H1 as [H1 H1''].
     apply andb_prop in H1 as [H1 H1'].
+    apply andb_prop in H2 as [H2 H2'''].
     apply andb_prop in H2 as [H2 H2''].
     apply andb_prop in H2 as [H2 H2'].
     assert (H3: PTree.beq cp_eq_dec (policy_comps pol) (policy_comps pol'') = true).
@@ -714,8 +739,21 @@ Module Policy.
         destruct (list_cpt_id_eq l l1); auto.
       now subst.
     }
+    assert (H3''': PTree.beq (fun x y : list string => list_string_eq x y) (policy_syscalls pol) (policy_syscalls pol'') = true).
+    { clear -H1''' H2'''.
+      rewrite PTree.beq_correct in H1''', H2'''.
+      rewrite PTree.beq_correct.
+      intros x. specialize (H1''' x); specialize (H2''' x).
+      destruct ((policy_syscalls pol) ! x);
+        destruct ((policy_syscalls pol') ! x);
+        destruct ((policy_syscalls pol'') ! x); auto.
+      destruct (list_string_eq l l0);
+        destruct (list_string_eq l0 l1);
+        destruct (list_string_eq l l1); auto.
+      now subst.
+    }
     unfold CompTree.beq.
-    rewrite H3, H3'. auto.
+    rewrite H3, H3', H3'', H3'''. auto.
   Qed.
 
 End Policy.
@@ -837,6 +875,7 @@ Definition update_policy (pol: Policy.t) (defs: list (ident * globdef B W)): Pol
   {| Policy.policy_comps := update_list_comps defs;
      Policy.policy_import := pol.(Policy.policy_import);
      Policy.policy_export := pol.(Policy.policy_export);
+     Policy.policy_syscalls := pol.(Policy.policy_syscalls);
   |}.
 
 Lemma agr_update_policy (pol: Policy.t) (defs: list (ident * globdef B W)):
@@ -1085,11 +1124,6 @@ Inductive external_function : Type :=
      (** Transport debugging information from the front-end to the generated
          assembly.  Takes zero, one or several arguments like [EF_annot].
          Unlike [EF_annot], produces no observable event. *)
-
-
-(* (** External functions don't have compartment *) *)
-(* Instance has_comp_external_function : has_comp (external_function) := fun _ => bottom. *)
-
 
 (** The type signature of an external function. *)
 

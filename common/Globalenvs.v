@@ -2179,6 +2179,20 @@ Proof.
   destruct (contra Hexp).
 Qed.
 
+Definition allowed_syscall_b (ge: t) (cp: compartment) (ef: external_function): bool :=
+  match ef with
+  | EF_external name _ => match CompTree.get cp (Policy.policy_syscalls ge.(genv_policy)) with
+                         | Some l => in_dec string_dec name l
+                         | _ => false
+                         end
+  | _ => true
+  end.
+
+
+Definition allowed_syscall (ge: t) (cp: compartment) (ef: external_function): Prop :=
+  allowed_syscall_b ge cp ef = true.
+
+
 Section SECURITY.
 
 Definition same_symbols (j: meminj) (ge1: t): Prop :=
@@ -2374,6 +2388,7 @@ Proof.
   unfold globalenv. rewrite !genv_pol_add_globals.
   simpl. apply andb_prop in S as [S _].
   apply andb_prop in S as [S _].
+  apply andb_prop in S as [S _].
   unfold to_map_ident.
   rewrite PTree.beq_correct in S.
   specialize (S id).
@@ -2528,16 +2543,34 @@ Proof.
     unfold Policy.eqb in EQPOL.
     apply andb_prop in EQPOL. destruct EQPOL as [EQPOL EQPOL3].
     apply andb_prop in EQPOL. destruct EQPOL as [EQPOL1 EQPOL2].
+    apply andb_prop in EQPOL1. destruct EQPOL1 as [EQPOL0 EQPOL1].
     set (cp := find_comp_of_block (add_globals (empty_genv F1 V1 prog_pol_pub) prog_defs) b).
     fold cp in H2.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL1.
     eapply CompTree.beq_sound with (x := cp) in EQPOL2.
-    eapply CompTree.beq_sound with (x := cp) in EQPOL3.
     (* rewrite PTree.beq_correct in EQPOL2. *)
     (* specialize (EQPOL2 cp). *)
     simpl in *.
     destruct (CompTree.get cp (Policy.policy_export prog_pol0));
       destruct (CompTree.get cp (Policy.policy_export prog_pol)); auto.
     destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
+Qed.
+
+Lemma match_genvs_allowed_syscalls:
+  forall cp name,
+    allowed_syscall (globalenv p) cp name ->
+    allowed_syscall (globalenv tp) cp name.
+Proof.
+  intros cp ef. unfold allowed_syscall, allowed_syscall_b.
+  destruct ef; auto.
+  destruct progmatch as [_ [_ [_ H]]].
+  unfold Policy.eqb in H.
+  rewrite !andb_true_iff in H. destruct H as [[[? ?] ?] ?].
+  eapply CompTree.beq_sound with (x := cp) in H2.
+  rewrite !globalenv_policy.
+  destruct CompTree.get; try discriminate.
+  destruct CompTree.get; try discriminate. destruct Policy.list_string_eq; try subst; now auto.
+  destruct CompTree.get; try discriminate. contradiction.
 Qed.
 
 Lemma match_genvs_not_ptr_inj:
@@ -2697,6 +2730,13 @@ Proof.
   eapply (match_genvs_allowed_calls progmatch).
 Qed.
 
+Theorem allowed_syscall_transf_partial:
+  forall cp name,
+    allowed_syscall (globalenv p) cp name -> allowed_syscall (globalenv tp) cp name.
+Proof.
+  eapply (match_genvs_allowed_syscalls progmatch).
+Qed.
+
 Lemma not_ptr_transf_partial_inj:
   forall j cp cp' v v',
     Val.inject j v v' ->
@@ -2809,6 +2849,13 @@ Theorem allowed_call_transf:
     allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
 Proof.
   eapply (match_genvs_allowed_calls progmatch).
+Qed.
+
+Theorem allowed_syscall_transf:
+  forall cp vf,
+    allowed_syscall (globalenv p) cp vf -> allowed_syscall (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_allowed_syscalls progmatch).
 Qed.
 
 Lemma find_comp_of_block_transf:
