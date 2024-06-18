@@ -1887,7 +1887,8 @@ Program Definition test_program_1 :=
        (CompTree.set (Comp twice_cp) (twice_id :: nil)
           (CompTree.set (Comp main_cp) nil (CompTree.empty _)))
        (CompTree.set (Comp twice_cp) nil
-          (CompTree.set (Comp main_cp) ((Comp twice_cp, twice_id) :: nil) (CompTree.empty _))))
+          (CompTree.set (Comp main_cp) ((Comp twice_cp, twice_id) :: nil) (CompTree.empty _)))
+        (CompTree.empty _))
     _
     _
     : Mach.program.
@@ -1904,7 +1905,7 @@ Next Obligation.
        How can I tell Coq that or which lemma/theorem can I use?
      *)
     admit.
-  - admit.
+  - admit. (* CHECK ME *)
 Admitted.
 Next Obligation.
 Admitted.
@@ -2022,11 +2023,13 @@ Program Definition test_program_2 :=
        (CompTree.set (Comp minmax_cp) nil
           (CompTree.set (Comp clip_cp) (((Comp minmax_cp), minimum_id) :: ((Comp minmax_cp), maximum_id) :: nil)
              (CompTree.set (Comp main_cp) (((Comp clip_cp), clip_id) :: nil)
-                (CompTree.empty _)))))
+                (CompTree.empty _))))
+        (CompTree.empty _))
     _
     _
     : Mach.program.
 Next Obligation.
+(* CHECK ME *)
 Admitted.
 Next Obligation.
 Admitted.
@@ -2097,12 +2100,14 @@ Program Definition test_program_3 :=
              (CompTree.empty _)))
        (CompTree.set (Comp sum_cp) nil
           (CompTree.set (Comp main_cp) (((Comp sum_cp), sum_id) :: nil)
-             (CompTree.empty _))))
+             (CompTree.empty _)))
+        (CompTree.empty _))
     _
     _
     : Mach.program.
 Next Obligation.
 Admitted.
+(* CHECK ME *)
 Next Obligation.
 Admitted.
 
@@ -2147,6 +2152,7 @@ Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      (Archi.ptr64 = true) ->
      exists x, OK x = transf_program test_program_2.
 Proof.
+(* CHECK ME *)
 Admitted.
 (*   intros (* H *) G I. *)
 (*   unfold transf_program, transform_partial_program, transform_partial_program2. *)
@@ -2193,6 +2199,7 @@ Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      exists x, OK x = transf_program test_program_3.
 Proof.
 Admitted.
+(* CHECK ME *)
 (*   intros (* H *) G I. *)
 (*   unfold transf_program, transform_partial_program, transform_partial_program2. *)
 (*   simpl. *)
