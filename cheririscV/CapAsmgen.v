@@ -2238,6 +2238,85 @@ Proof.
   unfold make_epilogue.
 
   unfold loadind_ptr_stk.
+
+  unfold fn_retaddr_ofs.
+
+  unfold fn_link_ofs.
+
+  unfold transl_mregs.
+
+  unfold transl_mreg.
+
+  unfold transl_operation.
+
+  unfold map.
+
+  unfold transl_op.
+
+  unfold ireg_of.
+
+  unfold preg_of.
+
+  unfold creg_to_preg.
+
+  unfold transl_ireg_of_inl.
+
+  unfold ireg_of_inl.
+
+  unfold transl_signature.
+
+  unfold AST.sig_args.
+
+  unfold transl_typ.
+
+  unfold map.
+
+  unfold AST.sig_res.
+
+  unfold transl_rettype.
+
+  unfold transl_typ.
+
+  unfold AST.sig_cc.
+
+  unfold Mach.fn_comp.
+
+  unfold Mach.fn_sig.
+
+  unfold fn_stacksize.
+
+  unfold loadimm32.
+
+  unfold make_immed32.
+
+  unfold Int.sign_ext.
+
+  unfold Int.unsigned.
+
+  unfold Int.intval.
+
+  unfold Zbits.Zsign_ext.
+
+  unfold Z.odd.
+
+  unfold Zbits.Zshiftin.
+
+  unfold Z.pred.
+
+  unfold Z.iter.
+
+  unfold Pos.iter.
+
+  unfold "+".
+
+  unfold Z.pos_sub.
+
+  unfold Z.double.
+
+  unfold Z.succ_double.
+
+  unfold Int.zero.
+
   (* CHECK ME *)
 Admitted.
 
