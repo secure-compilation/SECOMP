@@ -295,7 +295,7 @@ let build_prog_pol ctx =
       else ())
     imports;
   let policy =
-    ({ policy_comps = PTree.empty; policy_export = !policy_export; policy_import = !policy_import }
+    ({ policy_comps = PTree.empty; policy_export = !policy_export; policy_import = !policy_import; policy_syscalls = PTree.empty }
       : AST.Policy.t)
   in
   policy
