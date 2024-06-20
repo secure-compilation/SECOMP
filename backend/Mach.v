@@ -473,7 +473,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NEXTCOMP: Genv.find_comp_of_block ge f' = comp_of f),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      forall (SIG: sig = fn_sig f),
+      (* forall (SIG: sig_res sig = sig_res (fn_sig f)), *)
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (comp_of f)
       = Some (dummy_parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (comp_of f)
@@ -551,7 +551,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       external_call ef ge cp args m t res m' ->
-      forall (SIG: sig = ef_sig ef),
+      (* forall (SIG: sig = ef_sig ef), *)
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb sig rs m cp)
          t (Returnstate s rs' m' bottom)

@@ -1593,7 +1593,7 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State nil rs0 m0 (Genv.find_comp_of_ident ge (prog_main p))).
+      initial_state p (State nil rs0 m0 top).
 
 Inductive final_state (p: program): state -> int -> Prop :=
   | final_state_intro: forall rs m r cp,
