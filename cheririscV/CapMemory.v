@@ -44,7 +44,7 @@ Require Export CapMemtype.
 Local Unset Elimination Schemes.
 Local Unset Case Analysis Schemes.
 
-Local Notation "a # b" := (PMap.get b a) (at level 1).
+Local Notation "a # b" := (CompMap.get b a) (at level 1).
 
 Module Mem <: MEM.
 
@@ -67,8 +67,8 @@ Record mem' : Type :=
   mem_contents: (ZMap.t memval);         (**r [offset -> memval] flattened memory *)
   mem_access: (Z -> perm_kind -> option permission);
                                          (**r [offset -> kind -> option permission] *)
-  mem_compartments: PMap.t (list occap);        (**r [compartment -> list occap] *)
-  mem_compartments_next: PMap.t ptrofs;  (**r [compartment -> the next address to be allocated as an offset within its heap] *)
+  mem_compartments: CompMap.t (list occap);        (**r [compartment -> list occap] *)
+  mem_compartments_next: CompMap.t ptrofs;  (**r [compartment -> the next address to be allocated as an offset within its heap] *)
   (* stack_min: ptrofs;                     (**r the lower bound to the stack *) *)
   (* stack_max: ptrofs;                     (**r the upper bound of the stack *) *)
   access_max:
@@ -97,7 +97,7 @@ Qed.
     associated to compartment [c] *)
 
 Definition block_compartment (m: mem) (c: compartment) :=
-  m.(mem_compartments)!!c.
+  CompMap.get c (mem_compartments m).
 
 (** Permissions *)
 
@@ -756,8 +756,8 @@ Qed.
 Program Definition empty: mem :=
   mkmem (ZMap.init Undef)
         (fun ofs k => None)
-        (PMap.init nil)
-        (PMap.init Ptrofs.zero)
+        (CompMap.init nil)
+        (CompMap.init Ptrofs.zero)
         _ _.
 
 (** Allocation of a fresh heap region with the given length.  Return
@@ -774,7 +774,7 @@ Program Definition alloc (m: mem) (cap: occap) (c: compartment) (len: nat) : poi
   (*                               (Ptrofs.repr (m.(mem_next) + Z.of_nat len))) in *)
   let lo := get_lo cap in
   let hi := get_hi cap in
-  let next := m.(mem_compartments_next) !! c in
+  let next := CompMap.get c (mem_compartments_next m) in
   let new := Ptrofs.add next (Ptrofs.repr (Z.of_nat len)) in
   let next_ofs := Ptrofs.unsigned lo + Ptrofs.unsigned next in
   let new_ofs := Ptrofs.unsigned lo + Ptrofs.unsigned new in
@@ -786,7 +786,7 @@ Program Definition alloc (m: mem) (cap: occap) (c: compartment) (len: nat) : poi
               mkmem (m.(mem_contents))
                     (fun ofs k => if (zle next_ofs ofs) && (zlt ofs new_ofs) then Some Freeable else m.(mem_access) ofs k)
                     (m.(mem_compartments))
-                    (PMap.set c new m.(mem_compartments_next))
+                    (CompMap.set c new m.(mem_compartments_next))
                     _ _
             )
       else inr CapErr
@@ -821,9 +821,9 @@ Qed.
   memory state where the given range has been initialized to a
   Freeable permission. Initialization is applied in the preprocessing
   phase when initializing globals *)
-Definition add_compartment_fresh (cs: PMap.t (list occap)) (c: compartment) (cap: occap): PMap.t (list occap) :=
+Definition add_compartment_fresh (cs: CompMap.t (list occap)) (c: compartment) (cap: occap): CompMap.t (list occap) :=
   if In_dec occap_dec cap (cs # c) then cs
-  else PMap.set c (cap :: (cs # c)) cs.
+  else CompMap.set c (cap :: (cs # c)) cs.
 
 Program Definition unchecked_init (m: mem) (c: compartment) (cap: occap): mem :=
   let lo := Ptrofs.unsigned (get_lo cap) in
@@ -869,7 +869,7 @@ Program Definition init_heap (m: mem) (c: compartment) (cap: occap): mem :=
             (* (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else m.(mem_access) ofs k) *)
         m.(mem_access)
         (add_compartment_fresh m.(mem_compartments) c cap)
-        (PMap.set c Ptrofs.zero m.(mem_compartments_next))
+        (CompMap.set c Ptrofs.zero m.(mem_compartments_next))
         _ _.
 Next Obligation. apply access_max. Defined.
 Next Obligation. apply contents_default. Defined.

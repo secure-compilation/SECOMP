@@ -61,6 +61,10 @@ Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y ->
 Parameter pos_to_comp: positive -> compartment.
 Axiom pos_to_comp_inv: forall x, pos_to_comp (comp_to_pos x) = x.
 
+Parameter comp_eqb : compartment -> compartment -> bool.
+Axiom comp_eqb_refl : forall (cp : compartment), comp_eqb cp cp = true.
+Axiom comp_eqb_neq : forall (cp cp' : compartment), comp_eqb cp cp' = false <-> cp <> cp'.
+
 Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
   Definition t := compartment.
   Definition index := comp_to_pos.
@@ -71,6 +75,13 @@ Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
 End COMPARTMENT_INDEXED_TYPE.
 
 Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
+
+Module COMPARTMENT_EQUALITY_TYPE <: EQUALITY_TYPE.
+  Definition t := compartment.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_EQUALITY_TYPE.
+
+Module CompMap := EMap (COMPARTMENT_EQUALITY_TYPE).
 
 Axiom bottom_flowsto: forall cp, bottom ⊆ cp.
 Axiom flowsto_top: forall cp, cp ⊆ top.
@@ -164,6 +175,10 @@ Proof.
   destruct i; auto. simpl. rewrite Pos.pred_double_succ. reflexivity.
 Qed.
 
+Definition comp_eqb (cp cp' : compartment) : bool := Pos.eqb (comp_to_pos cp) (comp_to_pos cp').
+
+Axiom comp_eqb_refl : forall (cp : compartment), comp_eqb cp cp = true.
+Axiom comp_eqb_neq : forall (cp cp' : compartment), comp_eqb cp cp' = false <-> cp <> cp'.
 
 Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
   Definition t := compartment.
@@ -175,6 +190,13 @@ Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
 End COMPARTMENT_INDEXED_TYPE.
 
 Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
+
+Module COMPARTMENT_EQUALITY_TYPE <: EQUALITY_TYPE.
+  Definition t := compartment.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_EQUALITY_TYPE.
+
+Module CompMap := EMap (COMPARTMENT_EQUALITY_TYPE).
 
 End COMP.
 Export COMP.

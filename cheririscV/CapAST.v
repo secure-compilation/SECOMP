@@ -242,7 +242,7 @@ Proof. unfold CTptr, CMptr; destruct Archi.ptr64; auto. Qed.
   and associated operations. *)
 
 Inductive cap_external_function : Type :=
-  | CEF_external (name: string) (cp: AST.compartment) (sg: capsignature)
+  | CEF_external (name: string) (cp: AST.COMP.compartment) (sg: capsignature)
      (** A system call or library function.  Produces an event
          in the trace. *)
   | CEF_builtin (name: string) (sg: capsignature)
@@ -297,8 +297,8 @@ Instance has_comp_cap_external_function : AST.has_comp cap_external_function :=
   fun ef =>
     match ef with
     | CEF_external _ cp _ => cp
-    | CEF_malloc | CEF_free | CEF_vload _ | CEF_vstore _ | CEF_memcpy _ _ => AST.privileged_compartment (* default_compartment *)
-    | _ => AST.default_compartment
+    | CEF_malloc | CEF_free | CEF_vload _ | CEF_vstore _ | CEF_memcpy _ _ => AST.COMP.top (* default_compartment *)
+    | _ => AST.COMP.bottom
     end.
 
 (** The type signature of an external function. *)
@@ -350,7 +350,7 @@ Definition ef_reloads (ef: cap_external_function) : bool :=
 
 Definition external_function_eq: forall (ef1 ef2: cap_external_function), {ef1=ef2} + {ef1<>ef2}.
 Proof.
-  generalize AST.ident_eq string_dec signature_eq chunk_eq captyp_eq list_eq_dec zeq Int.eq_dec; intros.
+  generalize AST.ident_eq string_dec signature_eq chunk_eq captyp_eq list_eq_dec zeq Int.eq_dec AST.COMP.cp_eq_dec; intros.
   decide equality.
 Defined.
 Global Opaque external_function_eq.
