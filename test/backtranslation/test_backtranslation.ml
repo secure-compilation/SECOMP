@@ -59,6 +59,11 @@ This also allows one to inspect `out.c` which is the generated C code.
   if !trace_seed != 0 then num_traces := 1;
   if !asm_seed != 0 && !trace_seed != 0 && !root_seed != 0 then mode := "reproduction"
 
+let copy_file name new_name =
+  match Unix.system ("cp " ^ name ^ " " ^ new_name) with
+  | WEXITED 0 -> ()
+  | _ -> (Printf.printf "Fatal error: could not copy '%s' to '%s'" name new_name)
+
 let gen_config rand_state =
   let open QCheck in
   Gen_ctx.
@@ -136,7 +141,7 @@ let test_mode _ =
       let rand_state = Random.get_state () in
       if 0 = QCheck_runner.run_tests ~out:discard_out ~rand:rand_state [ test_backtranslation asm_prog ctx ]
       then pass_counter := !pass_counter + 1
-      else (failure_seeds := (asm_seed, trace_seed) :: !failure_seeds; fail_counter := !fail_counter + 1);
+      else (failure_seeds := (asm_seed, trace_seed) :: !failure_seeds; fail_counter := !fail_counter + 1; copy_file "out.c" (Printf.sprintf "fail_%d.c" (!fail_counter - 1)); Stdlib.exit 9);
       Out_channel.flush out_channel
     done
   done;
