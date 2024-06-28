@@ -1,0 +1,45 @@
+*************
+* Test Mode *
+*************
+Root seed = 328088876
+
+
+6880/100000 passed
+0/100000 failed
+Traces:
+  Min length: 7
+  Max length: 868
+  Calls: 1219719
+  Returns: 1219719
+  Builtins: 521021
+ASM Programs:
+  Min compartments: 3
+  Max compartments: 32
+  Min global vars: 6
+  Max global vars: 147
+Memory Deltas:
+  Total: 38353335
+  Min length: 0
+  Max length: 99
+  StoreV: 38353335
+  Store*: 0
+  Bytes*: 0
+  Alloc*: 0
+  Free*: 0
+External Functions:
+  Total: 521098
+  EF_external: 74849
+  EF_builtin: 74290
+  EF_runtime: 74061
+  EF_vload: 74468
+  EF_vstore: 74521
+  EF_malloc*: 0
+  EF_free*: 0
+  EF_memcpy*: 0
+  EF_annot: 74376
+  EF_annot_val: 74533
+  EF_inline_asm*: 0
+  EF_debug*: 0
+
+
+Note: the entries marked with * are not generated.
