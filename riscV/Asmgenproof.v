@@ -827,22 +827,38 @@ Opaque loadind.
 (* X30 contains parent *)
   + inv AT. monadInv H5. simpl in *.
     inv STACKS'.
-    * admit.
+    * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
     * left; eexists; split. eapply plus_one.
-      eapply exec_step_load_arg_int; eauto.
-      admit. admit. admit. admit. admit. admit.
-      admit.
-    * inv H10; eauto.
-      left; eexists; split. eapply plus_one.
-      simpl in *.
-      eapply exec_step_load_arg_cross with (o := (Ofsimm ofs)); eauto.
 
-      admit. admit.
-      simpl. reflexivity.
-      simpl. admit.
-      simpl. admit.
-      admit. admit.
+      eapply exec_step_load_arg_int with (ra := X30); eauto.
+      admit. (* ok *)
+      admit. (* ok *)
+      { admit. }
+      { admit. }
+      { admit. } (* ok *)
+      { admit. } (* ok *)
+      { rewrite <- comp_transf_function; eauto.
+        eapply match_states_intro with (rs := rs0 # (preg_of dst) <- v'); eauto. admit. admit.
+        eapply agree_set_mreg. eapply agree_set_mreg; eauto. Simpl.
+        (* congruence. auto with asmgen. *)
+        simpl; intros. Simpl.
+        simpl; intros. Simpl. }
+        (* rewrite R; auto with asmgen. *)
+        (* apply preg_of_not_X30; auto. *)
+    * inv H10; eauto. simpl in *.
+      left; eexists; split. eapply plus_one.
+      eapply exec_step_load_arg_cross. eauto.
+      admit. (* ok *)
+      admit. (* ok *)
+      reflexivity.
+      eauto.
+      reflexivity.
       admit.
+      simpl. { admit. }
+      { simpl. admit. }
+      { admit. }
+      { admit. }
+      { admit. }
   + admit.
   (* left; eapply exec_straight_steps; eauto; intros. monadInv TR. *)
   (* exploit loadind_priv_correct. eexact EQ. *)
@@ -1749,14 +1765,15 @@ Local Transparent destroyed_at_function_entry.
     admit.
     reflexivity.
     reflexivity.
-    admit. admit. admit.
+    simpl. admit.
+    simpl. unfold invalidate_cross_return. simpl. admit. (* same as before *)
+    admit.
     rewrite <- find_comp_of_block_translated; eauto.
     erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
     econstructor; eauto.
 
     { rewrite <- find_comp_of_block_translated in *; eauto.
       erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto. simpl in *. eauto. }
-    (* { admit. } *)
     { constructor.
       - unfold invalidate_cross_return, invalidate_return. simpl. reflexivity.
       - auto.
