@@ -114,11 +114,11 @@ Lemma exec_straight_exec:
   forall fb f c ep tf tc c' rs m rs' m' st cp,
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   exec_straight tge tf tc rs m c' rs' m' ->
-  cp = Genv.find_comp_in_genv ge (rs PC) ->
-  plus step tge (State st rs m cp) E0 (State st rs' m' cp).
+  (* cp = Genv.find_comp_in_genv ge (rs PC) -> *)
+  plus step tge (State st rs m cp) E0 (State st rs' m' (Genv.find_comp_in_genv ge (rs PC))).
 Proof.
   intros. inv H.
-  rewrite <- H2; simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto; simpl;
+  simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto; simpl;
     rewrite comp_transf_function; eauto.
   eapply exec_straight_steps_1; eauto.
   eapply transf_function_no_overflow; eauto.
@@ -632,6 +632,7 @@ Proof.
   intros. inversion H2. subst. monadInv H7.
   exploit H3; eauto. intros [rs2 [A [B C]]].
   exists (State s' rs2 m2' (comp_of f)); split.
+  replace (comp_of f) with (Genv.find_comp_in_genv ge (rs1 PC)).
   eapply exec_straight_exec; eauto.
   now rewrite <- H4; simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
   econstructor; eauto.
@@ -861,13 +862,26 @@ Opaque loadind.
         eapply find_instr_tail. rewrite <- H5; eauto.
         admit. admit.
         { intros ? V; inv V.
-          unfold exec_load. simpl. admit. }
+          unfold exec_load. simpl.
+          rewrite OFF_PC. rewrite LOAD. reflexivity. }
         { intros ? V; inv V. }
-        split.
+        { rewrite <- DST; split; intros; Simpl. }
+      + exploit exec_straight_steps_2; eauto. admit. admit. (* trivial *)
+        intros [ofs1 [? ?]].
+        exploit exec_straight_steps_1; eauto. admit. admit.
+        intros PLUS.
+        eexists; split.
+        eapply plus_trans.
+        eapply PLUS.
+        eapply plus_one. eapply exec_step_load_arg_int; eauto.
+        eapply find_instr_tail; eauto.
         admit. admit.
-      + eexists; split.
-        (* eapply exec_straight_exec. *) admit.
-        admit.
+        { intros ? V; inv V.
+          unfold exec_load. simpl.
+          rewrite OFF_PC. rewrite LOAD. reflexivity. }
+        { intros ? V; inv V. }
+        { traceEq. }
+        { rewrite <- DST; split; intros; Simpl. }
     - admit. (* idem but with floats *)
   }
 
