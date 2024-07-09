@@ -1323,27 +1323,6 @@ Proof.
   eapply indexed_load_access_correct; eauto with asmgen.
 Qed.
 
-
-(* Lemma loadarg_correct: *)
-(*   forall (base: ireg) ofs ty dst k c (rs: regset) m v, *)
-(*   loadarg base ofs ty dst k = OK c -> *)
-(*   Mem.loadv (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) (comp_of fn) = Some v -> *)
-(*   base <> X31 -> *)
-(*   exists rs', *)
-(*      step ge fn c rs m k rs' m *)
-(*   /\  rs'#(preg_of dst) = v *)
-(*   /\ forall r, r <> PC -> r <> X31 -> r <> preg_of dst -> rs'#r = rs#r. *)
-(* Proof. *)
-(*   intros until v; intros TR LOAD NOT31. *)
-(*   assert (A: exists mk_instr, *)
-(*                 c = indexed_memory_access mk_instr base ofs k *)
-(*              /\ (forall base' ofs', *)
-(*                    sig_call (mk_instr base' ofs') = None /\ is_return (mk_instr base' ofs') = false)). *)
-(*   { unfold loadarg in TR. destruct ty, (preg_of dst); inv TR; econstructor; (split; [| split]); eauto. } *)
-(*   destruct A as (mk_instr & B & C). subst c. *)
-(*   eapply indexed_load_access_correct; eauto with asmgen. *)
-(* Qed. *)
-
 Lemma storeind_correct:
   forall (base: ireg) ofs ty src k c (rs: regset) m m',
   storeind src base ofs ty k = OK c ->

@@ -824,19 +824,82 @@ Proof.
   intros [v' [C D]].
 Opaque loadind.
   destruct ep.
+
+  assert (loadarg_priv_correct:
+           forall (st: stack) (cp: compartment) (base : ireg) (ofs ofs0 : ptrofs) (ty : typ) (dst : mreg) (k : code) (c : list instruction)
+    (rs: regset) (m: mem) (v : val) (b: block) (f: function),
+
+  forall (ATPC: rs PC = Vptr b ofs0),
+  forall (FD: Genv.find_def tge b = Some (Gfun (Internal f))),
+  forall (CODE: code_tail (Ptrofs.unsigned ofs0) (fn_code f) c),
+
+
+  forall (H: loadarg base ofs ty dst k = OK c),
+  forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs base) ofs) (comp_of f) = Some v),
+  base <> X31 ->
+  exists rs' : regset,
+    plus step tge (State st rs m cp) E0 (State st rs' m (comp_of f)) /\
+    rs' (preg_of dst) = v /\ (forall r : preg, r <> PC -> r <> X31 -> r <> preg_of dst -> rs' r = rs r)).
+  { clear -prog TRANSF ge.
+    intros.
+
+    assert ((exists ird, c =
+                      indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inl ird) i o) base ofs k
+                    /\ preg_of dst = ird) \/
+              (exists frd, c =
+                        indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inr frd) i o) base ofs k
+                      /\ preg_of dst = frd))
+      as [[ird [? DST]] | [frd [? DST]]]; try subst c.
+    { clear -H.
+      unfold loadarg in *.
+      destruct ty, (preg_of dst); simpl in *; inv H; eauto. }
+    - exploit (indexed_memory_access_correct tge f (Pld_arg (chunk_of_type ty) (inl ird)) base ofs k rs m); eauto.
+      intros [base' [ofs' [rs' [STR_OPT [OFF_PC REGVALS]]]]].
+      inv STR_OPT.
+      + eexists; split.
+        eapply plus_one. eapply exec_step_load_arg_int; eauto.
+        eapply find_instr_tail. rewrite <- H5; eauto.
+        admit. admit.
+        { intros ? V; inv V.
+          unfold exec_load. simpl. admit. }
+        { intros ? V; inv V. }
+        split.
+        admit. admit.
+      + eexists; split.
+        (* eapply exec_straight_exec. *) admit.
+        admit.
+    - admit. (* idem but with floats *)
+  }
+
 (* X30 contains parent *)
   + inv AT. monadInv H5. simpl in *.
     inv STACKS'.
     * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
-    * left; eexists; split. eapply plus_one.
-
-      eapply exec_step_load_arg_int with (ra := X30); eauto.
-      admit. (* ok *)
-      admit. (* ok *)
-      { admit. }
-      { admit. }
-      { admit. } (* ok *)
-      { admit. } (* ok *)
+    * (* internal call *)
+      assert ((exists ird, tc =
+                       indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inl ird) i o) X30 ofs x) \/
+               (exists frd, tc =
+                       indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inr frd) i o) X30 ofs x))
+               as [[ird ?] | [frd ?]]; try subst tc.
+      { clear -EQ1.
+        unfold loadarg in *.
+        destruct ty, (preg_of dst); simpl in *; inv EQ1; eauto. }
+      -- left; eexists; split.
+         eapply plus_one.
+         eapply exec_step_load_arg_int with (ra := X30) (rd := inl ird) (ch := chunk_of_type ty) (o := Ofsimm ofs)
+                                            (f := tf); eauto.
+         { eapply Genv.find_funct_ptr_iff.
+           eapply functions_transl; eauto. }
+         { eapply find_instr_tail; eauto.
+           admit. (* ok *) }
+         { admit. }
+         { admit. }
+         { intros ? V; inv V.
+           unfold exec_load.
+           rewrite DXP. destruct f0; destruct ISEMPTY; subst. simpl in *.
+           admit.
+           reflexivity. }
+         { intros ? V; inv V. } (* ok *)
       { rewrite <- comp_transf_function; eauto.
         eapply match_states_intro with (rs := rs0 # (preg_of dst) <- v'); eauto. admit. admit.
         eapply agree_set_mreg. eapply agree_set_mreg; eauto. Simpl.
@@ -845,7 +908,8 @@ Opaque loadind.
         simpl; intros. Simpl. }
         (* rewrite R; auto with asmgen. *)
         (* apply preg_of_not_X30; auto. *)
-    * inv H10; eauto. simpl in *.
+    * (* cross-compartment call *)
+      inv H10; eauto. simpl in *.
       left; eexists; split. eapply plus_one.
       eapply exec_step_load_arg_cross. eauto.
       admit. (* ok *)
@@ -860,6 +924,7 @@ Opaque loadind.
       { admit. }
       { admit. }
   + admit.
+    loadind_priv_correct
   (* left; eapply exec_straight_steps; eauto; intros. monadInv TR. *)
   (* exploit loadind_priv_correct. eexact EQ. *)
   (* instantiate (2 := rs0). rewrite DXP; eauto. *)
