@@ -533,6 +533,15 @@ Definition val_of_stackframe (f: Mach.stackframe) :=
   | Mach.Stackframe b _ _ ofs _ _ _ => Vptr b ofs
   end.
 
+Definition stack_wf (s: stack) :=
+  Forall (fun (st: stackframe) => match st with
+                 | Stackframe b _ _ sp ofs db dsp =>
+                     db <> b /\ match sp with
+                              | Vptr b1 _ => b1 <> dsp
+                              | _ => True
+                              end
+                 end) s.
+
 Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop :=
 | match_stacks_nil: forall cp,
       match_stacks cp nil nil
@@ -563,6 +572,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge (Mach.fn_sig f) s)
         (STACKS': match_stacks (comp_of f) s s')
+        (STACK_WF: stack_wf s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
@@ -574,6 +584,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig cp cp' f
         (STACKS: match_stack ge (Mach.fn_sig f) s)
         (STACKS_COMP: Genv.find_comp_of_block ge fb = cp)
+        (STACK_WF: stack_wf s')
         (EXT: Genv.find_funct_ptr ge fb = Some (Internal f))
         (SIG: sig = Mach.fn_sig f)
         (STACKS': match_stacks cp s s')
@@ -587,6 +598,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig cp cp' ef
         (STACKS: match_stack ge (ef_sig ef) s)
         (STACKS_COMP: Genv.find_comp_of_block ge fb = cp)
+        (STACK_WF: stack_wf s')
         (EXT: Genv.find_funct_ptr ge fb = Some (External ef))
         (SIG: sig = ef_sig ef)
         (SIG: Mach.parent_signature s = ef_sig ef)
@@ -604,6 +616,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
     forall s s' ms m m' rs cp sg
       (STACKS: match_stack ge sg s)
       (STACKS': match_stacks cp s s')
+      (STACK_WF: stack_wf s')
       (MEXT: Mem.extends m m')
       (AG: agree ms (dummy_parent_sp s) rs)
       (ATPC: rs PC = dummy_parent_ra s)
@@ -616,6 +629,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
 Lemma exec_straight_steps:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
   match_stack ge (Mach.fn_sig f) s ->
+  forall (STACK_WF: stack_wf s'),
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
@@ -642,6 +656,7 @@ Qed.
 Lemma exec_straight_steps_goto:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge (Mach.fn_sig f) s ->
+  forall (STACK_WF: stack_wf s'),
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
@@ -688,6 +703,7 @@ Qed.
 Lemma exec_straight_opt_steps_goto:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge (Mach.fn_sig f) s ->
+  forall (STACK_WF: stack_wf s'),
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
@@ -860,7 +876,8 @@ Opaque loadind.
       + eexists; split.
         eapply plus_one. eapply exec_step_load_arg_int; eauto.
         eapply find_instr_tail. rewrite <- H5; eauto.
-        admit. admit.
+        admit. (* ok *)
+        { admit. }
         { intros ? V; inv V.
           unfold exec_load. simpl.
           rewrite OFF_PC. rewrite LOAD. reflexivity. }
@@ -875,7 +892,8 @@ Opaque loadind.
         eapply PLUS.
         eapply plus_one. eapply exec_step_load_arg_int; eauto.
         eapply find_instr_tail; eauto.
-        admit. admit.
+        admit. (* ok *)
+        { admit. }
         { intros ? V; inv V.
           unfold exec_load. simpl.
           rewrite OFF_PC. rewrite LOAD. reflexivity. }
