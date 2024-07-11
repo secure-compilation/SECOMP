@@ -843,51 +843,75 @@ Opaque loadind.
   destruct ep.
 
   assert (loadarg_priv_correct:
-           forall (st: stack) (cp: compartment) (base : ireg) (ofs ofs0 : ptrofs) (ty : typ) (dst : mreg) (k : code) (c : list instruction)
-    (rs: regset) (m: mem) (v : val) (b: block) (f: function),
+           forall (st: stack) (cp: compartment) (ofs: ptrofs) (ty : typ) (dst : mreg)
+             (tc : list instruction) (rs: regset) (m: mem) (v : val) (b: block) (f: Mach.function) (tf: function),
+  forall (AT: transl_code_at_pc ge (rs PC) b f (Mgetparam ofs ty dst :: c) true tf tc),
 
-  forall (ATPC: rs PC = Vptr b ofs0),
-  forall (FD: Genv.find_def tge b = Some (Gfun (Internal f))),
-  forall (CODE: code_tail (Ptrofs.unsigned ofs0) (fn_code f) c),
-
-
-  forall (H: loadarg base ofs ty dst k = OK c),
-  forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs base) ofs) (comp_of f) = Some v),
-  base <> X31 ->
-  exists rs' : regset,
-    plus step tge (State st rs m cp) E0 (State st rs' m (comp_of f)) /\
-    rs' (preg_of dst) = v /\ (forall r : preg, r <> PC -> r <> X31 -> r <> preg_of dst -> rs' r = rs r)).
+  forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) top = Some v),
+  exists (rs' : regset),
+    plus step tge (State st rs m cp) E0 (State st rs' m (comp_of tf)) /\
+    rs' (preg_of dst) = v /\ (forall r : preg, r <> PC -> r <> X31 -> r <> preg_of dst -> rs' r = rs r)
+         /\ (exists tc', transl_code f c (negb (mreg_eq dst R30)) = OK tc' /\
+                    transl_code_at_pc ge (rs' PC) b f c (negb (mreg_eq dst R30)) tf tc')).
   { clear -prog TRANSF ge.
     intros.
 
-    assert ((exists ird, c =
-                      indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inl ird) i o) base ofs k
+    assert (exists ofs0 k,
+               rs PC = Vptr b ofs0 /\
+                 Genv.find_def tge b = Some (Gfun (Internal tf)) /\
+               code_tail (Ptrofs.unsigned ofs0) (fn_code tf) tc /\
+                   loadarg X30 ofs ty dst k = OK tc) as [ofs0 [k [ATPC [FD [CODE H]]]]].
+    { inv AT. monadInv H2. eapply functions_transl, Genv.find_funct_ptr_iff in H0; eauto 6. }
+
+    assert ((exists ird, tc =
+                      indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inl ird) i o) X30 ofs k
                     /\ preg_of dst = ird) \/
-              (exists frd, c =
-                        indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inr frd) i o) base ofs k
+              (exists frd, tc =
+                        indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inr frd) i o) X30 ofs k
                       /\ preg_of dst = frd))
-      as [[ird [? DST]] | [frd [? DST]]]; try subst c.
+      as [[ird [? DST]] | [frd [? DST]]]; try subst tc.
     { clear -H.
       unfold loadarg in *.
       destruct ty, (preg_of dst); simpl in *; inv H; eauto. }
-    - exploit (indexed_memory_access_correct tge f (Pld_arg (chunk_of_type ty) (inl ird)) base ofs k rs m); eauto.
+    - exploit (indexed_memory_access_correct tge tf (Pld_arg (chunk_of_type ty) (inl ird)) X30 ofs k rs m); try now eauto.
       intros [base' [ofs' [rs' [STR_OPT [OFF_PC REGVALS]]]]].
       inv STR_OPT.
-      + eexists; split.
+      + eexists; split; [| split; [| split]].
         eapply plus_one. eapply exec_step_load_arg_int; eauto.
-        eapply find_instr_tail. rewrite <- H5; eauto.
+        eapply find_instr_tail. rewrite <- H4; eauto.
         admit. (* ok *)
         { admit. }
         { intros ? V; inv V.
-          unfold exec_load. simpl.
+          unfold exec_load.
           rewrite OFF_PC. rewrite LOAD. reflexivity. }
         { intros ? V; inv V. }
-        { rewrite <- DST; split; intros; Simpl. }
-      + exploit exec_straight_steps_2; eauto. admit. admit. (* trivial *)
+        { rewrite <- DST; Simpl. }
+        { intros; Simpl. }
+        { inv AT. monadInv H3.
+          eexists; split; eauto.
+          Simpl. rewrite <- H0; simpl. constructor; auto.
+          assert (x = k) as ->.
+          { unfold loadarg in *. destruct ty; destruct preg_of; try congruence;
+              inv EQ1;
+              unfold indexed_memory_access in *.
+            all: destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence. }
+          unfold indexed_memory_access in *.
+          destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence.
+          eapply code_tail_next_int; eauto.
+          eapply transf_function_no_overflow; eauto.
+          eapply code_tail_next_int; eauto.
+          eapply transf_function_no_overflow; eauto. }
+      + exploit exec_straight_steps_2; eauto.
+        eapply transf_function_no_overflow; inv AT; eauto.
+        eapply Genv.find_funct_ptr_iff; eauto.
         intros [ofs1 [? ?]].
-        exploit exec_straight_steps_1; eauto. admit. admit.
+        exploit exec_straight_steps_1; eauto.
+        eapply transf_function_no_overflow; inv AT; eauto.
+        eapply Genv.find_funct_ptr_iff; eauto.
         intros PLUS.
-        eexists; split.
+        exploit exec_straight_at; eauto.
+        { inv AT. monadINv H6. }
+        eexists; split; [| split; [| split]].
         eapply plus_trans.
         eapply PLUS.
         eapply plus_one. eapply exec_step_load_arg_int; eauto.
@@ -895,13 +919,37 @@ Opaque loadind.
         admit. (* ok *)
         { admit. }
         { intros ? V; inv V.
-          unfold exec_load. simpl.
+          unfold exec_load.
           rewrite OFF_PC. rewrite LOAD. reflexivity. }
         { intros ? V; inv V. }
         { traceEq. }
-        { rewrite <- DST; split; intros; Simpl. }
+        { rewrite <- DST; Simpl. }
+        { intros; Simpl. }
+
     - admit. (* idem but with floats *)
   }
+
+  + inv STACKS'.
+    * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
+    * exploit loadarg_priv_correct; eauto.
+      rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; eauto.
+      intros [rs' [PLUS [rs'_dst rs'_others]]].
+      left; eexists; split.
+      eapply PLUS.
+      { inv AT. rewrite <- comp_transf_function; eauto.
+        monadInv H7.
+        eapply match_states_intro with (rs := rs'); eauto.
+        econstructor; eauto.
+        admit.
+
+
+        eapply agree_set_mreg. eapply agree_set_mreg; eauto.
+        congruence. auto with asmgen.
+        instantiate (1 := (negb (mreg_eq dst R30))).
+        intros. rewrite rs'_others; auto using preg_of_not_X30; try congruence. }
+
+
+
 
 (* X30 contains parent *)
   + inv AT. monadInv H5. simpl in *.
