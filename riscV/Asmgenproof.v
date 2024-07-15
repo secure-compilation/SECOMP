@@ -542,36 +542,40 @@ Definition stack_wf (s: stack) :=
                               end
                  end) s.
 
-Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop :=
-| match_stacks_nil: forall cp,
-      match_stacks cp nil nil
+Inductive match_stacks: compartment -> mem -> list Mach.stackframe -> stack -> Prop :=
+| match_stacks_nil: forall cp m,
+      match_stacks cp m nil nil
 | match_stacks_intra_compartment:
     (* Intra-compartment calls create a new frame in the source, but not the target *)
-    forall cp cp' s s' f,
-    match_stacks cp s s' ->
+    forall cp cp' m s s' f,
+    match_stacks cp m s s' ->
     Mach.call_comp ge (f :: s) = cp -> (* meaning, we are staying in the same
                                                compartment *)
     forall (ISEMPTY: match f with
     | Mach.Stackframe _ _ _ _ _ dra dsp => dra = None /\ dsp = None
      end),
+    forall (ACCESS: match f with
+               | Mach.Stackframe _ _ (Vptr b ofs) _ _ _ _ => Mem.block_compartment m b = cp
+               | _ => True
+               end),
     cp' ⊆ cp ->
-    match_stacks cp' (f :: s) s'
+    match_stacks cp' m (f :: s) s'
 | match_stacks_cross_compartment:
     (* Cross-compartment calls create a new frame in both the source and the target *)
-    forall cp cp' s s' f f',
-    match_stacks cp' s s' ->
+    forall cp cp' m s s' f f',
+    match_stacks cp' m s s' ->
     Mach.call_comp ge (f :: s) = cp' ->
     call_comp tge (f' :: s') = cp' ->
     cp ⊈ cp' ->
     match_stackframe f f' ->
-    match_stacks cp (f :: s) (f' :: s')
+    match_stacks cp m (f :: s) (f' :: s')
 .
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s s' fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge (Mach.fn_sig f) s)
-        (STACKS': match_stacks (comp_of f) s s')
+        (STACKS': match_stacks (comp_of f) m s s')
         (STACK_WF: stack_wf s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
@@ -587,7 +591,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (STACK_WF: stack_wf s')
         (EXT: Genv.find_funct_ptr ge fb = Some (Internal f))
         (SIG: sig = Mach.fn_sig f)
-        (STACKS': match_stacks cp s s')
+        (STACKS': match_stacks cp m s s')
         (MEXT: Mem.extends m m')
         (AG: agree (Mach.undef_caller_save_regs_ext ms sig) (dummy_parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -602,7 +606,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (EXT: Genv.find_funct_ptr ge fb = Some (External ef))
         (SIG: sig = ef_sig ef)
         (SIG: Mach.parent_signature s = ef_sig ef)
-        (STACKS': match_stacks cp s s')
+        (STACKS': match_stacks cp m s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (dummy_parent_sp s) rs)
         (EQ: dummy_parent_sp s = parent_sp s)
@@ -615,7 +619,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_return:
     forall s s' ms m m' rs cp sg
       (STACKS: match_stack ge sg s)
-      (STACKS': match_stacks cp s s')
+      (STACKS': match_stacks cp m s s')
       (STACK_WF: stack_wf s')
       (MEXT: Mem.extends m m')
       (AG: agree ms (dummy_parent_sp s) rs)
@@ -633,7 +637,7 @@ Lemma exec_straight_steps:
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
-  forall (STACKS: match_stacks (comp_of f) s s'),
+  forall (STACKS: match_stacks (comp_of f) m2 s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
@@ -662,7 +666,7 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (comp_of f) s s'),
+  forall (STACKS: match_stacks (comp_of f) m2 s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -709,7 +713,7 @@ Lemma exec_straight_opt_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (comp_of f) s s'),
+  forall (STACKS: match_stacks (comp_of f) m2 s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
