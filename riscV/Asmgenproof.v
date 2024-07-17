@@ -790,6 +790,22 @@ Ltac unfold_find_comp_in_genv A R :=
   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ R) in A;
   injection A as A.
 
+Lemma storev_match_stacks: forall ch m dst src cp m',
+    Mem.storev ch m dst src cp = Some m' ->
+    forall cp' s s',
+      match_stacks cp' m s s' ->
+      match_stacks cp' m' s s'.
+Proof.
+  intros ch m dst src cp m' H cp' s s' MS.
+  induction MS.
+  - now constructor.
+  - econstructor; eauto.
+    destruct dst; simpl in *; try congruence.
+    destruct f as [? ? [] ? ? ? ?]; try now auto.
+    erewrite Mem.store_block_compartment; eauto.
+  - eapply match_stacks_cross_compartment; eauto.
+Qed.
+
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
@@ -824,6 +840,7 @@ Proof.
   unfold store_stack in H.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
+  exploit (storev_match_stacks (chunk_of_type ty) m); eauto. intros C.
   left; eapply exec_straight_steps; eauto.
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
   inv AT.
@@ -887,7 +904,10 @@ Opaque loadind.
         { admit. }
         { intros ? V; inv V.
           unfold exec_load.
-          rewrite OFF_PC. rewrite LOAD. reflexivity. }
+          rewrite OFF_PC.
+          assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs' X30) ofs) (comp_of tf) =
+                    Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs' X30) ofs) top) by admit.
+          rewrite H0, LOAD. reflexivity. }
         { intros ? V; inv V. }
         { rewrite <- DST; Simpl. }
         { intros; Simpl. }
@@ -914,7 +934,10 @@ Opaque loadind.
         eapply Genv.find_funct_ptr_iff; eauto.
         intros PLUS.
         exploit exec_straight_at; eauto.
-        { inv AT. monadINv H6. }
+        { inv AT. monadInv H6.
+          eauto. admit. }
+        intros ?.
+
         eexists; split; [| split; [| split]].
         eapply plus_trans.
         eapply PLUS.
@@ -924,11 +947,16 @@ Opaque loadind.
         { admit. }
         { intros ? V; inv V.
           unfold exec_load.
-          rewrite OFF_PC. rewrite LOAD. reflexivity. }
+          rewrite OFF_PC.
+          (* rewrite LOAD. reflexivity. } *)
+          assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) (comp_of tf) =
+                    Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) top) by admit.
+          rewrite H4, LOAD. reflexivity. }
         { intros ? V; inv V. }
         { traceEq. }
         { rewrite <- DST; Simpl. }
         { intros; Simpl. }
+        { eexists; eauto. split. admit. Simpl. admit. }
 
     - admit. (* idem but with floats *)
   }
@@ -945,10 +973,8 @@ Opaque loadind.
         eapply match_states_intro with (rs := rs'); eauto.
         econstructor; eauto.
         admit.
-
-
         eapply agree_set_mreg. eapply agree_set_mreg; eauto.
-        congruence. auto with asmgen.
+        congruence. auto with asmgen. admit.
         instantiate (1 := (negb (mreg_eq dst R30))).
         intros. rewrite rs'_others; auto using preg_of_not_X30; try congruence. }
 
