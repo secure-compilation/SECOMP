@@ -933,11 +933,9 @@ Opaque loadind.
         eapply transf_function_no_overflow; inv AT; eauto.
         eapply Genv.find_funct_ptr_iff; eauto.
         intros PLUS.
-        exploit exec_straight_at; eauto.
-        { inv AT. monadInv H6.
-          eauto. admit. }
-        intros ?.
-
+        (* exploit exec_straight_at; eauto. *)
+        (* { inv AT. monadInv H6. *)
+        (*   admit. } *)
         eexists; split; [| split; [| split]].
         eapply plus_trans.
         eapply PLUS.
@@ -951,13 +949,14 @@ Opaque loadind.
           (* rewrite LOAD. reflexivity. } *)
           assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) (comp_of tf) =
                     Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) top) by admit.
-          rewrite H4, LOAD. reflexivity. }
+          rewrite H3, LOAD. reflexivity. }
         { intros ? V; inv V. }
         { traceEq. }
         { rewrite <- DST; Simpl. }
         { intros; Simpl. }
-        { eexists; eauto. split. admit. Simpl. admit. }
-
+        { exists k. split.
+          - admit.
+          - Simpl. admit. }
     - admit. (* idem but with floats *)
   }
 
@@ -965,76 +964,20 @@ Opaque loadind.
     * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
     * exploit loadarg_priv_correct; eauto.
       rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; eauto.
-      intros [rs' [PLUS [rs'_dst rs'_others]]].
+      intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply PLUS.
       { inv AT. rewrite <- comp_transf_function; eauto.
         monadInv H7.
         eapply match_states_intro with (rs := rs'); eauto.
         econstructor; eauto.
-        admit.
         eapply agree_set_mreg. eapply agree_set_mreg; eauto.
-        congruence. auto with asmgen. admit.
-        instantiate (1 := (negb (mreg_eq dst R30))).
+        congruence. auto with asmgen.
         intros. rewrite rs'_others; auto using preg_of_not_X30; try congruence. }
-
-
-
+    * admit.
 
 (* X30 contains parent *)
-  + inv AT. monadInv H5. simpl in *.
-    inv STACKS'.
-    * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
-    * (* internal call *)
-      assert ((exists ird, tc =
-                       indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inl ird) i o) X30 ofs x) \/
-               (exists frd, tc =
-                       indexed_memory_access (fun (i : ireg) (o : offset) => Pld_arg (chunk_of_type ty) (inr frd) i o) X30 ofs x))
-               as [[ird ?] | [frd ?]]; try subst tc.
-      { clear -EQ1.
-        unfold loadarg in *.
-        destruct ty, (preg_of dst); simpl in *; inv EQ1; eauto. }
-      -- left; eexists; split.
-         eapply plus_one.
-         eapply exec_step_load_arg_int with (ra := X30) (rd := inl ird) (ch := chunk_of_type ty) (o := Ofsimm ofs)
-                                            (f := tf); eauto.
-         { eapply Genv.find_funct_ptr_iff.
-           eapply functions_transl; eauto. }
-         { eapply find_instr_tail; eauto.
-           admit. (* ok *) }
-         { admit. }
-         { admit. }
-         { intros ? V; inv V.
-           unfold exec_load.
-           rewrite DXP. destruct f0; destruct ISEMPTY; subst. simpl in *.
-           admit.
-           reflexivity. }
-         { intros ? V; inv V. } (* ok *)
-      { rewrite <- comp_transf_function; eauto.
-        eapply match_states_intro with (rs := rs0 # (preg_of dst) <- v'); eauto. admit. admit.
-        eapply agree_set_mreg. eapply agree_set_mreg; eauto. Simpl.
-        (* congruence. auto with asmgen. *)
-        simpl; intros. Simpl.
-        simpl; intros. Simpl. }
-        (* rewrite R; auto with asmgen. *)
-        (* apply preg_of_not_X30; auto. *)
-    * (* cross-compartment call *)
-      inv H10; eauto. simpl in *.
-      left; eexists; split. eapply plus_one.
-      eapply exec_step_load_arg_cross. eauto.
-      admit. (* ok *)
-      admit. (* ok *)
-      reflexivity.
-      eauto.
-      reflexivity.
-      admit.
-      simpl. { admit. }
-      { simpl. admit. }
-      { admit. }
-      { admit. }
-      { admit. }
   + admit.
-    loadind_priv_correct
   (* left; eapply exec_straight_steps; eauto; intros. monadInv TR. *)
   (* exploit loadind_priv_correct. eexact EQ. *)
   (* instantiate (2 := rs0). rewrite DXP; eauto. *)
@@ -1113,6 +1056,7 @@ Local Transparent destroyed_by_op.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [C D]].
+  exploit (storev_match_stacks chunk m); eauto. intros E.
   left; eapply exec_straight_steps; eauto.
   inv AT.
   unfold Genv.find_comp_of_block in C; unfold Genv.find_funct_ptr in FIND.
@@ -1195,6 +1139,7 @@ Local Transparent destroyed_by_op.
       eapply agree_sp_def; eauto.
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
+        admit.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). auto. }
       simpl.
       { constructor.
@@ -1221,6 +1166,7 @@ Local Transparent destroyed_by_op.
       eapply agree_sp_def; eauto.
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
+        admit.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). auto. }
       simpl.
       { constructor.
@@ -1295,6 +1241,7 @@ Local Transparent destroyed_by_op.
     eapply agree_sp_def; eauto.
     { econstructor. eauto. simpl.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
+      admit.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
       auto. }
     simpl.
@@ -1316,6 +1263,7 @@ Local Transparent destroyed_by_op.
     eapply agree_sp_def; eauto.
     { econstructor. eauto. simpl.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
+      admit.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
       auto. }
     simpl.
