@@ -542,40 +542,36 @@ Definition stack_wf (s: stack) :=
                               end
                  end) s.
 
-Inductive match_stacks: compartment -> mem -> list Mach.stackframe -> stack -> Prop :=
-| match_stacks_nil: forall cp m,
-      match_stacks cp m nil nil
+Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop :=
+| match_stacks_nil: forall cp,
+      match_stacks cp nil nil
 | match_stacks_intra_compartment:
     (* Intra-compartment calls create a new frame in the source, but not the target *)
-    forall cp cp' m s s' f,
-    match_stacks cp m s s' ->
+    forall cp cp' s s' f,
+    match_stacks cp s s' ->
     Mach.call_comp ge (f :: s) = cp -> (* meaning, we are staying in the same
                                                compartment *)
     forall (ISEMPTY: match f with
     | Mach.Stackframe _ _ _ _ _ dra dsp => dra = None /\ dsp = None
      end),
-    forall (ACCESS: match f with
-               | Mach.Stackframe _ _ (Vptr b ofs) _ _ _ _ => Mem.block_compartment m b = cp
-               | _ => True
-               end),
     cp' ⊆ cp ->
-    match_stacks cp' m (f :: s) s'
+    match_stacks cp' (f :: s) s'
 | match_stacks_cross_compartment:
     (* Cross-compartment calls create a new frame in both the source and the target *)
-    forall cp cp' m s s' f f',
-    match_stacks cp' m s s' ->
+    forall cp cp' s s' f f',
+    match_stacks cp' s s' ->
     Mach.call_comp ge (f :: s) = cp' ->
     call_comp tge (f' :: s') = cp' ->
     cp ⊈ cp' ->
     match_stackframe f f' ->
-    match_stacks cp m (f :: s) (f' :: s')
+    match_stacks cp (f :: s) (f' :: s')
 .
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s s' fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge (Mach.fn_sig f) s)
-        (STACKS': match_stacks (comp_of f) m s s')
+        (STACKS': match_stacks (comp_of f) s s')
         (STACK_WF: stack_wf s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
@@ -591,7 +587,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (STACK_WF: stack_wf s')
         (EXT: Genv.find_funct_ptr ge fb = Some (Internal f))
         (SIG: sig = Mach.fn_sig f)
-        (STACKS': match_stacks cp m s s')
+        (STACKS': match_stacks cp s s')
         (MEXT: Mem.extends m m')
         (AG: agree (Mach.undef_caller_save_regs_ext ms sig) (dummy_parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -606,7 +602,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (EXT: Genv.find_funct_ptr ge fb = Some (External ef))
         (SIG: sig = ef_sig ef)
         (SIG: Mach.parent_signature s = ef_sig ef)
-        (STACKS': match_stacks cp m s s')
+        (STACKS': match_stacks cp s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (dummy_parent_sp s) rs)
         (EQ: dummy_parent_sp s = parent_sp s)
@@ -619,7 +615,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_return:
     forall s s' ms m m' rs cp sg
       (STACKS: match_stack ge sg s)
-      (STACKS': match_stacks cp m s s')
+      (STACKS': match_stacks cp s s')
       (STACK_WF: stack_wf s')
       (MEXT: Mem.extends m m')
       (AG: agree ms (dummy_parent_sp s) rs)
@@ -637,7 +633,7 @@ Lemma exec_straight_steps:
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
-  forall (STACKS: match_stacks (comp_of f) m2 s s'),
+  forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
@@ -666,7 +662,7 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (comp_of f) m2 s s'),
+  forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -713,7 +709,7 @@ Lemma exec_straight_opt_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (comp_of f) m2 s s'),
+  forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -790,22 +786,6 @@ Ltac unfold_find_comp_in_genv A R :=
   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ R) in A;
   injection A as A.
 
-Lemma storev_match_stacks: forall ch m dst src cp m',
-    Mem.storev ch m dst src cp = Some m' ->
-    forall cp' s s',
-      match_stacks cp' m s s' ->
-      match_stacks cp' m' s s'.
-Proof.
-  intros ch m dst src cp m' H cp' s s' MS.
-  induction MS.
-  - now constructor.
-  - econstructor; eauto.
-    destruct dst; simpl in *; try congruence.
-    destruct f as [? ? [] ? ? ? ?]; try now auto.
-    erewrite Mem.store_block_compartment; eauto.
-  - eapply match_stacks_cross_compartment; eauto.
-Qed.
-
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
@@ -840,7 +820,6 @@ Proof.
   unfold store_stack in H.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
-  exploit (storev_match_stacks (chunk_of_type ty) m); eauto. intros C.
   left; eapply exec_straight_steps; eauto.
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
   inv AT.
@@ -900,14 +879,16 @@ Opaque loadind.
       + eexists; split; [| split; [| split]].
         eapply plus_one. eapply exec_step_load_arg_int; eauto.
         eapply find_instr_tail. rewrite <- H4; eauto.
-        admit. (* ok *)
-        { admit. }
+        { unfold indexed_memory_access in H4.
+          destruct Archi.ptr64.
+          - destruct make_immed64; inv H4; try congruence.
+            admit. (* bring assumption from context into sublemma *)
+          - destruct make_immed32; inv H4; try congruence.
+            admit. }
+        { admit. (* bring assumption from context *) }
         { intros ? V; inv V.
           unfold exec_load.
-          rewrite OFF_PC.
-          assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs' X30) ofs) (comp_of tf) =
-                    Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs' X30) ofs) top) by admit.
-          rewrite H0, LOAD. reflexivity. }
+          rewrite OFF_PC. rewrite LOAD. reflexivity. }
         { intros ? V; inv V. }
         { rewrite <- DST; Simpl. }
         { intros; Simpl. }
@@ -945,11 +926,7 @@ Opaque loadind.
         { admit. }
         { intros ? V; inv V.
           unfold exec_load.
-          rewrite OFF_PC.
-          (* rewrite LOAD. reflexivity. } *)
-          assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) (comp_of tf) =
-                    Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) top) by admit.
-          rewrite H3, LOAD. reflexivity. }
+          now rewrite OFF_PC, LOAD. }
         { intros ? V; inv V. }
         { traceEq. }
         { rewrite <- DST; Simpl. }
@@ -964,6 +941,9 @@ Opaque loadind.
     * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
     * exploit loadarg_priv_correct; eauto.
       rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; eauto.
+      rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; simpl in *.
+      destruct sp0; simpl in *; try congruence. admit.
+
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply PLUS.

@@ -2296,6 +2296,10 @@ Proof.
   simpl. simpl in A.
 
   eapply Mem.load_Some_None. eauto.
+  { unfold transf_function in TRANSL.
+    destruct negb; try congruence; destruct zlt; try congruence. inv TRANSL; simpl.
+    clear -H. revert H. unfold offset_arg.
+    admit. }
   econstructor; eauto with coqlib. econstructor; eauto.
   apply agree_regs_set_reg. apply agree_regs_set_reg. auto. auto.
   erewrite agree_incoming by eauto. exact B.
@@ -2740,7 +2744,7 @@ Proof.
   all: try exact None.
   exact (Linear.funsig f').
   exact (Linear.funsig f').
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->

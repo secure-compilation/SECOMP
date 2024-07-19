@@ -1418,8 +1418,6 @@ Definition is_return i :=
     | _, _ => True
     end.
 
-
-
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
       forall b ofs f i rs m rs' m' b' ofs' st cp,
@@ -1439,9 +1437,12 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
 
-      (asm_parent_dummy_sp st = Vptr dsp dosp) ->
-      (rs ra = Vptr dsp o') ->
-      (asm_parent_sp st = sp) ->
+      (* Loading from dummy stack pointer *)
+      asm_parent_dummy_sp st = Vptr dsp dosp ->
+      rs ra = Vptr dsp o' ->
+     
+      (* gets replaced with actual stack pointer *)
+      asm_parent_sp st = sp ->
       eval_offset o = Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs_arg) ->
 
       (In (One (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)) \/
@@ -1458,17 +1459,21 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State st rs m cp) E0 (State st rs' m (comp_of f))
 
   | exec_step_load_arg_int:
-      forall b ofs f ch rd ra rs m st cp dsp dosp o rs' m',
+      forall b ofs f ch rd ra rs m st cp sp o rs' m',
       rs PC = Vptr b ofs ->
       Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
 
-      (asm_parent_dummy_sp st = Vptr dsp dosp) ->
-      (forall o', rs ra <> Vptr dsp o') ->
+      (* load argument from stack pointer *)
+      rs ra = sp ->
+      asm_parent_sp st = sp ->
+
+      Stacklayout.is_valid_param_loc (fn_sig f) (eval_offset o) ->
+
       forall (EXECi: forall ird, rd = inl ird ->
-                       exec_load ch rs m ird ra o (comp_of f) false = Next rs' m'),
+                       exec_load ch rs m ird ra o (comp_of f) true = Next rs' m'),
       forall (EXECf: forall frd, rd = inr frd ->
-                       exec_load ch rs m frd ra o (comp_of f) false = Next rs' m'),
+                       exec_load ch rs m frd ra o (comp_of f) true = Next rs' m'),
 
       step (State st rs m cp) E0 (State st rs' m' (comp_of f))
 
@@ -1691,8 +1696,8 @@ intros; constructor; simpl; intros.
       admit.
     * exploit H11; eauto. exploit H26; eauto.
       admit.
-  + congruence.
-  + congruence.
+  + admit.
+  + admit.
   + split. constructor. auto.
     destruct rd0.
     * exploit EXECi; eauto. exploit EXECi0; eauto.

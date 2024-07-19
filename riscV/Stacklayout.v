@@ -15,6 +15,7 @@
 Require Import Coqlib.
 Require Import AST Memory Separation.
 Require Import Bounds.
+Require Import Integers Locations Conventions.
 
 Local Open Scope sep_scope.
 
@@ -147,3 +148,17 @@ Proof.
   split. apply align_divides; lia.
   apply Z.divide_add_r. apply align_divides; lia. apply Z.divide_refl.
 Qed.
+
+Variant is_valid_param_loc (sg: signature): ptrofs -> Prop :=
+  | valid_param_one: forall ofs ofs_arg ty,
+      ofs = Ptrofs.repr (fe_ofs_arg + 4 * ofs_arg) ->
+      In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+      is_valid_param_loc sg ofs
+  | valid_param_two_hi: forall ofs ofs_arg ty lo,
+      ofs = Ptrofs.repr (fe_ofs_arg + 4 * ofs_arg) ->
+      In (Twolong (S Incoming ofs_arg ty) lo) (loc_parameters sg) ->
+      is_valid_param_loc sg ofs
+  | valid_param_two_lo: forall ofs ofs_arg ty hi,
+      ofs = Ptrofs.repr (fe_ofs_arg + 4 * ofs_arg) ->
+      In (Twolong hi (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+      is_valid_param_loc sg ofs.
