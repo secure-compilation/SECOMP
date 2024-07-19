@@ -847,6 +847,8 @@ Opaque loadind.
              (tc : list instruction) (rs: regset) (m: mem) (v : val) (b: block) (f: Mach.function) (tf: function),
   forall (AT: transl_code_at_pc ge (rs PC) b f (Mgetparam ofs ty dst :: c) true tf tc),
 
+  forall (X30_has_sp: rs X30 = asm_parent_sp st),
+  forall (VALID_PARAM: Stacklayout.is_valid_param_loc (fn_sig tf) ofs),
   forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) top = Some v),
   exists (rs' : regset),
     plus step tge (State st rs m cp) E0 (State st rs' m (comp_of tf)) /\
@@ -876,19 +878,17 @@ Opaque loadind.
     - exploit (indexed_memory_access_correct tge tf (Pld_arg (chunk_of_type ty) (inl ird)) X30 ofs k rs m); try now eauto.
       intros [base' [ofs' [rs' [STR_OPT [OFF_PC REGVALS]]]]].
       inv STR_OPT.
-      + eexists; split; [| split; [| split]].
-        eapply plus_one. eapply exec_step_load_arg_int; eauto.
-        eapply find_instr_tail. rewrite <- H4; eauto.
+      + assert (base' = X30) as ->.
         { unfold indexed_memory_access in H4.
           destruct Archi.ptr64.
           - destruct make_immed64; inv H4; try congruence.
-            admit. (* bring assumption from context into sublemma *)
-          - destruct make_immed32; inv H4; try congruence.
-            admit. }
-        { admit. (* bring assumption from context *) }
+          - destruct make_immed32; inv H4; try congruence. }
+        assert (ofs = eval_offset tge ofs') as -> by admit.
+        eexists; split; [| split; [| split]].
+        eapply plus_one. eapply exec_step_load_arg_int; eauto.
+        eapply find_instr_tail. rewrite <- H4; eauto.
         { intros ? V; inv V.
-          unfold exec_load.
-          rewrite OFF_PC. rewrite LOAD. reflexivity. }
+          unfold exec_load. rewrite LOAD. reflexivity. }
         { intros ? V; inv V. }
         { rewrite <- DST; Simpl. }
         { intros; Simpl. }
@@ -941,9 +941,6 @@ Opaque loadind.
     * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
     * exploit loadarg_priv_correct; eauto.
       rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; eauto.
-      rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; simpl in *.
-      destruct sp0; simpl in *; try congruence. admit.
-
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply PLUS.
