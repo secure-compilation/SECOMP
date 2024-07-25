@@ -1056,6 +1056,7 @@ End STRAIGHTLINE.
 Section MATCH_STACK.
 
 Variable ge: Mach.genv.
+Variable m: mem.
 
 Inductive match_stack: signature -> list Mach.stackframe -> Prop :=
   | match_stack_nil: forall sg,
@@ -1064,6 +1065,7 @@ Inductive match_stack: signature -> list Mach.stackframe -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
+      forall (COMP_SP: Mem.val_compartment m sp = comp_of f),
       match_stack (Mach.fn_sig f) s ->
       match_stack sg (Mach.Stackframe fb sg sp ra c dra dsp :: s).
 

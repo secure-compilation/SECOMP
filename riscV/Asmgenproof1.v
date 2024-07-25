@@ -1513,7 +1513,7 @@ Lemma make_epilogue_correct:
   Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
   agree ms (Vptr stk soff) rs ->
   Mem.extends m tm ->
-  match_stack ge0 (Mach.fn_sig f) cs ->
+  match_stack ge0 m (Mach.fn_sig f) cs ->
   comp_of f = comp_of fn ->
   exists rs', exists tm',
      exec_straight ge fn (make_epilogue f k) rs tm k rs' tm'

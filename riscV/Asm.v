@@ -1459,21 +1459,21 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State st rs m cp) E0 (State st rs' m (comp_of f))
 
   | exec_step_load_arg_int:
-      forall b ofs f ch rd ra rs m st cp sp o rs' m',
+      forall b ofs f ch rd ra rs m st cp o rs' m',
       rs PC = Vptr b ofs ->
       Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
 
       (* load argument from stack pointer *)
-      rs ra = sp ->
-      asm_parent_sp st = sp ->
+      (* rs ra = sp -> *)
 
-      Stacklayout.is_valid_param_loc (fn_sig f) (eval_offset o) ->
+      (* asm_parent_sp st = sp -> *)
+      (* Stacklayout.is_valid_param_loc (fn_sig f) (Ptrofs.unsigned (eval_offset o)) -> *)
 
       forall (EXECi: forall ird, rd = inl ird ->
-                       exec_load ch rs m ird ra o (comp_of f) true = Next rs' m'),
+                       exec_load ch rs m ird ra o (comp_of f) false = Next rs' m'),
       forall (EXECf: forall frd, rd = inr frd ->
-                       exec_load ch rs m frd ra o (comp_of f) true = Next rs' m'),
+                       exec_load ch rs m frd ra o (comp_of f) false = Next rs' m'),
 
       step (State st rs m cp) E0 (State st rs' m' (comp_of f))
 
