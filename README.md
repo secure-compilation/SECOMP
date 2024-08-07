@@ -55,15 +55,10 @@ System requirements can be verified through CompCert's `configure` script
 
 ## Structure
 
-The development is currently split into six branches, which we are working on
+The development is currently split into four branches, which we are working on
 merging into a single release:
  - `ccs-submission`: compiler correctness proof and testing infrastructure (main)
-   + A modified version of the compiler with support for generation of
-     CHERI RISC-V code is available on the branch `secure-compilation-captest`
  - `ccs-backtranslation`: proof of back-translation
-   + A modified version of the compiler with support for systematic testing of
-     the compilation of the back-translation (Assumption 1) is available on
-     the branch `cross-external-call-removal-test-backtranslation`
  - `ccs-recomposition`: proof of recomposition
  - `secure-compilation`: proof of blame
 
@@ -202,10 +197,9 @@ the system's libc and the emulator's libc.
 
 ### Compiling compartmentalized programs with the capabilities backend
 
-For this part, build the modified compiler available under branch
-`secure-compilation-captest` following the general invocations of `configure`
-and `make`. One does not need to worry about linking, as only the compilation
-procedure is needed for this part.
+For this part, build the compiler on branch `ccs-submission` following the
+general invocations of `configure` and `make`. One does not need to worry about
+linking, as only the compilation procedure is needed for this part.
 
 To compile a compartmentalized program, invoke CompCert as follows, for instance
 for a simple compartmentalized addition example available at
@@ -256,8 +250,7 @@ to Clight: `backtranslation_proof`.
 
 ### Systematic testing the compilation of the back-translation (Assumption 1)
 
-For this part, build the modified compiler available under branch
-`cross-external-call-removal-test-backtranslation` following the general
+For this part, build the compiler on branch `ccs-submission` following the general
 invocations of `configure` and `make`. One does not need to worry about linking,
 as only the compilation procedure is needed for this part.
 
