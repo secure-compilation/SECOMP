@@ -1,18 +1,28 @@
 ## Overview
 
-This artifact contains the SECOMP formally secure compiler and its
-machine-checked security proofs in Coq, both of which are based on the CompCert
+This development contains the SECOMP formally secure compiler for compartmentalized C programs and its
+machine-checked security proofs in Coq. Both of these are based on the CompCert
 formally verified C compiler. The Coq development contains the proofs, theorems,
-and testing described in the paper, split into sub-folders that can be compiled
-and checked independently from the others.
+and testing described in the accompanying paper below.
 
 This README file contains detailed instructions on how to build, run and check
 the development. These can be done on most modern hardware, and depend only on
 OCaml, Coq, and some libraries that are available via the OCaml package manager
 OPAM. Additionally, some tests rely on the GCC RISC-V cross-compiler.
 
-Beyond the SECOMP sources, we also provide a virtual machine (VM) that has all
-these dependencies already installed. The `sudo` password of the VM is `secomp`.
+The permanently archived [artifact](https://doi.org/10.5281/zenodo.11007679)
+associated with the paper below contains not only the sources but also a virtual
+machine (VM) that has all these dependencies already installed.  The `sudo`
+password of the VM is `secomp`.  Instead of branches, the artifact is split into
+sub-folders that can be compiled and checked independently from the others.
+
+## Accompanying paper
+
+- Jérémy Thibault, Roberto Blanco, Dongjae Lee, Sven Argo, Arthur Azevedo de
+  Amorim, Aïna Linn Georges, Cătălin Hrițcu, and Andrew Tolmach.
+  **[SECOMP: Formally Secure Compilation of Compartmentalized C Programs](https://arxiv.org/abs/2401.16277)**.
+  In 25th ACM Conference on Computer and Communications Security (CCS). October 2024.
+  Extended version available as [arXiv:2401.16277](https://arxiv.org/abs/2401.16277).
 
 ## Requirements
 
