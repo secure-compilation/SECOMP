@@ -205,9 +205,9 @@ To compile a compartmentalized program, invoke CompCert as follows, for instance
 for a simple compartmentalized addition example available at
 `test/compartments/add.c`, run from the `test/compartments` folder:
 
-    [compartments]$ ../../ccomp -c add.c
+    [compartments]$ ../../ccomp -c -dcapasm add.c
 
-The compiler automatically produces an additional file, `out.cap_asm`, with the
+The compiler automatically produces an additional file, `add.cap_asm`, with the
 capability assembly code for the given program.
 
 Note that not all instructions are fully supported by the pretty-printer at the
