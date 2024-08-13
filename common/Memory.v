@@ -3538,12 +3538,13 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
       perm m1 b1 ofs k p ->
       perm m2 b2 (ofs + delta) k p;
       (* TODO: rename [mi_own] into [mi_access] *)
-    mi_own:
-      forall b1 b2 delta cp ofs p k,
+    mi_access:
+      forall b1 b2 delta ofs p k,
       f b1 = Some(b2, delta) ->
       perm m1 b1 ofs k p ->
-      can_access_block m1 b1 cp ->
-      can_access_block m2 b2 cp;
+      Mem.block_compartment m1 b1 = Mem.block_compartment m2 b2;
+      (* can_access_block m1 b1 cp -> *)
+      (* can_access_block m2 b2 cp; *)
     mi_align:
       forall b1 b2 delta chunk ofs p,
       f b1 = Some(b2, delta) ->
@@ -3555,6 +3556,21 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
       perm m1 b1 ofs Cur Readable ->
       memval_inject f (ZMap.get ofs m1.(mem_contents)#b1) (ZMap.get (ofs+delta) m2.(mem_contents)#b2)
   }.
+
+Lemma mi_own (f: meminj) (m1 m2: mem):
+  mem_inj f m1 m2 ->
+  forall b1 b2 delta cp ofs p k,
+    f b1 = Some(b2, delta) ->
+    perm m1 b1 ofs k p ->
+    can_access_block m1 b1 cp ->
+    can_access_block m2 b2 cp.
+Proof.
+  intros until k.
+  intros ? ?.
+  unfold can_access_block.
+  erewrite mi_access; eauto.
+Qed.
+
 
 (** Preservation of permissions *)
 
@@ -3738,10 +3754,11 @@ Proof.
   eapply perm_store_2; eauto.
 (* own *)
   intros.
-  simpl. rewrite <- (store_preserves_comp _ _ _ _ _ _ _ STORE); eauto.
-  eapply mi_own; try eassumption.
+  simpl.
+  rewrite <- (store_preserves_comp _ _ _ _ _ _ _ STORE); eauto.
+  simpl. rewrite <- (store_preserves_comp _ _ _ _ _ _ _ H0); eauto.
+  eapply mi_access; try eassumption.
   eapply perm_store_2; eauto.
-  simpl. erewrite (store_preserves_comp _ _ _ _ _ _ _ H0); eauto.
 (* align *)
   intros. eapply mi_align with (ofs := ofs0) (p := p); eauto.
   red; intros; eauto with mem.
@@ -3781,10 +3798,11 @@ Proof.
 (* perm *)
   intros. eapply mi_perm; eauto with mem.
 (* own *)
-  intros. eapply mi_own; eauto.
-  eapply perm_store_2; eauto.
+  intros.
   (* RB: NOTE: Should be solvable by properly extended hint databases. *)
-  simpl. erewrite store_preserves_comp; eauto.
+  simpl. erewrite <- store_preserves_comp; eauto.
+  eapply mi_access; eauto.
+  eapply perm_store_2; eauto.
 (* align *)
   intros. eapply mi_align with (ofs := ofs0) (p := p); eauto.
   red; intros; eauto with mem.
@@ -3812,7 +3830,6 @@ Proof.
   intros.
   (* RB: NOTE: Ditto re: hint databases. *)
   simpl; rewrite <- (store_preserves_comp _ _ _ _ _ _ _ H1); eauto.
-  eapply mi_own0; eauto.
 (* access *)
   intros; eapply mi_align0; eauto.
 (* mem_contents *)
@@ -3851,9 +3868,8 @@ Proof.
     simpl in *.
     destruct (Nat.eq_dec (Datatypes.length bytes1) 0). erewrite <- list_forall2_length; eauto.
     destruct can_access_block_dec; try now auto.
-    left; eapply mi_own0; eauto. eapply r with (ofs := ofs). lia. }
-  (* eapply can_access_block_inj; try eassumption. *)
-  (* eapply storebytes_can_access_block_1; eassumption. *)
+    left; erewrite <- mi_access0; eauto.
+    eapply r with (ofs := ofs). lia. }
   exists n2; split. eauto.
   constructor.
 (* perm *)
@@ -3863,10 +3879,10 @@ Proof.
   eapply perm_storebytes_2; eauto.
 (* own *)
   intros.
-  eapply storebytes_can_access_block_inj_1; [apply STORE |].
-  eapply mi_own0; eauto.
+  erewrite <- (storebytes_preserves_comp _ _ _ _ _ _ STORE).
+  erewrite <- (storebytes_preserves_comp); eauto.
+  eapply mi_access0; eauto.
   eapply perm_storebytes_2; eauto.
-  eapply storebytes_can_access_block_inj_2; eauto.
 (* align *)
   intros. eapply mi_align with (ofs := ofs0) (p := p); eauto.
   red; intros. eapply perm_storebytes_2; eauto.
@@ -3908,9 +3924,9 @@ Proof.
   intros. eapply mi_perm0; eauto. eapply perm_storebytes_2; eauto.
 (* own *)
   intros.
-  eapply mi_own0; try eassumption.
+  erewrite <- mi_access0; try eassumption.
+  erewrite <- storebytes_preserves_comp; eauto.
   eapply perm_storebytes_2; eauto.
-  eapply storebytes_can_access_block_inj_2; eassumption.
 (* align *)
   intros. eapply mi_align with (ofs := ofs0) (p := p); eauto.
   red; intros. eapply perm_storebytes_2; eauto.
@@ -3935,7 +3951,8 @@ Proof.
 (* perm *)
   intros. eapply perm_storebytes_1; eauto with mem.
 (* own *)
-  intros. eapply storebytes_can_access_block_inj_1; eauto.
+  intros.
+  erewrite <- (storebytes_preserves_comp _ _ _ _ _ _ H1); eauto.
 (* align *)
   eauto.
 (* mem_contents *)
@@ -3964,9 +3981,10 @@ Proof.
   eapply perm_storebytes_2; eauto.
 (* own *)
   intros.
-  eapply storebytes_can_access_block_inj_1; eauto.
-  eapply mi_own0; eauto. eapply perm_storebytes_2; eauto.
-  eapply storebytes_can_access_block_inj_2; eauto.
+  erewrite <- storebytes_preserves_comp; eauto.
+  erewrite mi_access0; eauto.
+  erewrite storebytes_preserves_comp; eauto.
+  eapply perm_storebytes_2; eauto.
 (* align *)
   intros. eapply mi_align0 with (ofs := ofs) (p := p); eauto.
   red; intros. eapply perm_storebytes_2; eauto.
@@ -3992,7 +4010,11 @@ Proof.
 (* perm *)
   intros. eapply perm_alloc_1; eauto.
 (* own *)
-  intros. eapply alloc_can_access_block_other_inj_1; eauto.
+  intros.
+  symmetry. erewrite alloc_block_compartment; eauto.
+  destruct eq_block; [subst | erewrite mi_access0; eauto].
+  eapply mi_perm0 in H2; eauto. eapply perm_valid_block in H2.
+  unfold valid_block in H2. now exploit Plt_strict; eauto.
 (* align *)
   eauto.
 (* mem_contents *)
@@ -4016,12 +4038,12 @@ Proof.
   intros. exploit perm_alloc_inv; eauto. intros.
   destruct (eq_block b0 b1). congruence. eauto.
 (* own *)
-  intros. eapply mi_own0; try eassumption.
-  exploit perm_alloc_inv; eauto. intros.
+  intros.
+  erewrite <- mi_access0; eauto.
+  erewrite alloc_block_compartment; eauto.
+  destruct (eq_block b0 b1); subst; auto. congruence.
+  exploit perm_alloc_inv; eauto.
   destruct (eq_block b0 b1). congruence. eauto.
-  destruct (eq_block b0 b1).
-  subst b0. congruence.
-  eapply alloc_can_access_block_other_inj_2; eassumption.
 (* align *)
   intros. eapply mi_align0 with (ofs := ofs) (p := p); eauto.
   red; intros. exploit perm_alloc_inv; eauto.
@@ -4046,7 +4068,7 @@ Lemma alloc_left_mapped_inj:
   inj_offset_aligned delta (hi-lo) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
   f b1 = Some(b2, delta) ->
-  forall OWN : can_access_block m2 b2 c,
+  forall ACCESS : Mem.block_compartment m2 b2 = c,
   mem_inj f m1' m2.
 Proof.
   intros. inversion H. constructor.
@@ -4056,21 +4078,13 @@ Proof.
   rewrite H4 in H5; inv H5. eauto. eauto.
 (* own *)
   intros. destruct (eq_block b0 b1).
-  {
-    (* assert (Mem.block_compartment m2 b3 = Mem.block_compartment m1' b1). *)
-    (* { subst b0. unfold block_compartment.  *)
-    (* } *)
-    subst b0. rewrite H4 in H5. inv H5.
-    apply owned_new_block in H0. simpl in *.
-    rewrite H0 in H7.
-    now eapply flowsto_trans; eauto.
-  }
-  {
-    eapply mi_own0; eauto.
-  exploit perm_alloc_inv; eauto. intros.
-  destruct (eq_block b0 b1). congruence. eauto.
-    eapply alloc_can_access_block_other_inj_2; eassumption.
-  }
+  { subst b0. rewrite H4 in H5. inv H5.
+    erewrite owned_new_block; eauto. }
+  { erewrite <- mi_access0; eauto.
+    erewrite alloc_block_compartment; eauto.
+    destruct (eq_block b0 b1). congruence. eauto.
+    exploit perm_alloc_inv; eauto. intros.
+    destruct (eq_block b0 b1). congruence. eauto. }
 (* align *)
   intros. destruct (eq_block b0 b1).
   subst b0. assert (delta0 = delta) by congruence. subst delta0.
@@ -4101,8 +4115,9 @@ Proof.
 (* perm *)
   intros. eauto with mem.
 (* own *)
-  intros. eapply mi_own0; eauto. eauto with mem.
-  eapply free_can_access_block_inj_2; eassumption.
+  intros. erewrite <- mi_access0; eauto.
+  erewrite <- free_preserves_comp; eauto.
+  eauto with mem.
 (* align *)
   intros. eapply mi_align0 with (ofs := ofs) (p := p); eauto.
   red; intros; eapply perm_free_3; eauto.
@@ -4134,7 +4149,8 @@ Proof.
 (* perm *)
   auto.
 (* own *)
-  intros. eapply free_can_access_block_inj_1; eauto.
+  intros.
+  erewrite <- (free_preserves_comp _ _ _ _ _ _ H0); eauto.
 (* align *)
   eapply mi_align0; eauto.
 (* mem_contents *)
@@ -4155,7 +4171,9 @@ Proof.
 (* perm *)
   intros. eapply mi_perm0; eauto. eapply perm_drop_4; eauto.
 (* own *)
-  intros. eapply mi_own0; eauto. eapply perm_drop_4; eauto. eapply can_access_block_drop_2; eauto.
+  intros. erewrite <- mi_access0; eauto.
+  erewrite <- drop_preserves_comp; eauto.
+  eapply perm_drop_4; eauto.
 (* align *)
   intros. eapply mi_align0 with (ofs := ofs) (p := p0); eauto.
   red; intros; eapply perm_drop_4; eauto.
@@ -4231,10 +4249,11 @@ Proof.
   intuition.
 (* own *)
   intros.
-  pose proof can_access_block_drop_2 _ _ _ _ _ _ _ H0 _ _ H4 as Hown1.
-  (* pose proof can_access_block_drop_3 _ _ _ _ _ _ _ DROP as Hown2. *)
-  eapply can_access_block_drop_1; eauto.
-  eapply mi_own0 with (ofs := ofs) (p := p0) (k := k); eauto.
+  pose proof (drop_preserves_comp _ _ _ _ _ _ _ H0) as Hown1.
+  rewrite <- (Hown1 b0).
+  pose proof (drop_preserves_comp _ _ _ _ _ _ _ DROP) as Hown2.
+  rewrite <- (Hown2 b3).
+  erewrite <- mi_access0; eauto.
   { assert (perm m2 b3 (ofs + delta0) k p0).
     { eapply mi_perm0; eauto. eapply perm_drop_4; eauto. }
     destruct (eq_block b1 b0).
@@ -4247,7 +4266,7 @@ Proof.
       eapply perm_drop_4. eauto.
       apply perm_implies with p0; auto. constructor.
     - (* b1 <> b0 *)
-  eapply perm_drop_4; eauto. }
+      eapply perm_drop_4; eauto. }
 (* align *)
   intros. eapply mi_align0 with (ofs := ofs) (p := p0); eauto.
   red; intros; eapply perm_drop_4; eauto.
@@ -4285,7 +4304,8 @@ Proof.
   destruct (zle hi (ofs + delta)); auto.
   byContradiction. exploit H1; eauto. lia.
   (* own *)
-  intros. eapply can_access_block_drop_1; eauto.
+  intros.
+  erewrite <- (drop_preserves_comp _ _ _ _ _ _ _ H0); eauto.
   (* align *)
   eapply mi_align0; eauto.
   (* contents *)
@@ -4316,8 +4336,11 @@ Proof.
   intros. eapply mi_perm0; eauto. unfold perm in *.
   destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; auto.
 (* own *)
-  intros. eapply mi_own0; eauto. unfold perm in *.
-  destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; eauto.
+  intros. erewrite <- mi_access0; eauto.
+  unfold block_compartment in *; eauto.
+  unfold perm in *.
+  destruct (peq b1 b); try congruence. simpl in H0.
+  rewrite PMap.gso in H0; eauto.
 (* align *)
   intros. eapply mi_align0 with (ofs := ofs) (p := p1); eauto.
   red; intros. specialize (H0 ofs0 H2).
@@ -4325,7 +4348,6 @@ Proof.
   destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; eauto.
 (* contents *)
   intros.
-  (* replace (ZMap.get ofs m1'.(mem_contents)#b1) with (ZMap.get ofs m1.(mem_contents)#b1). *)
   apply mi_memval0; auto.
   unfold perm in *.
   destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; eauto.
@@ -4371,11 +4393,12 @@ Proof.
       eapply perm_set_2; eauto. eapply mi_perm; eauto.
   (* own *)
   - intros.
-    pose proof can_access_block_set_2 _ _ _ _ set1 _ _ H1 as Hown1.
-    (* pose proof can_access_block_drop_3 _ _ _ _ _ _ _ DROP as Hown2. *)
-    eapply can_access_block_set_1; eauto.
+    pose proof (set_preserves_comp _ _ _ _ set1) as Haccess1.
+    rewrite <- (Haccess1 b0).
+    pose proof (set_preserves_comp _ _ _ _ set2) as Haccess2.
+    rewrite <- (Haccess2 b3).
     eapply set_perm_perm in set1 as [p1 G]; eauto.
-    eapply mi_own with (ofs := ofs) (k := k); eauto.
+    erewrite mi_access with (ofs := ofs) (k := k); eauto.
   (* align *)
   - intros.
     eapply set_perm_range_perm in set1 as [p1 G]; eauto.
@@ -4408,9 +4431,9 @@ Proof.
   (* own *)
   - intros.
     assert (b1 <> b) by congruence.
-    eapply mi_own0; eauto.
+    erewrite <- mi_access0; eauto.
+    erewrite <- set_preserves_comp; eauto.
     eapply perm_set_2'; eauto.
-    eapply can_access_block_set_2; eauto.
   (* align *)
   - intros. eapply mi_align0; eauto.
     assert (b1 <> b) by congruence.
@@ -4441,9 +4464,9 @@ Proof.
     eapply perm_set_2; eauto.
     intros ?. subst. exploit H1; eauto.
   (* own *)
-  - intros. exploit mi_own0; eauto.
-    intros.
-    eapply can_access_block_set_1; eauto.
+  - intros.
+    erewrite mi_access0; eauto.
+    erewrite set_preserves_comp; eauto.
   (* align *)
   - intros. eapply mi_align0; eauto.
   (* contents *)
@@ -4456,32 +4479,6 @@ Proof.
       inv H0; auto.
 Qed.
 
-(* Lemma set_outside_inj: forall f m1 m2 b p m2', *)
-(*   mem_inj f m1 m2 -> *)
-(*   set_perm m2 b p = Some m2' -> *)
-(*   (forall b' delta ofs' k p, *)
-(*     f b' = Some(b, delta) -> *)
-(*     perm m1 b' ofs' k p -> *)
-(*     False) -> *)
-(*   mem_inj f m1 m2'. *)
-(* Proof. *)
-(*   intros. inv H. constructor. *)
-(*   (* perm *) *)
-(*   intros. eapply perm_set_4'; eauto. *)
-(*   destruct (eq_block b2 b); auto. subst b2. right. *)
-(*   byContradiction. exploit H1; eauto. *)
-(*   (* own *) *)
-(*   intros. eapply can_access_block_set_1; eauto. *)
-(*   (* align *) *)
-(*   eapply mi_align0; eauto. *)
-(*   (* contents *) *)
-(*   intros. *)
-(*   replace (m2'.(mem_contents)#b2) with (m2.(mem_contents)#b2). *)
-(*   apply mi_memval0; auto. *)
-(*   unfold set_perm in H0; *)
-(*     destruct plt; *)
-(*   inv H0; auto. *)
-(* Qed. *)
 
 (** * Memory extensions *)
 
@@ -4494,9 +4491,6 @@ Qed.
 Record extends' (m1 m2: mem) : Prop :=
   mk_extends {
     mext_next: nextblock m1 = nextblock m2;
-      (* This should not be necessary. It's a consequence of the field [mext_inj] *)
-    (* mext_access: forall b cp, *)
-    (*   Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp; *)
     mext_inj:  mem_inj inject_id m1 m2;
     mext_perm_inv: forall b ofs k p,
       perm m2 b ofs k p ->
@@ -4510,7 +4504,7 @@ Theorem extends_refl:
 Proof.
   intros. constructor. auto. auto. constructor.
   intros. unfold inject_id in H; inv H. replace (ofs + 0) with ofs by lia. auto.
-  intros. unfold inject_id in H; inv H. assumption.
+  intros. unfold inject_id in H; inv H. reflexivity.
   intros. unfold inject_id in H; inv H. apply Z.divide_0_r.
   intros. unfold inject_id in H; inv H. replace (ofs + 0) with ofs by lia.
   apply memval_lessdef_refl.
@@ -4720,30 +4714,32 @@ Theorem free_parallel_extends:
      free m2 b lo hi cp = Some m2'
   /\ extends m1' m2'.
 Proof.
-  intros. inversion H.
+  intros.
   assert ({ m2': mem | free m2 b lo hi cp = Some m2' }).
     apply range_perm_free. red; intros.
     replace ofs with (ofs + 0) by lia.
-    eapply perm_inj with (b1 := b); eauto.
+    eapply perm_inj with (b1 := b); inv H; eauto.
     eapply free_range_perm; eauto.
     (* own *)
     { apply free_range_perm in H0 as G.
       unfold free in *. destruct (Z_le_dec); try auto.
       left.
       destruct can_access_block_dec; eauto.
-    unfold inject_id in mext_inj0; inv mext_inj0.
-    eapply mi_own0; eauto.
+    (* unfold inject_id in mext_inj0; inv mext_inj0. *)
+    eapply mi_own; inv H; eauto. reflexivity.
     eapply G with (ofs := lo). lia.
       rewrite andb_comm in *; simpl in *; congruence. }
   destruct X as [m2' FREE]. exists m2'; split; auto.
   constructor.
   rewrite (nextblock_free _ _ _ _ _ _ H0).
-  rewrite (nextblock_free _ _ _ _ _ _ FREE). auto.
+  rewrite (nextblock_free _ _ _ _ _ _ FREE).
+  inv H; auto.
   eapply free_right_inj with (m1 := m1'); eauto.
   eapply free_left_inj; eauto.
+  inv H; auto.
   unfold inject_id; intros. inv H1.
   eapply perm_free_2. eexact H0. instantiate (1 := ofs); lia. eauto.
-  intros. exploit mext_perm_inv0; eauto using perm_free_3. intros [A|A].
+  intros. exploit mext_perm_inv; eauto using perm_free_3. intros [A|A].
   eapply perm_free_inv in A; eauto. destruct A as [[A B]|A]; auto.
   subst b0. right; eapply perm_free_2; eauto.
   right; intuition eauto using perm_free_3.
@@ -4914,9 +4910,9 @@ Proof.
   apply proj1 in H1 as G.
   eapply valid_access_inject in H1; eauto.
   eapply valid_pointer_valid_access in H1; eauto.
-  inv H0. inv mi_inj0. eapply mi_own0; eauto.
-  eapply G with (ofs := ofs). simpl. lia.
+  inv H0. inv mi_inj0. erewrite mi_access0; eauto.
   now apply flowsto_refl.
+  eapply G with (ofs := ofs). simpl. lia.
 Qed.
 
 Theorem weak_valid_pointer_inject:
@@ -5438,7 +5434,7 @@ Theorem alloc_left_mapped_inject:
   inject f m1 m2 ->
   alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
-  forall OWN : can_access_block m2 b2 c,
+  forall OWN : block_compartment m2 b2 = c,
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
@@ -5466,9 +5462,11 @@ Proof.
       elim (fresh_block_alloc _ _ _ _ _ _ H0). eauto with mem.
       eauto.
     unfold f'; intros. destruct (eq_block b0 b1).
-      inversion H8. subst b0 b3 delta0.
-      apply unowned_fresh_block with (c' := cp) in H0; eauto. subst. now apply flowsto_top.
-      eapply mi_own0; eauto.
+      inv H8.
+      eapply perm_valid_block in H9.
+      erewrite alloc_result in H9; eauto.
+      unfold valid_block in H9; simpl in H9; now exploit Plt_strict; eauto.
+      erewrite mi_access0; eauto.
     unfold f'; intros. destruct (eq_block b0 b1).
       inversion H8. subst b0 b3 delta0.
       elim (fresh_block_alloc _ _ _ _ _ _ H0).
@@ -5674,7 +5672,7 @@ Proof.
       exploit free_can_access_block_1; eauto. intros [? | ?]; try lia.
       unfold free in H0. rewrite EQ in *.
       destruct range_perm_dec; simpl in *; try congruence.
-      inv H. inv mi_inj0. eapply mi_own0; eauto.
+      inv H; eapply mi_own; eauto.
       eapply r with (ofs := lo). lia. }
   exists m2'; split; auto.
   eapply free_inject with (m1 := m1) (l := (b,lo,hi)::nil); eauto.
@@ -5817,28 +5815,32 @@ Lemma mem_inj_compose:
   forall f f' m1 m2 m3,
   mem_inj f m1 m2 -> mem_inj f' m2 m3 -> mem_inj (compose_meminj f f') m1 m3.
 Proof.
-  intros. unfold compose_meminj. inv H; inv H0; constructor; intros.
+  intros. unfold compose_meminj. (* inv H; inv H0;  *)
+  constructor; intros.
   (* perm *)
   destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
-  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H.
+  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H1.
   replace (ofs + (delta' + delta'')) with ((ofs + delta') + delta'') by lia.
-  eauto.
+  inv H; inv H0; eauto.
   (* own *)
   destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
-  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H.
-  eapply mi_own1; eauto.
+  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H1.
+  erewrite (mi_access _ _ _ H); eauto.
+  erewrite (mi_access _ _ _ H0); eauto.
+  eapply mi_perm; eauto.
   (* align *)
   destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
-  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H.
+  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H1.
   apply Z.divide_add_r.
-  eapply mi_align0; eauto.
-  eapply mi_align1 with (ofs := ofs + delta') (p := p); eauto.
+  eapply (mi_align _ _ _ H); eauto.
+  eapply mi_align with (ofs := ofs + delta') (p := p); eauto.
   red; intros. replace ofs0 with ((ofs0 - delta') + delta') by lia.
-  eapply mi_perm0; eauto. apply H0. lia.
+  eapply mi_perm; eauto. apply H2. lia.
   (* memval *)
   destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
-  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H.
+  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H1.
   replace (ofs + (delta' + delta'')) with ((ofs + delta') + delta'') by lia.
+  inv H; eauto. inv H0; eauto.
   eapply memval_inject_compose; eauto.
 Qed.
 
@@ -6024,9 +6026,8 @@ Proof.
   replace (ofs + 0) with ofs by lia; auto.
 (* own *)
   intros.
-  unfold can_access_block, block_compartment in H1.
-  unfold empty in H1. simpl in H1.
-  rewrite PMap.gi in H1. eapply flowsto_trans; eauto with comps.
+  unfold block_compartment, empty; simpl.
+  now rewrite !PMap.gi.
 (* align *)
   unfold flat_inj; intros. destruct (plt b1 thr); inv H. apply Z.divide_0_r.
 (* mem_contents *)

@@ -647,7 +647,7 @@ Next Obligation.
 + eapply Mem.perm_unchanged_on; eauto.
 + eapply (Mem.unchanged_on_own) with (b := b2) in H0.
   simpl; rewrite H0.
-  eapply flowsto_trans; eauto. eapply mi_own; simpl; eauto with comps.
+  eapply mi_access; simpl; eauto.
   exploit mi_mappedblocks; eauto.
 + eauto.
 + rewrite (Mem.unchanged_on_contents _ _ _ H0); eauto.

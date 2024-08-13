@@ -1206,7 +1206,8 @@ Axiom alloc_left_mapped_inject:
   inject f m1 m2 ->
   alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
-  can_access_block m2 b2 c ->
+  block_compartment m2 b2 = c ->
+  (* can_access_block m2 b2 c -> *)
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->

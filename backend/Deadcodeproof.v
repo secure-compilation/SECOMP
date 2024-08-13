@@ -43,9 +43,9 @@ Record magree (m1 m2: mem) (P: locset) : Prop := mk_magree {
     forall b ofs k p,
       Mem.perm m1 b ofs k p -> Mem.perm m2 b ofs k p;
   ma_access:
-    forall b cp ofs k p,
+    forall b ofs k p,
       Mem.perm m1 b ofs k p ->
-      Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp;
+      Mem.block_compartment m1 b = Mem.block_compartment m2 b;
   ma_perm_inv:
     forall b ofs k p,
     Mem.perm m2 b ofs k p -> Mem.perm m1 b ofs k p \/ ~Mem.perm m1 b ofs Max Nonempty;
@@ -71,11 +71,12 @@ Qed.
 Lemma mextends_agree:
   forall m1 m2 P, Mem.extends m1 m2 -> magree m1 m2 P.
 Proof.
-  intros. destruct H. destruct mext_inj. constructor; intros.
-- replace ofs with (ofs + 0) by lia. eapply mi_perm; eauto. auto.
-- eapply mi_own; eauto. unfold inject_id; reflexivity.
+  intros. destruct H. (* destruct mext_inj.  *)
+  constructor; intros.
+- replace ofs with (ofs + 0) by lia. eapply Mem.mi_perm; eauto. auto.
+- eapply Mem.mi_access; eauto. unfold inject_id; reflexivity.
 - eauto.
-- exploit mi_memval; eauto. unfold inject_id; eauto.
+- exploit Mem.mi_memval; eauto. unfold inject_id; eauto.
   rewrite Z.add_0_r. auto.
 - auto.
 Qed.
@@ -125,7 +126,8 @@ Local Transparent Mem.loadbytes.
   assert (ofs <= i < ofs + n) by extlia.
   apply ma_memval0; auto.
   red; intros; eauto.
-  eapply ma_access0; eauto. eapply r. instantiate (1 := ofs). lia.
+  simpl. erewrite <- ma_access0; eauto.
+  eapply r. instantiate (1 := ofs). lia.
   setoid_rewrite pred_dec_true at 1. rewrite orb_true_r. simpl. econstructor; split; eauto.
   apply GETN. intros. rewrite Z_to_nat_max in H.
   assert (ofs <= i < ofs + n) by extlia.
@@ -182,7 +184,7 @@ Proof.
     erewrite list_forall2_length; eauto.
     intros []; try now auto.
     destruct (length bytes2) eqn:?; try now auto.
-    left. eapply ma_access; eauto.
+    left. simpl; erewrite <- ma_access; eauto.
     eapply Mem.storebytes_range_perm; eauto.
     instantiate (1 := ofs).
     erewrite list_forall2_length; eauto.
@@ -191,9 +193,10 @@ Proof.
   constructor; intros.
 - eapply Mem.perm_storebytes_1; eauto. eapply ma_perm; eauto.
   eapply Mem.perm_storebytes_2; eauto.
-- eapply Mem.storebytes_can_access_block_inj_1; eauto. eapply ma_access; eauto.
+- erewrite <- (Mem.storebytes_preserves_comp _ _ _ _ _ _ ST2); eauto.
+  erewrite <- (Mem.storebytes_preserves_comp _ _ _ _ _ _ H0); eauto.
+  eapply ma_access; eauto.
   eapply Mem.perm_storebytes_2; eauto.
-  eapply Mem.storebytes_can_access_block_inj_2; eauto.
 - exploit ma_perm_inv; eauto using Mem.perm_storebytes_2.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
 - rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ H0).
@@ -239,9 +242,8 @@ Lemma magree_storebytes_left:
 Proof.
   intros. constructor; intros.
 - eapply ma_perm; eauto. eapply Mem.perm_storebytes_2; eauto.
-- eapply ma_access; eauto.
-  eapply Mem.perm_storebytes_2; eauto.
-  eapply Mem.storebytes_can_access_block_inj_2; eauto.
+- erewrite <- (Mem.storebytes_preserves_comp _ _ _ _ _ _ H0); eauto.
+  eapply ma_access; eauto with mem.
 - exploit ma_perm_inv; eauto.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
 - rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ H0).
@@ -281,7 +283,7 @@ Proof.
   red; intros. eapply ma_perm; eauto. eapply Mem.free_range_perm; eauto.
   exploit Mem.free_can_access_block_1; eauto. intros [? | ?]; try now auto.
   destruct (zle hi lo); try now auto. left.
-  eapply ma_access; eauto.
+  simpl in *. erewrite <- ma_access; eauto.
   eapply Mem.free_range_perm; eauto. instantiate (1 := lo). lia.
   exists m2'; split; auto.
   constructor; intros.
@@ -290,9 +292,9 @@ Proof.
   exploit Mem.perm_free_inv; eauto. intros [[A B] | A]; auto.
   subst b0. eelim Mem.perm_free_2. eexact H0. eauto. eauto.
 - (* access *)
-  eapply Mem.free_can_access_block_inj_1; eauto. eapply ma_access; eauto.
-  eapply Mem.perm_free_3; eauto.
-  eapply Mem.free_can_access_block_inj_2; eauto.
+  erewrite <- (Mem.free_preserves_comp _ _ _ _ _ _ H0).
+  erewrite <- (Mem.free_preserves_comp _ _ _ _ _ _ FREE).
+  eapply ma_access; eauto with mem.
 - (* inverse permissions *)
   exploit ma_perm_inv; eauto using Mem.perm_free_3. intros [A|A].
   eapply Mem.perm_free_inv in A; eauto. destruct A as [[A B] | A]; auto.
@@ -324,8 +326,8 @@ Lemma magree_valid_access:
 Proof.
   intros. destruct H0 as [? [? ?]]; split; auto.
   red; intros. eapply ma_perm; eauto.
-  split; auto.
-  eapply ma_access; eauto.
+  split; auto. simpl in *.
+  erewrite <- ma_access; eauto.
   eapply H0. instantiate (1 := ofs). destruct chunk; simpl; lia.
 Qed.
 
@@ -849,7 +851,7 @@ Proof.
   instantiate (1 := nlive ge sp nm). auto.
   intros (tm' & P & Q).
   exists tm'; split. econstructor. econstructor; eauto.
-  eapply ma_access; eauto.
+  simpl; erewrite <- ma_access; eauto.
   eapply Mem.store_valid_access_3; eauto. instantiate (1 := Ptrofs.unsigned ofs).
   destruct chunk; simpl; lia.
   auto.
@@ -1086,7 +1088,7 @@ Ltac UseTransfer :=
     intros. eapply nlive_add; eassumption.
     intros (tv & P & Q).
     exists tv; split; auto. econstructor; eauto.
-    eapply ma_access; eauto.
+    simpl; erewrite <- ma_access; eauto.
     eapply Mem.load_valid_access; eauto. instantiate (1 := Ptrofs.unsigned ofs).
     destruct chunk; simpl; lia.
   }

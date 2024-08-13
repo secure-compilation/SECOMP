@@ -570,7 +570,8 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (RES: Ple res ctx.(mreg))
         (BELOW: Plt sp' bound)
-        (ACCESS: Mem.can_access_block m' sp' (comp_of f')),
+        (ACCESS: Mem.block_compartment m' sp' = comp_of f'),
+        (* (ACCESS: Mem.can_access_block m' sp' (comp_of f')), *)
       match_stacks F m m' cp
                    (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
                    (Stackframe (sreg ctx res) ty f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
@@ -583,7 +584,8 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (RET: ctx.(retinfo) = Some (rpc, res))
         (BELOW: Plt sp' bound)
         (COMP: cp = comp_of f')
-        (ACCESS: Mem.can_access_block m' sp' (comp_of f')),
+        (ACCESS: Mem.block_compartment m' sp' = comp_of f'),
+        (* (ACCESS: Mem.can_access_block m' sp' (comp_of f')), *)
       match_stacks F m m' cp
                    stk
                    (Stackframe res ty f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk')
@@ -608,7 +610,8 @@ with match_stacks_inside (F: meminj) (m m': mem):
         (RET: ctx.(retinfo) = Some (spc ctx' pc, sreg ctx' res))
         (BELOW: context_below ctx' ctx)
         (SBELOW: context_stack_call ctx' ctx)
-        (ACCESS: Mem.can_access_block m' sp' (comp_of f')),
+        (* (ACCESS: Mem.can_access_block m' sp' (comp_of f')), *)
+        (ACCESS: Mem.block_compartment m' sp' = comp_of f'),
       match_stacks_inside F m m'
         (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk' f' ctx sp' rs'.
@@ -716,8 +719,10 @@ Lemma match_stacks_invariant:
                Mem.perm m' b ofs Cur Freeable -> Mem.perm m1' b ofs Cur Freeable)
          (PERM3: forall b ofs k p, Plt b bound ->
                               Mem.perm m1' b ofs k p -> Mem.perm m' b ofs k p)
-         (PERM4: forall b cp, Plt b bound ->
-                         Mem.can_access_block m1' b cp <-> Mem.can_access_block m' b cp),
+         (PERM4: forall b, Plt b bound ->
+                         Mem.block_compartment m1' b = Mem.block_compartment m' b),
+         (* (PERM4: forall b cp, Plt b bound -> *)
+         (*                 Mem.can_access_block m1' b cp <-> Mem.can_access_block m' b cp), *)
   match_stacks F1 m1 m1' cp stk stk' bound
 
 with match_stacks_inside_invariant:
@@ -734,8 +739,9 @@ with match_stacks_inside_invariant:
                Mem.perm m' b ofs Cur Freeable -> Mem.perm m1' b ofs Cur Freeable)
          (PERM3: forall b ofs k p, Ple b sp' ->
                Mem.perm m1' b ofs k p -> Mem.perm m' b ofs k p)
-         (PERM4: forall b cp, Ple b sp' ->
-                         Mem.can_access_block m1' b cp <-> Mem.can_access_block m' b cp),
+         (PERM4: forall b (* cp *), Ple b sp' ->
+                         Mem.block_compartment m1' b = Mem.block_compartment m' b),
+                         (* Mem.can_access_block m1' b cp <-> Mem.can_access_block m' b cp), *)
   match_stacks_inside F1 m1 m1' stk stk' f' ctx sp' rs2.
 
 Proof.
@@ -755,7 +761,7 @@ Proof.
   intros; eapply PERM4; eauto; extlia.
   eapply agree_regs_incr; eauto.
   eapply range_private_invariant; eauto.
-  eapply PERM4; eauto; extlia.
+  erewrite PERM4; eauto; extlia.
   (* untailcall *)
   eapply match_stacks_untailcall with (ctx := ctx); eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -765,7 +771,7 @@ Proof.
   intros; eapply PERM3; eauto; extlia.
   intros; eapply PERM4; eauto; extlia.
   eapply range_private_invariant; eauto.
-  eapply PERM4; eauto; extlia.
+  erewrite PERM4; eauto; extlia.
 
   induction 1; intros.
   (* base *)
@@ -786,7 +792,7 @@ Proof.
   eapply range_private_invariant; eauto.
     intros. split. eapply INJ; eauto. extlia. eapply PERM1; eauto. extlia.
     intros. eapply PERM2; eauto. extlia.
-  eapply PERM4; eauto; extlia.
+  erewrite PERM4; eauto; extlia.
 Qed.
 
 Lemma match_stacks_empty:
@@ -816,7 +822,6 @@ Lemma match_stacks_inside_set_reg:
 Proof.
   intros. eapply match_stacks_inside_invariant; eauto.
   intros. apply Regmap.gso. zify. unfold sreg; rewrite shiftpos_eq. extlia.
-  reflexivity.
 Qed.
 
 Lemma match_stacks_inside_set_res:
@@ -839,9 +844,8 @@ Lemma match_stacks_inside_store:
 Proof.
   intros.
   eapply match_stacks_inside_invariant; eauto with mem.
-  intros. split.
-  eapply Mem.store_can_access_block_inj; eauto.
-  eapply Mem.store_can_access_block_inj in H1; eauto. eapply H1.
+  intros.
+  erewrite <- Mem.store_preserves_comp; eauto.
 Qed.
 
 (** Preservation by an allocation *)
@@ -866,7 +870,6 @@ Proof.
   rewrite H2 in H4; auto.
   intros. exploit Mem.perm_alloc_inv; eauto. destruct (eq_block b1 b); intros; auto.
   subst b1. rewrite H1 in H4. inv H4. eelim Plt_strict; eauto.
-  reflexivity.
   (* inlined *)
   eapply match_stacks_inside_inlined; eauto.
   eapply IHmatch_stacks_inside; eauto. destruct SBELOW. lia.
@@ -887,7 +890,6 @@ Lemma match_stacks_free_left:
 Proof.
   intros. eapply match_stacks_invariant; eauto.
   intros. eapply Mem.perm_free_3; eauto.
-  reflexivity.
 Qed.
 
 Lemma match_stacks_free_right:
@@ -899,9 +901,7 @@ Proof.
   intros. eapply match_stacks_invariant; eauto.
   intros. eapply Mem.perm_free_1; eauto with ordered_type.
   intros. eapply Mem.perm_free_3; eauto.
-  intros; split; intros.
-  eapply Mem.free_can_access_block_inj_2; eauto.
-  eapply Mem.free_can_access_block_inj_1; eauto.
+  intros. erewrite <- Mem.free_preserves_comp; eauto.
 Qed.
 
 Lemma min_alignment_sound:
@@ -967,16 +967,20 @@ Proof.
     eapply agree_regs_incr; eauto.
     eapply range_private_extcall; eauto. red; extlia.
     intros. apply SSZ2; auto. apply MAXPERM'; auto. red; extlia.
+    erewrite Mem.unchanged_on_own; eauto.
+    eapply Mem.valid_block_inject_2; eauto.
   eapply match_stacks_untailcall; eauto.
     eapply match_stacks_inside_extcall; eauto. extlia.
     eapply range_private_extcall; eauto. red; extlia.
     intros. apply SSZ2; auto. apply MAXPERM'; auto. red; extlia.
+    erewrite Mem.unchanged_on_own; eauto. red; extlia.
   induction 1; intros.
   eapply match_stacks_inside_base; eauto.
     eapply match_stacks_extcall; eauto. extlia.
   eapply match_stacks_inside_inlined; eauto.
     eapply agree_regs_incr; eauto.
     eapply range_private_extcall; eauto.
+    erewrite Mem.unchanged_on_own; eauto.
 Qed.
 
 End EXTCALL.
@@ -1027,7 +1031,8 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SP: F sp = Some(sp', ctx.(dstk)))
         (MINJ: Mem.inject F m m')
         (VB: Mem.valid_block m' sp')
-        (AC: Mem.can_access_block m' sp' (comp_of f'))
+        (AC: Mem.block_compartment m' sp' = comp_of f')
+        (* (AC: Mem.can_access_block m' sp' (comp_of f')) *)
         (PRIV: range_private F m m' sp' (ctx.(dstk) + ctx.(mstk)) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
@@ -1052,7 +1057,8 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (VINJ: list_forall2 (val_reg_charact F ctx' rs') vargs rargs)
         (MINJ: Mem.inject F m m')
         (VB: Mem.valid_block m' sp')
-        (AC: Mem.can_access_block m' sp' (comp_of f'))
+        (AC: Mem.block_compartment m' sp' = comp_of f')
+        (* (AC: Mem.can_access_block m' sp' (comp_of f')) *)
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
@@ -1071,7 +1077,8 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (VINJ: match or with None => v = Vundef | Some r => Val.inject F v rs'#(sreg ctx r) end)
         (MINJ: Mem.inject F m m')
         (VB: Mem.valid_block m' sp')
-        (AC: Mem.can_access_block m' sp' (comp_of f'))
+        (* (AC: Mem.can_access_block m' sp' (comp_of f')) *)
+        (AC: Mem.block_compartment m' sp' = comp_of f')
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
@@ -1167,7 +1174,8 @@ Proof.
   econstructor; eauto.
   eapply match_stacks_inside_store; eauto.
   eapply Mem.store_valid_block_1; eauto.
-  eapply Mem.store_can_access_block_inj in U; eauto. eapply U; eauto.
+  erewrite <- Mem.store_preserves_comp; eauto.
+  (* eapply Mem.store_can_access_block_inj in U; eauto. eapply U; eauto. *)
   eapply range_private_invariant; eauto.
   intros; split; auto. eapply Mem.perm_store_2; eauto.
   intros; eapply Mem.perm_store_1; eauto.
@@ -1242,7 +1250,8 @@ Proof.
     replace ofs with (ofs + dstk ctx) by lia. eapply Mem.perm_inject; eauto.
     eapply Mem.free_range_perm; eauto. lia.
     inv FB. eapply range_private_perms; eauto. extlia.
-    left; eapply AC.
+    left; simpl; rewrite AC; auto with comps.
+    (* left; eapply AC. *)
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Itailcall; eauto.
@@ -1256,9 +1265,8 @@ Proof.
     intros. eapply Mem.perm_free_3; eauto.
     intros. eapply Mem.perm_free_1; eauto with ordered_type.
     intros. eapply Mem.perm_free_3; eauto.
-  { intros; split; intros.
-    eapply Mem.free_can_access_block_inj_2; eauto.
-    eapply Mem.free_can_access_block_inj_1; eauto. }
+  { intros.
+    erewrite <- Mem.free_preserves_comp; eauto. }
   erewrite Mem.nextblock_free; eauto. red in VB; extlia.
   (* congruence. *)
   eapply agree_val_regs; eauto.
@@ -1304,7 +1312,6 @@ Proof.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
-  easy.
   congruence.
 
   eapply agree_val_regs; eauto.
@@ -1318,7 +1325,6 @@ Proof.
   eapply match_stacks_inside_inlined_tailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
-  easy.
   congruence.
   apply agree_val_regs_gen; auto.
   eapply Mem.free_left_inject; eauto.
@@ -1343,12 +1349,12 @@ Proof.
     eapply match_stacks_inside_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
     intros; eapply external_call_max_perm; eauto.
     intros; eapply external_call_max_perm; eauto.
-    intros; eapply external_call_can_access_block; eauto.
-  auto. eauto. eauto. auto.
+  auto. eauto. eauto.
   destruct res; simpl; [apply agree_set_reg;auto|idtac|idtac]; eapply agree_regs_incr; eauto.
   auto. auto.
   eapply external_call_valid_block; eauto.
-    intros; eapply external_call_can_access_block; eauto.
+  simpl; rewrite <- AC; auto with comps.
+  erewrite Mem.unchanged_on_own; eauto.
   eapply range_private_extcall; eauto.
     intros; eapply external_call_max_perm; eauto.
   auto.
@@ -1382,7 +1388,7 @@ Proof.
     eapply Mem.free_range_perm; eauto. lia.
     inv FB. eapply range_private_perms; eauto.
     generalize (Zmax_spec (fn_stacksize f) 0). destruct (zlt 0 (fn_stacksize f)); lia.
-    eauto.
+    simpl; rewrite AC; auto with comps.
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ireturn; eauto.
@@ -1393,9 +1399,7 @@ Proof.
     intros. eapply Mem.perm_free_3; eauto.
     intros. eapply Mem.perm_free_1; eauto with ordered_type.
     intros. eapply Mem.perm_free_3; eauto.
-    { intros; split; intros.
-      eapply Mem.free_can_access_block_inj_2; eauto.
-      eapply Mem.free_can_access_block_inj_1; eauto. }
+    { intros; erewrite <- Mem.free_preserves_comp; eauto. }
   erewrite Mem.nextblock_free; eauto. red in VB; extlia.
   destruct or; simpl. apply agree_val_reg; auto. auto.
   eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
@@ -1413,7 +1417,6 @@ Proof.
   econstructor; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
-    reflexivity.
   destruct or; simpl. apply agree_val_reg; eauto. eauto.
   eapply Mem.free_left_inject; eauto.
   inv FB. rewrite H4 in PRIV. eapply range_private_free_left; eauto.
@@ -1445,9 +1448,11 @@ Proof.
     intros. eapply Mem.perm_alloc_1; eauto.
     intros. exploit Mem.perm_alloc_inv. eexact A. eauto.
     rewrite dec_eq_false; auto with ordered_type.
-  { intros; split; intros.
-    eapply Mem.alloc_can_access_block_other_inj_2; eauto. extlia.
-    eapply Mem.alloc_can_access_block_other_inj_1; eauto. }
+  { intros. erewrite Mem.alloc_block_compartment; eauto.
+    destruct eq_block; auto. extlia. }
+  (* { intros; split; intros. *)
+  (*   eapply Mem.alloc_can_access_block_other_inj_2; eauto. extlia. *)
+  (*   eapply Mem.alloc_can_access_block_other_inj_1; eauto. } *)
   auto. auto. auto. eauto. auto.
   rewrite H6. apply agree_regs_init_regs. eauto. auto. inv H1; auto. congruence. auto.
   eapply Mem.valid_new_block; eauto. simpl.
@@ -1468,7 +1473,10 @@ Proof.
     eauto.
     (* sp' is valid *)
     instantiate (1 := sp'). auto.
-    simpl. eapply flowsto_trans; eauto. rewrite SAMECOMP; apply flowsto_refl.
+    simpl.
+    (* eapply flowsto_trans; eauto. *)
+    simpl; rewrite AC; auto.
+    (* rewrite SAMECOMP. apply flowsto_refl. *)
     (* offset is representable *)
     instantiate (1 := dstk ctx). generalize (Z.le_max_r (fn_stacksize f) 0). lia.
     (* size of target block is representable *)
@@ -1491,7 +1499,7 @@ Proof.
   econstructor.
   eapply match_stacks_inside_alloc_left; eauto.
   eapply match_stacks_inside_invariant; eauto.
-  reflexivity.
+  (* reflexivity. *)
   lia.
   eauto. eauto. auto.
   apply agree_regs_incr with F; auto.
@@ -1513,7 +1521,7 @@ Proof.
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
     intros; eapply external_call_max_perm; eauto.
     intros; eapply external_call_max_perm; eauto.
-    intros; eapply external_call_can_access_block; eauto.
+    (* intros; eapply external_call_can_access_block; eauto. *)
     extlia.
     eapply external_call_nextblock; eauto.
     auto. auto.

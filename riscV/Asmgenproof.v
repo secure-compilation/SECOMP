@@ -786,13 +786,28 @@ Ltac unfold_find_comp_in_genv A R :=
   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ R) in A;
   injection A as A.
 
+
+Lemma match_stack_storev: forall m m' sig s ch ptr v cp,
+    match_stack ge m sig s ->
+    Mem.storev ch m ptr v cp = Some m' ->
+    match_stack ge m' sig s.
+Proof.
+  intros m m' sig s ch ptr v cp MS STORE.
+  induction MS.
+  - constructor; auto.
+  - econstructor; eauto.
+    destruct sp; try auto; simpl in *.
+    destruct ptr; simpl in *; try congruence.
+    erewrite Mem.store_block_compartment; eauto.
+Qed.
+
 Lemma loadarg_priv_correct:
   forall (st: stack) (cp: compartment) (ofs: ptrofs) (ty : typ) (dst : mreg)
     (c: list Mach.instruction) (tc : list instruction) (rs: regset) (m: mem) (v : val) (b: block) (f: Mach.function) (tf: function),
   forall (AT: transl_code_at_pc ge (rs PC) b f (Mgetparam ofs ty dst :: c) true tf tc),
 
   forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) top = Some v),
-  forall (COMP_X30: Mem.val_compartment m (rs X30) = comp_of f),
+  forall (COMP_X30: Mem.val_compartment m (rs X30) ⊆ comp_of f),
   exists (rs' : regset),
     plus step tge (State st rs m cp) E0 (State st rs' m (comp_of tf)) /\
       rs' (preg_of dst) = v /\ (forall r : preg, r <> PC -> r <> X31 -> r <> preg_of dst -> rs' r = rs r)
@@ -849,7 +864,7 @@ Lemma loadarg_priv_correct:
             exploit (Mem.valid_access_load m (chunk_of_type ty) b
                        (Ptrofs.unsigned (Ptrofs.add i (eval_offset tge ofs'))) (comp_of tf)); eauto.
             split; [| split]; eauto.
-            simpl; rewrite COMP_X30; auto with comps.
+            (* simpl; rewrite COMP_X30; auto with comps. *)
             intros [? ?].
             exploit Mem.load_Some_None; eauto. congruence.
             inv AT; rewrite comp_transf_function; eauto.
@@ -897,7 +912,7 @@ Lemma loadarg_priv_correct:
             exploit (Mem.valid_access_load m (chunk_of_type ty) b
                        (Ptrofs.unsigned (Ptrofs.add i ofs)) (comp_of tf)); eauto.
             split; [| split]; eauto.
-            simpl; rewrite COMP_X30; auto with comps.
+            (* simpl; rewrite COMP_X30; auto with comps. *)
             intros [? ?].
             exploit Mem.load_Some_None; eauto. congruence.
             inv AT; rewrite comp_transf_function; eauto. }
@@ -962,7 +977,7 @@ Lemma loadarg_priv_correct:
             exploit (Mem.valid_access_load m (chunk_of_type ty) b
                        (Ptrofs.unsigned (Ptrofs.add i (eval_offset tge ofs'))) (comp_of tf)); eauto.
             split; [| split]; eauto.
-            simpl; rewrite COMP_X30; auto with comps.
+            (* simpl; rewrite COMP_X30; auto with comps. *)
             intros [? ?].
             exploit Mem.load_Some_None; eauto. congruence.
             inv AT; rewrite comp_transf_function; eauto.
@@ -1010,7 +1025,7 @@ Lemma loadarg_priv_correct:
             exploit (Mem.valid_access_load m (chunk_of_type ty) b
                        (Ptrofs.unsigned (Ptrofs.add i ofs)) (comp_of tf)); eauto.
             split; [| split]; eauto.
-            simpl; rewrite COMP_X30; auto with comps.
+            (* simpl; rewrite COMP_X30; auto with comps. *)
             intros [? ?].
             exploit Mem.load_Some_None; eauto. congruence.
             inv AT; rewrite comp_transf_function; eauto. }
@@ -1078,7 +1093,7 @@ Proof.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
   left; eapply exec_straight_steps; eauto.
-  admit.
+  eapply match_stack_storev; eauto.
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
   inv AT.
   unfold Genv.find_comp_of_block in A; unfold Genv.find_funct_ptr in FIND.
@@ -1102,13 +1117,14 @@ Opaque loadind.
   + inv STACKS'.
     * simpl in *. unfold Vnullptr in C; destruct Archi.ptr64; simpl in *; congruence.
     * exploit loadarg_priv_correct; eauto.
-      (* instantiate (1 := s'). *)
       rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; simpl; eauto.
       rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; simpl in *.
       inv STACKS.
       { rewrite H4. erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
         simpl. rewrite <- COMP_SP.
         destruct sp0; try now auto. simpl.
+        eapply Mem.mext_inj in MEXT.
+        eapply Mem.mi_own in MEXT.
         admit. }
 
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
@@ -1203,7 +1219,8 @@ Local Transparent destroyed_by_op.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [C D]].
-  left; eapply exec_straight_steps; eauto. admit.
+  left; eapply exec_straight_steps; eauto.
+  eapply match_stack_storev; eauto.
   inv AT.
   unfold Genv.find_comp_of_block in C; unfold Genv.find_funct_ptr in FIND.
     destruct (Genv.find_def ge f) as [[] |] eqn:?; try congruence. inv FIND. simpl in C.
@@ -1283,10 +1300,12 @@ Local Transparent destroyed_by_op.
       (* econstructor; eauto. *)
       econstructor; eauto.
       eapply agree_sp_def; eauto.
+      { admit. }
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
-        admit.
-        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). auto. }
+        (* admit. *)
+        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
+        admit. }
       simpl.
       { constructor.
         - unfold invalidate_call. simpl; Simpl.
@@ -1310,10 +1329,10 @@ Local Transparent destroyed_by_op.
       (* econstructor; eauto. *)
       econstructor; eauto.
       eapply agree_sp_def; eauto.
+      admit.
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
-        admit.
-        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). auto. }
+        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). auto. admit. }
       simpl.
       { constructor.
         - unfold invalidate_call. simpl; Simpl.
