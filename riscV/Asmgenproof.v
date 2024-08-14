@@ -1124,8 +1124,9 @@ Opaque loadind.
         simpl. rewrite <- COMP_SP.
         destruct sp0; try now auto. simpl.
         eapply Mem.mext_inj in MEXT.
-        eapply Mem.mi_own in MEXT.
-        admit. }
+        erewrite <- (Mem.mi_access); eauto; try now eapply flowsto_refl.
+        reflexivity.
+        simpl in H1. eauto with mem. }
 
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
@@ -1404,11 +1405,10 @@ Local Transparent destroyed_by_op.
     * econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
+    { admit. }
     { econstructor. eauto. simpl.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
-      admit.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-      auto. }
+      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). admit. }
     simpl.
     { constructor.
       - unfold invalidate_call. simpl; Simpl.
@@ -1426,11 +1426,10 @@ Local Transparent destroyed_by_op.
     * eapply match_states_call_external; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
+    { admit. }
     { econstructor. eauto. simpl.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
-      admit.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-      auto. }
+      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). admit. }
     simpl.
     { constructor.
       - unfold invalidate_call. simpl; Simpl.
