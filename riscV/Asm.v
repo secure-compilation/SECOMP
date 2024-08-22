@@ -1432,7 +1432,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State st rs m cp) E0 (State st rs' m' (comp_of f))
 
   | exec_step_load_arg_cross:
-      forall b ofs f ch rd ra rs m st cp dsp dosp o o' sp v rs' ofs_arg ty,
+      forall b ofs f ch rd ra rs m st cp dsp dosp o o' sp v rs' ty,
       rs PC = Vptr b ofs ->
       Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
@@ -1443,13 +1443,15 @@ Inductive step: state -> trace -> state -> Prop :=
      
       (* gets replaced with actual stack pointer *)
       asm_parent_sp st = sp ->
-      eval_offset o = Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs_arg) ->
 
-      (In (One (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)) \/
-      (exists l : loc,
-          In (Twolong (S Incoming ofs_arg ty) l) (loc_parameters (parent_signature st))) \/
-       (exists l0 : loc,
-           In (Twolong l0 (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)))) ->
+      Stacklayout.is_valid_param_loc (fn_sig f) (Ptrofs.unsigned (eval_offset o)) ->
+      (* eval_offset o = Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs_arg) -> *)
+
+      (* (In (One (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)) \/ *)
+      (* (exists l : loc, *)
+      (*     In (Twolong (S Incoming ofs_arg ty) l) (loc_parameters (parent_signature st))) \/ *)
+      (*  (exists l0 : loc, *)
+      (*      In (Twolong l0 (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)))) -> *)
 
       Mem.loadv (chunk_of_type ty) m
                 (Val.offset_ptr sp (eval_offset o)) top = Some v ->
@@ -1692,10 +1694,7 @@ intros; constructor; simpl; intros.
   + split. constructor. auto.
   + split. constructor.
     destruct rd0.
-    * exploit H10; eauto. exploit H25; eauto.
-      admit.
-    * exploit H11; eauto. exploit H26; eauto.
-      admit.
+    admit. admit.
   + admit.
   + admit.
   + split. constructor. auto.

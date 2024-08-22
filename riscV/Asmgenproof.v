@@ -1060,10 +1060,13 @@ Lemma loadarg_priv_correct:
 
 Lemma loadarg_cross_correct:
   forall (st: stack) (cp: compartment) (ofs: ptrofs) (ty : typ) (dst : mreg)
-    (sp: val) (c: list Mach.instruction) (tc : list instruction) (rs: regset) (m: mem) (v : val) (b: block) (f: Mach.function) (tf: function),
+    (dsp: block) (dsp_ofs: ptrofs)
+    (c: list Mach.instruction) (tc : list instruction) (rs: regset) (m: mem) (v : val) (b: block) (f: Mach.function) (tf: function),
   forall (AT: transl_code_at_pc ge (rs PC) b f (Mgetparam ofs ty dst :: c) true tf tc),
-
-  forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp ofs) top = Some v),
+  forall (VALID_PARAM : Stacklayout.is_valid_param_loc (Mach.fn_sig f) (Ptrofs.unsigned ofs)),
+  forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (asm_parent_sp st) ofs) top = Some v),
+  forall (ATDUM: asm_parent_dummy_sp st = Vptr dsp dsp_ofs),
+  forall (IN_X30: rs X30 = Vptr dsp ofs),
   (* forall (COMP_X30: Mem.val_compartment m (rs X30) ⊆ comp_of f), *)
   exists (rs' : regset),
     plus step tge (State st rs m cp) E0 (State st rs' m (comp_of tf)) /\
@@ -1108,149 +1111,14 @@ Lemma loadarg_cross_correct:
             rewrite Ptrofs.of_int_to_int; auto. }
         eexists; split; [| split; [| split]].
         eapply plus_one.
-        (* eapply exec_step_load_arg_cross; eauto. *)
-        (* eapply find_instr_tail. rewrite <- H4; eauto. *)
-        (* { admit. } *)
-        (* { admit. } *)
-        (* { admit. } *)
-        (* { admit. } *)
-        (* { admit. } *)
-        (* { admit. } *)
-        (* { intros ? V; inv V. *)
-        (*   unfold exec_load. *)
-        (*   assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs' X30) *)
-        (*                                             (eval_offset tge ofs')) (comp_of tf) = *)
-        (*             Some v) as ->. *)
-        (*   { replace (comp_of f) with (comp_of tf) in COMP_X30. *)
-        (*     clear -LOAD COMP_X30. *)
-        (*     destruct (rs' X30); simpl in *; try congruence. *)
-        (*     apply Mem.load_valid_access in LOAD as G; destruct G as [? [_ ?]]. *)
-        (*     exploit (Mem.valid_access_load m (chunk_of_type ty) b *)
-        (*                (Ptrofs.unsigned (Ptrofs.add i (eval_offset tge ofs'))) (comp_of tf)); eauto. *)
-        (*     split; [| split]; eauto. *)
-        (*     (* simpl; rewrite COMP_X30; auto with comps. *) *)
-        (*     intros [? ?]. *)
-        (*     exploit Mem.load_Some_None; eauto. congruence. *)
-        (*     inv AT; rewrite comp_transf_function; eauto. *)
-        (*   } *)
-        (*   now reflexivity. } *)
-        (* { intros ? V; inv V. } *)
-        (* { rewrite <- DST; Simpl. } *)
-        admit. admit.
-
-        { intros; Simpl. }
-        { inv AT. monadInv H3.
-          eexists; split; eauto.
-          Simpl. rewrite <- H0; simpl. constructor; auto.
-          assert (x = k) as ->.
-          { unfold loadarg in *. destruct ty; destruct preg_of; try congruence;
-              inv EQ1;
-              unfold indexed_memory_access in *.
-            all: destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence. }
-          unfold indexed_memory_access in *.
-          destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence.
-          eapply code_tail_next_int; eauto.
-          eapply transf_function_no_overflow; eauto.
-          eapply code_tail_next_int; eauto.
-          eapply transf_function_no_overflow; eauto. }
-      + exploit exec_straight_steps_2; eauto.
-        eapply transf_function_no_overflow; inv AT; eauto.
-        eapply Genv.find_funct_ptr_iff; eauto.
-        intros [ofs1 [? ?]].
-        exploit exec_straight_steps_1; eauto.
-        eapply transf_function_no_overflow; inv AT; eauto.
-        eapply Genv.find_funct_ptr_iff; eauto.
-        intros PLUS.
-        eexists; split; [| split; [| split]].
-        eapply plus_trans.
-        eapply PLUS.
-        admit.
-        (* eapply plus_one. eapply exec_step_load_arg_int; eauto. *)
-        (* eapply find_instr_tail; eauto. *)
-
-        (* { intros ? V; inv V. *)
-        (*   unfold exec_load. *)
-        (*   rewrite OFF_PC. *)
-        (*   assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) (comp_of tf) = *)
-        (*             Some v) as ->. *)
-        (*   { replace (comp_of f) with (comp_of tf) in COMP_X30. *)
-        (*     clear -LOAD COMP_X30. *)
-        (*     destruct (rs X30); simpl in *; try congruence. *)
-        (*     apply Mem.load_valid_access in LOAD as G; destruct G as [? [_ ?]]. *)
-        (*     exploit (Mem.valid_access_load m (chunk_of_type ty) b *)
-        (*                (Ptrofs.unsigned (Ptrofs.add i ofs)) (comp_of tf)); eauto. *)
-        (*     split; [| split]; eauto. *)
-        (*     (* simpl; rewrite COMP_X30; auto with comps. *) *)
-        (*     intros [? ?]. *)
-        (*     exploit Mem.load_Some_None; eauto. congruence. *)
-        (*     inv AT; rewrite comp_transf_function; eauto. } *)
-        (*   now reflexivity. } *)
-        (* { intros ? V; inv V. } *)
-        { traceEq. }
-        admit. admit.
-        { exists k. split.
-          - inv AT. monadInv H6.
-            assert (x = k) as ->.
-            { unfold loadarg in *. destruct ty; destruct preg_of; try congruence;
-                inv EQ1;
-                unfold indexed_memory_access in *.
-              all: destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence. }
-            now auto.
-          - Simpl; rewrite H1; simpl.
-            inv AT. monadInv H6.
-            constructor; eauto.
-            + assert (x = k) as ->.
-              { unfold loadarg in *. destruct ty; destruct preg_of; try congruence;
-                  inv EQ1;
-                  unfold indexed_memory_access in *.
-                all: destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence. }
-              now auto.
-            + assert (x = k) as ->.
-              { unfold loadarg in *. destruct ty; destruct preg_of; try congruence;
-                  inv EQ1;
-                  unfold indexed_memory_access in *.
-                all: destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence. }
-              eapply code_tail_next_int; eauto. eapply transf_function_no_overflow; eauto. }
-    - exploit (indexed_memory_access_correct tge tf (Pld_arg (chunk_of_type ty) (inr frd)) X30 ofs k rs m); try now eauto.
-      intros [base' [ofs' [rs' [STR_OPT [OFF_PC REGVALS]]]]].
-      inv STR_OPT.
-      + assert (base' = X30) as ->.
-        { unfold indexed_memory_access in H4.
-          destruct Archi.ptr64.
-          - destruct make_immed64; inv H4; try congruence.
-          - destruct make_immed32; inv H4; try congruence. }
-        assert (eval_offset tge ofs' = ofs) as <-.
-        { unfold indexed_memory_access in H4.
-          destruct Archi.ptr64 eqn:archi.
-          - pose proof (make_immed64_sound (Ptrofs.to_int64 ofs)) as G.
-            destruct make_immed64; inv H4; try congruence. simpl.
-            rewrite Ptrofs.of_int64_to_int64; auto.
-          - pose proof (make_immed32_sound (Ptrofs.to_int ofs)) as G.
-            destruct make_immed32; inv H4; try congruence. simpl.
-            rewrite Ptrofs.of_int_to_int; auto. }
-        eexists; split; [| split; [| split]].
-        eapply plus_one. eapply exec_step_load_arg_int; eauto.
+        eapply exec_step_load_arg_cross; eauto.
         eapply find_instr_tail. rewrite <- H4; eauto.
+        { inv AT. monadInv H2. destruct zlt; try congruence. inv EQ0.
+          monadInv EQ; auto. }
+        { intros ? V; inv V. reflexivity. }
         { intros ? V; inv V. }
-        { intros ? V; inv V.
-          unfold exec_load.
-          assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs' X30)
-                                                    (eval_offset tge ofs')) (comp_of tf) =
-                    Some v) as ->.
-          { replace (comp_of f) with (comp_of tf) in COMP_X30.
-            clear -LOAD COMP_X30.
-            destruct (rs' X30); simpl in *; try congruence.
-            apply Mem.load_valid_access in LOAD as G; destruct G as [? [_ ?]].
-            exploit (Mem.valid_access_load m (chunk_of_type ty) b
-                       (Ptrofs.unsigned (Ptrofs.add i (eval_offset tge ofs'))) (comp_of tf)); eauto.
-            split; [| split]; eauto.
-            (* simpl; rewrite COMP_X30; auto with comps. *)
-            intros [? ?].
-            exploit Mem.load_Some_None; eauto. congruence.
-            inv AT; rewrite comp_transf_function; eauto.
-          }
-          now reflexivity. }
-        { rewrite <- DST; Simpl. }
+
+        { rewrite DST; Simpl. }
         { intros; Simpl. }
         { inv AT. monadInv H3.
           eexists; split; eauto.
@@ -1277,28 +1145,13 @@ Lemma loadarg_cross_correct:
         eexists; split; [| split; [| split]].
         eapply plus_trans.
         eapply PLUS.
-        eapply plus_one. eapply exec_step_load_arg_int; eauto.
+        eapply plus_one. eapply exec_step_load_arg_cross; eauto.
         eapply find_instr_tail; eauto.
+        admit. admit. admit.
+        { intros ? V; inv V; reflexivity. }
         { intros ? V; inv V. }
-        { intros ? V; inv V.
-          unfold exec_load.
-          rewrite OFF_PC.
-          assert (Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs X30) ofs) (comp_of tf) =
-                    Some v) as ->.
-          { replace (comp_of f) with (comp_of tf) in COMP_X30.
-            clear -LOAD COMP_X30.
-            destruct (rs X30); simpl in *; try congruence.
-            apply Mem.load_valid_access in LOAD as G; destruct G as [? [_ ?]].
-            exploit (Mem.valid_access_load m (chunk_of_type ty) b
-                       (Ptrofs.unsigned (Ptrofs.add i ofs)) (comp_of tf)); eauto.
-            split; [| split]; eauto.
-            (* simpl; rewrite COMP_X30; auto with comps. *)
-            intros [? ?].
-            exploit Mem.load_Some_None; eauto. congruence.
-            inv AT; rewrite comp_transf_function; eauto. }
-          now reflexivity. }
-        { traceEq. }
-        { rewrite <- DST; Simpl. }
+        traceEq.
+        { rewrite DST; Simpl. }
         { intros; Simpl. }
         { exists k. split.
           - inv AT. monadInv H6.
@@ -1323,7 +1176,8 @@ Lemma loadarg_cross_correct:
                   unfold indexed_memory_access in *.
                 all: destruct Archi.ptr64; [destruct make_immed64 | destruct make_immed32]; try congruence. }
               eapply code_tail_next_int; eauto. eapply transf_function_no_overflow; eauto. }
-  Qed.
+    - admit.
+  Admitted.
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
@@ -1404,8 +1258,10 @@ Opaque loadind.
         eapply agree_set_mreg. eapply agree_set_mreg; eauto.
         congruence. auto with asmgen.
         intros. rewrite rs'_others; auto using preg_of_not_X30; try congruence. }
-    * exploit loadarg_priv_correct; eauto.
-    * admit.
+    * exploit loadarg_cross_correct; eauto.
+      instantiate (2 := (f' :: s'0)).
+      inv H6; eauto.
+      admit. admit.
 
 (* X30 contains parent *)
   + admit.
