@@ -1432,19 +1432,20 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State st rs m cp) E0 (State st rs' m' (comp_of f))
 
   | exec_step_load_arg_cross:
-      forall b ofs f ch rd ra rs m st cp dsp dosp o o' sp v rs' ty,
+      forall b ofs f ch rd ra rs m st cp dsp o o' sp v rs' ty,
       rs PC = Vptr b ofs ->
       Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
 
       (* Loading from dummy stack pointer *)
-      asm_parent_dummy_sp st = Vptr dsp dosp ->
+      asm_parent_dummy_sp st = Vptr dsp Ptrofs.zero ->
       rs ra = Vptr dsp o' ->
      
       (* gets replaced with actual stack pointer *)
       asm_parent_sp st = sp ->
 
-      Stacklayout.is_valid_param_loc (fn_sig f) (Ptrofs.unsigned (eval_offset o)) ->
+      Stacklayout.is_valid_param_loc (fn_sig f)
+        (Ptrofs.unsigned (Ptrofs.add o' (eval_offset o))) ->
       (* eval_offset o = Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs_arg) -> *)
 
       (* (In (One (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)) \/ *)
@@ -1454,7 +1455,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (*      In (Twolong l0 (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)))) -> *)
 
       Mem.loadv (chunk_of_type ty) m
-                (Val.offset_ptr sp (eval_offset o)) top = Some v ->
+                (Val.offset_ptr sp (Ptrofs.add o' (eval_offset o))) top = Some v ->
       (forall ird, rd = inl ird -> rs' = nextinstr rs # ird <- v) ->
       (forall frd, rd = inr frd -> rs' = nextinstr rs # frd <- v) ->
 
