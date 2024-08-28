@@ -577,6 +577,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
+        (COMP_SP: Mem.val_compartment m sp = comp_of f)
         (DXP: ep = true -> rs#X30 = dummy_parent_sp s),
       match_states (Mach.State s fb sp c ms m)
         (Asm.State s' rs m' (comp_of f))
@@ -633,6 +634,8 @@ Lemma exec_straight_steps:
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
+
+  forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
   forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
@@ -662,6 +665,7 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
+  forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
   forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
@@ -709,6 +713,7 @@ Lemma exec_straight_opt_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
+  forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
   forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
@@ -1355,6 +1360,8 @@ Proof.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
   left; eapply exec_straight_steps; eauto.
   eapply match_stack_storev; eauto.
+  { destruct sp; simpl in *; try now congruence.
+    now erewrite <- Mem.store_preserves_comp; eauto. }
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
   inv AT.
   unfold Genv.find_comp_of_block in A; unfold Genv.find_funct_ptr in FIND.
@@ -1382,7 +1389,7 @@ Opaque loadind.
       rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; simpl in *.
       inv STACKS.
       { rewrite H4. erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
-        simpl. rewrite <- COMP_SP.
+        simpl. rewrite <- COMP_SP0.
         destruct sp0; try now auto. simpl.
         eapply Mem.mext_inj in MEXT.
         erewrite <- (Mem.mi_access); eauto; try now eapply flowsto_refl.
@@ -1427,7 +1434,7 @@ Opaque loadind.
       rewrite F; auto. destruct f0; destruct ISEMPTY; subst; simpl in *.
       inv STACKS.
       { rewrite H4. erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
-        simpl. rewrite <- COMP_SP.
+        simpl. rewrite <- COMP_SP0.
         destruct (rs' X30); auto with comps. simpl.
         (* destruct sp0; try now auto. simpl. *)
         eapply Mem.mext_inj in MEXT.
@@ -1523,6 +1530,9 @@ Local Transparent destroyed_by_op.
   exploit Mem.storev_extends; eauto. intros [m2' [C D]].
   left; eapply exec_straight_steps; eauto.
   eapply match_stack_storev; eauto.
+  { destruct sp; simpl in *; try congruence.
+    destruct a; simpl in *; try congruence.
+    now erewrite <- Mem.store_preserves_comp; eauto. }
   inv AT.
   unfold Genv.find_comp_of_block in C; unfold Genv.find_funct_ptr in FIND.
     destruct (Genv.find_def ge f) as [[] |] eqn:?; try congruence. inv FIND. simpl in C.
@@ -1601,10 +1611,8 @@ Local Transparent destroyed_by_op.
     * eapply match_states_call; eauto.
       econstructor; eauto.
       eapply agree_sp_def; eauto.
-      { admit. } (* ok *)
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
-        (* admit. *)
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
         admit. }
       simpl.
@@ -1627,10 +1635,8 @@ Local Transparent destroyed_by_op.
             (* OK *)
           admit. } }
     * eapply match_states_call_external; eauto.
-      (* econstructor; eauto. *)
       econstructor; eauto.
       eapply agree_sp_def; eauto.
-      admit.
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). auto. admit. }
@@ -1703,9 +1709,8 @@ Local Transparent destroyed_by_op.
     rewrite comp_transf_function; eauto.
     destruct fd.
     * econstructor; eauto.
-    econstructor; eauto.
-    eapply agree_sp_def; eauto.
-    { admit. }
+      econstructor; eauto.
+      eapply agree_sp_def; eauto.
     { econstructor. eauto. simpl.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). admit. }
@@ -1726,7 +1731,6 @@ Local Transparent destroyed_by_op.
     * eapply match_states_call_external; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
-    { admit. }
     { econstructor. eauto. simpl.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). admit. }
@@ -1816,6 +1820,7 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
+    { admit. }
     { eapply match_stacks_cross_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).

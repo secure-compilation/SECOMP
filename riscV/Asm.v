@@ -1446,13 +1446,6 @@ Inductive step: state -> trace -> state -> Prop :=
 
       Stacklayout.is_valid_param_loc (fn_sig f)
         (Ptrofs.unsigned (Ptrofs.add o' (eval_offset o))) ->
-      (* eval_offset o = Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs_arg) -> *)
-
-      (* (In (One (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)) \/ *)
-      (* (exists l : loc, *)
-      (*     In (Twolong (S Incoming ofs_arg ty) l) (loc_parameters (parent_signature st))) \/ *)
-      (*  (exists l0 : loc, *)
-      (*      In (Twolong l0 (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)))) -> *)
 
       Mem.loadv (chunk_of_type ty) m
                 (Val.offset_ptr sp (Ptrofs.add o' (eval_offset o))) top = Some v ->
@@ -1466,12 +1459,6 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
-
-      (* load argument from stack pointer *)
-      (* rs ra = sp -> *)
-
-      (* asm_parent_sp st = sp -> *)
-      (* Stacklayout.is_valid_param_loc (fn_sig f) (Ptrofs.unsigned (eval_offset o)) -> *)
 
       forall (EXECi: forall ird, rd = inl ird ->
                        exec_load ch rs m ird ra o (comp_of f) false = Next rs' m'),
@@ -1494,11 +1481,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (SP_HAS_PTR: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
                      exists bsp osp, rs SP = Vptr bsp osp
                                 /\ (forall fd, (Genv.find_def ge bsp <> Some (Gfun fd)))
-                                /\ (Mem.perm m bsp 0 Max Nonempty)
-                                (* /\ *)
-                                  (* forall (ofs1 : Z) (k : perm_kind) (p1 : permission), *)
-                                  (*   (Mem.mem_access m') !! bsp ofs1 k = Some p1 -> perm_order p1 Readable *)
-        ),
+                                /\ (Mem.perm m bsp 0 Max Nonempty)),
       forall (DIFF_SP: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
                   diff_sp_X2 st (rs X2)), (* makes proof simpler. Check if really needed *)
 
