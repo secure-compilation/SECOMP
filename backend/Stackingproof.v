@@ -2294,7 +2294,6 @@ Proof.
   eapply frame_get_parent. eexact SEP. unfold call_comp. simpl.
   unfold load_stack in *.
   simpl. simpl in A.
-
   eapply Mem.load_Some_None. eauto.
   { unfold transf_function in TRANSL.
     destruct negb; try congruence; destruct zlt; try congruence. inv TRANSL; simpl.
@@ -2431,20 +2430,28 @@ Proof.
   rewrite transl_code_eq in IST. simpl in IST.
   exploit return_address_offset_exists. eexact IST. intros [ra F].
   assert (exists m_res dra dsp,
-             match t with
-             | nil => m_res = m' /\ dra = None /\ dsp = None
-             | _ :: _ =>
-                 let (m'0, dummy_ra) := Mem.alloc m' (comp_of tf') 0 0 in
-                 let (m'', dummy_sp) := Mem.alloc m'0 (comp_of tf') 0 0 in
-                 m_res = m'' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp end)
-           as [m_res [dra [dsp X]]].
-  { destruct t.
-    eexists; eexists; eexists; eauto.
-    destruct (Mem.alloc m' (comp_of tf') 0 0).
-    destruct (Mem.alloc m0 (comp_of tf') 0 0).
-    eexists; eexists; eexists; eauto. }
-  destruct t.
-  + destruct X as (? & ? & ?); subst.
+             (comp_of tf = comp_of tf' -> m_res = m' /\ dra = None /\ dsp = None) /\
+             (comp_of tf <> comp_of tf' ->
+              let (m'0, dummy_ra) := Mem.alloc m' (comp_of tf') 0 0 in
+              let (m'', dummy_sp) := Mem.alloc m'0 (comp_of tf') 0 0 in
+              m_res = m'' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp))
+           as [m_res [dra [dsp [X Y]]]].
+           (*   match t with *)
+           (*   | nil => m_res = m' /\ dra = None /\ dsp = None *)
+           (*   | _ :: _ => *)
+           (*       let (m'0, dummy_ra) := Mem.alloc m' (comp_of tf') 0 0 in *)
+           (*       let (m'', dummy_sp) := Mem.alloc m'0 (comp_of tf') 0 0 in *)
+           (*       m_res = m'' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp end) *)
+           (* as [m_res [dra [dsp X]]]. *)
+  { destruct (cp_eq_dec (comp_of tf) (comp_of tf')).
+    - eexists; eexists; eexists; split; eauto. congruence.
+    - destruct (Mem.alloc m' (comp_of tf') 0 0).
+      destruct (Mem.alloc m0 (comp_of tf') 0 0).
+      eexists; eexists; eexists; split; try congruence. eauto. }
+  destruct (cp_eq_dec (comp_of tf) (comp_of tf')).
+  (* destruct t. *)
+  + clear Y. specialize (X e).
+    destruct X as (? & ? & ?); subst.
     eexists; split.
     apply plus_one.
     assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs_ext rs (Linear.funsig f')))
@@ -2457,10 +2464,14 @@ Proof.
     exploit (fun x2 x3 x4 x5 => transl_arguments _ x2 x3 x4 x5 _ _ AGREGS); eauto. simpl.
     apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
     { inv EV.
-      eapply exec_Mcall_int; eauto.
-      rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C).
-      simpl in *; now destruct flowsto_dec.
-      erewrite sig_preserved; eauto. }
+      - eapply exec_Mcall_int; eauto.
+        (* rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C). *)
+        (* simpl in *; now destruct flowsto_dec. *)
+        erewrite sig_preserved; eauto.
+      - simpl in H2.
+        rewrite (comp_transl_partial _ TRANSL), (comp_transf_partial_fundef _ C) in H2.
+        destruct flowsto_dec; auto with comps. congruence.
+        exfalso; eapply n. rewrite e; auto with comps. }
     { apply Val.Vptr_has_type. }
     { intros; red.
       apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.
@@ -2475,7 +2486,8 @@ Proof.
     simpl. rewrite sep_assoc. eapply m_invar. eapply SEP. eapply Mem.unchanged_on_refl.
   + destruct (Mem.alloc m' (comp_of tf') 0 0) as [m'' dra'] eqn:alloc1.
     destruct (Mem.alloc m'' (comp_of tf') 0 0) as [m''' dsp'] eqn:alloc2.
-    destruct X as (? & ? & ?). subst.
+    clear X. specialize (Y n).
+    destruct Y as (? & ? & ?). subst.
     eexists; split.
     apply plus_one.
     assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs_ext rs (Linear.funsig f')))
@@ -2490,14 +2502,18 @@ Proof.
     { eapply exec_Mcall_cross; eauto.
       + rewrite <- (comp_transl_partial _ TRANSL).
         apply (Genv.allowed_call_transf_partial TRANSF ALLOWED).
-      + inv EV.
-        rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C). eauto.
+      (* + inv EV. *)
+      (*   rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C). eauto. *)
       + (* intros G. specialize (NO_CROSS_PTR G). *)
+        rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C).
+        intros G. specialize (NO_CROSS_PTR G).
         eapply Val.inject_list_not_ptr; eauto.
-        clear -NO_CROSS_PTR EV. inv EV.
+        (* clear -NO_CROSS_PTR EV. inv EV. *)
         unfold loc_parameters in NO_CROSS_PTR.
         (* eapply NO_CROSS_PTR. *)
-        rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR. eauto.
+        rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR.
+        (* unfold loc_parameters in NO_CROSS_PTR. *)
+        (* rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR. eauto. *)
       + erewrite sig_preserved; eauto.
       + rewrite <- comp_transf_function; eauto. rewrite <- (comp_transf_partial_fundef _ C).
         eapply call_trace_inj with (ge := ge); eauto using symbols_preserved.

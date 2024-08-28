@@ -444,7 +444,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
-      forall (ALLOWED: comp_of fd ⊆ comp_of f),
+      forall (ALLOWED: comp_of fd = comp_of f),
       forall (SIG: sig = funsig fd),
       forall (ARGS: call_arguments (undef_regs destroyed_at_function_entry rs) m sp sig args), (* simpler for later pass*)
       step (State s fb sp (Mcall sig ros :: c) rs m)
@@ -457,10 +457,11 @@ Inductive step: state -> trace -> state -> Prop :=
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
-      forall (CROSS: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall),
+      forall (CROSS: comp_of f <> comp_of fd),
       (* call_arguments are never invalidated *)
       forall (ARGS: call_arguments (undef_regs destroyed_at_function_entry rs) m sp sig args),
-      forall (NO_CROSS_PTR: List.Forall not_ptr args),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall ->
+                       List.Forall not_ptr args),
       forall (SIG: sig = funsig fd),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) (Vptr f' Ptrofs.zero) args (sig_args sig) t),
       forall (allc: let (m', dummy_ra) := Mem.alloc m (comp_of fd) 0 0 in
