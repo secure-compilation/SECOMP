@@ -1771,56 +1771,53 @@ Local Transparent destroyed_by_op.
   instantiate (1 := (rs0 # PC <- (rs0 x0)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)).
   simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl.
   intros [args' [ARGS' LDARGS]].
-  * (* assert (exists e, t = e :: nil) as [e ?]. *)
-    (* { inv EV; eauto. simpl in *. *)
-    (*   now destruct flowsto_dec. } *)
-    (* assert (not_flowsto: not (comp_of fd ⊆ comp_of f)). *)
-    (* { inv EV; eauto. simpl in *. now destruct flowsto_dec. } *)
-    subst. simpl in allc.
-    destruct (Mem.alloc m (comp_of fd) 0 0) as [m1 ?] eqn:allc1.
-    destruct (Mem.alloc m1 (comp_of fd) 0 0) as [m2 ?] eqn:allc2.
-    destruct allc as (? & ? & ?); subst.
-    eapply Mem.alloc_extends in allc1 as allc1'; eauto. destruct allc1' as [m2' [allc1' ext1]].
-    eapply Mem.alloc_extends in allc2 as allc2'; eauto. destruct allc2' as [m2'' [allc2' ext2]].
+  subst. simpl in allc.
+  destruct (Mem.alloc m (comp_of fd) 0 0) as [m1 ?] eqn:allc1.
+  destruct (Mem.alloc m1 (comp_of fd) 0 0) as [m2 ?] eqn:allc2.
+  destruct allc as (? & ? & ?); subst.
+  eapply Mem.alloc_extends with (lo2 := 0) (hi2 := 0) in allc1 as allc1'; eauto; try lia.
+  destruct allc1' as [m2' [allc1' ext1]].
+  eapply Mem.alloc_extends with (lo2 := 0) (hi2 := 0) in allc2 as allc2'; eauto; try lia.
+  destruct allc2' as [m2'' [allc2' ext2]].
 
-    left; econstructor; split.
-    rewrite comp_transf_function; eauto.
-    apply plus_one. eapply exec_step_internal_call.
-    rewrite <- H2; simpl; eauto. eapply Genv.find_funct_ptr_iff.
-    eapply functions_transl; eauto.
-    eapply find_instr_tail; eauto.
-    simpl; eauto.
-    simpl; eauto.
-    Simpl; eauto.
-    rewrite <- (comp_transl_partial _ H4).
+  left; econstructor; split.
+  rewrite comp_transf_function; eauto.
+  apply plus_one. eapply exec_step_internal_call.
+  * rewrite <- H2; simpl; eauto.
+  * eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
+  * eapply find_instr_tail; eauto.
+  * simpl; eauto.
+  * simpl; eauto.
+  * Simpl; eauto.
+  * rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
-    simpl.
-    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    { intros _.
-      eexists; eexists; split; [| split]; eauto.
-      - erewrite (agree_sp _ _ _ AG); eauto. admit.
-      - admit.
-      - admit. }
-    { erewrite agree_sp; eauto. admit. (* OK *) }
-    { unfold update_stack_call. Simpl. rewrite H7; simpl.
-      unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-      rewrite <- (comp_transl_partial _ H4).
-      rewrite <- (comp_transl_partial _ TTRANSF).
-      destruct cp_eq_dec; try congruence.
-      rewrite <- H2. rewrite allc1', allc2'. (* ok see previous goal *) admit. }
-    eauto.
-    { intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
-      (* ok *) admit. }
-    { simpl.
-      intros.
-      rewrite <- (comp_transl_partial _ H4) in H8.
-      rewrite <- (comp_transl_partial _ TTRANSF) in H8.
-      now eapply Val.lessdef_list_not_ptr; eauto. }
-    { simpl. rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF).
-      eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
-    eauto.
-    rewrite comp_transf_function; eauto.
+  * now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+  * intros _.
+    eexists; eexists; split; [| split]; eauto.
+    -- erewrite (agree_sp _ _ _ AG); eauto. admit.
+    -- admit.
+    -- admit.
+  * admit.
+    (* { erewrite agree_sp; eauto. admit. (* OK *) } *)
+  * unfold update_stack_call. Simpl. rewrite H7; simpl.
+    unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+    rewrite <- (comp_transl_partial _ H4).
+    rewrite <- (comp_transl_partial _ TTRANSF).
+    destruct cp_eq_dec; try congruence.
+    rewrite <- H2. rewrite allc1', allc2'. (* ok see previous goal *) admit.
+  * eauto.
+  * intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
+    (* ok *) admit.
+  * simpl.
+    intros.
+    rewrite <- (comp_transl_partial _ H4) in H8.
+    rewrite <- (comp_transl_partial _ TTRANSF) in H8.
+    now eapply Val.lessdef_list_not_ptr; eauto.
+  * simpl. rewrite <- comp_transf_function; eauto.
+    rewrite <- (comp_transl_partial _ TTRANSF).
+    eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
+  * eauto.
+  * rewrite comp_transf_function; eauto.
     destruct fd; simpl in *; try now exfalso; auto with comps.
     econstructor; eauto.
     econstructor; eauto.
