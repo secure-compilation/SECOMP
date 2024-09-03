@@ -1478,14 +1478,13 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
       forall cp' (NEXTCOMP: Genv.find_comp_of_block ge b' = cp'),
       (* Is a call, we update the stack *)
-      forall (SP_HAS_PTR: comp_of f <> cp' ->
-                     (* Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall -> *)
-                     exists bsp osp, rs SP = Vptr bsp osp
-                                /\ (forall fd, (Genv.find_def ge bsp <> Some (Gfun fd)))
-                                /\ (Mem.perm m bsp 0 Max Nonempty)),
-      forall (DIFF_SP: (* Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall -> *)
-          comp_of f <> cp' ->
-                  diff_sp_X2 st (rs X2)), (* makes proof simpler. Check if really needed *)
+      (* forall (SP_HAS_PTR: comp_of f <> cp' -> *)
+      (*                exists bsp osp, rs SP = Vptr bsp osp *)
+      (*                           /\ (forall fd, (Genv.find_def ge bsp <> Some (Gfun fd))) *)
+      (*                           /\ (Mem.perm m bsp 0 Max Nonempty)), *)
+      (* forall (DIFF_SP: (* Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall -> *) *)
+      (*     comp_of f <> cp' -> *)
+      (*             diff_sp_X2 st (rs X2)), (* makes proof simpler. Check if really needed *) *)
 
       forall (STUPD: update_stack_call st sig (comp_of f) rs' m' = Some (st', rs'', m'')),
       forall (ARGS: call_arguments rs' m' sig args),
