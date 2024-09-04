@@ -578,6 +578,11 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
         (SP_OK: sp = Vptr bsp osp)
+        (SP_PERM: Mem.perm m bsp 0 Max Nonempty)
+                (* Mem.val_compartment m sp = comp_of f) *)
+        (*                           /\ (forall fd, (Genv.find_def ge bsp <> Some (Gfun fd))) *)
+        (*                           /\ (Mem.perm m bsp 0 Max Nonempty)), *)
+        (* ) *)
         (COMP_SP: Mem.val_compartment m sp = comp_of f)
         (DXP: ep = true -> rs#X30 = dummy_parent_sp s),
       match_states (Mach.State s fb sp c ms m)
@@ -606,7 +611,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (SIG: Mach.parent_signature s = ef_sig ef)
         (STACKS': match_stacks cp s s')
         (MEXT: Mem.extends m m')
-        (AG: agree ms (dummy_parent_sp s) rs)
+        (AG: agree (Mach.undef_caller_save_regs_ext ms sig) (dummy_parent_sp s) rs)
         (EQ: dummy_parent_sp s = parent_sp s)
         (EQ': dummy_parent_ra s = parent_ra s)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -637,6 +642,7 @@ Lemma exec_straight_steps:
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
 
   forall (SP_OK: sp = Vptr bsp osp),
+  forall (SP_PERM: Mem.perm m2 bsp 0 Max Nonempty),
   forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
   forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
@@ -667,7 +673,9 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
+  (* forall (SP_OK: sp = Vptr bsp osp), *)
   forall (SP_OK: sp = Vptr bsp osp),
+  forall (SP_PERM: Mem.perm m2 bsp 0 Max Nonempty),
   forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
   forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
@@ -717,6 +725,7 @@ Lemma exec_straight_opt_steps_goto:
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
   forall (SP_OK: sp = Vptr bsp osp),
+  forall (SP_PERM: Mem.perm m2 bsp 0 Max Nonempty),
   forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
   forall (STACKS: match_stacks (comp_of f) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
@@ -1398,6 +1407,7 @@ Proof.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
   left; eapply exec_straight_steps; eauto.
   eapply match_stack_storev; eauto.
+  simpl in *; eapply Mem.perm_store_1; eauto.
   simpl in *; now erewrite <- Mem.store_preserves_comp; eauto.
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
   inv AT.
@@ -1428,7 +1438,7 @@ Opaque loadind.
       { rewrite H4. erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
         simpl. rewrite <- COMP_SP0.
         destruct sp; try now auto. simpl.
-        eapply Mem.mext_inj in MEXT.
+        eapply Mem.mext_inj in MEXT. clear SP_PERM.
         erewrite <- (Mem.mi_access); eauto; try now eapply flowsto_refl.
         reflexivity.
         simpl in H1. eauto with mem. }
@@ -1474,7 +1484,7 @@ Opaque loadind.
         simpl. rewrite <- COMP_SP0.
         destruct (rs' X30); auto with comps. simpl.
         (* destruct sp0; try now auto. simpl. *)
-        eapply Mem.mext_inj in MEXT.
+        eapply Mem.mext_inj in MEXT. clear SP_PERM.
         erewrite <- (Mem.mi_access); eauto; try now eapply flowsto_refl.
         reflexivity.
         simpl in H1. eauto with mem. }
@@ -1570,6 +1580,9 @@ Local Transparent destroyed_by_op.
   exploit Mem.storev_extends; eauto. intros [m2' [C D]].
   left; eapply exec_straight_steps; eauto.
   eapply match_stack_storev; eauto.
+  { destruct sp; simpl in *; try congruence.
+    destruct a; simpl in *; try congruence.
+    simpl in *; eapply Mem.perm_store_1; eauto. }
   { destruct sp; simpl in *; try congruence.
     destruct a; simpl in *; try congruence.
     now erewrite <- Mem.store_preserves_comp; eauto. }
@@ -1686,11 +1699,13 @@ Local Transparent destroyed_by_op.
           destruct preg_eq. now exploit preg_of_not_PC; eauto.
           destruct preg_eq. destruct r; simpl in e; congruence.
           destruct preg_eq. destruct r; simpl in e; congruence.
-          rewrite orb_false_l.
+          destruct (LTL.in_mreg) eqn:I; try now constructor.
+          eapply existsb_exists in I as [r' [I I']]. simpl in I'.
+          assert (r = r') as <- by now destruct mreg_eq.
+          eapply in_map with (f := preg_of) in I. (* ok *)
           destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto.
           exfalso. apply n2.
-          eapply in_all_mregs_filter; eauto.
-          admit. }
+          eapply in_all_mregs_filter; eauto. }
 
   + (* Direct call *)
     generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
@@ -1782,11 +1797,13 @@ Local Transparent destroyed_by_op.
         destruct preg_eq. now exploit preg_of_not_PC; eauto.
         destruct preg_eq. destruct r; simpl in e0; congruence.
         destruct preg_eq. destruct r; simpl in e0; congruence.
-        rewrite orb_false_l.
+        destruct (LTL.in_mreg) eqn:I; try now constructor.
+        eapply existsb_exists in I as [r' [I I']]. simpl in I'.
+        assert (r = r') as <- by now destruct mreg_eq.
+        eapply in_map with (f := preg_of) in I. (* ok *)
         destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto.
         exfalso. apply n2.
-        eapply in_all_mregs_filter; eauto.
-        admit. }
+        eapply in_all_mregs_filter; eauto. }
 
 - (* Mcall [cross compartment!] *)
   assert (f0 = f) by congruence.  subst f0.
@@ -1844,10 +1861,15 @@ Local Transparent destroyed_by_op.
     destruct cp_eq_dec; try congruence.
     rewrite <- H2. rewrite allc1', allc2'.
     erewrite agree_sp; eauto; simpl.
-    (* ok see previous goal *) admit.
+    unfold Mem.set_perm. destruct (plt bsp (Mem.nextblock m2'')); try congruence.
+    reflexivity. admit.
   * eauto.
   * intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
-    (* ok *) admit.
+    clear -TTRANSF.
+    destruct fd; simpl in *; auto.
+    monadInv TTRANSF; auto. monadInv EQ. destruct zlt; try now auto.
+    inv EQ1; auto. monadInv EQ0; auto.
+    inv TTRANSF; auto.
   * simpl.
     intros.
     rewrite <- (comp_transl_partial _ H4) in H8.
@@ -1864,10 +1886,19 @@ Local Transparent destroyed_by_op.
     eapply agree_sp_def; eauto.
     { simpl.
       erewrite Mem.alloc_block_compartment; eauto.
-      destruct eq_block; subst; auto. admit.
+      destruct eq_block; subst; auto.
+      { exfalso. eapply Mem.fresh_block_alloc in allc2'.
+        eapply Mem.perm_extends in SP_PERM; eauto.
+        eapply Mem.perm_valid_block in SP_PERM.
+        eapply Mem.valid_block_alloc in SP_PERM; eauto. }
       erewrite Mem.alloc_block_compartment; eauto.
-      destruct eq_block; subst; auto. admit. }
+      destruct eq_block; subst; auto.
+      { exfalso. eapply Mem.fresh_block_alloc in allc1'.
+        eapply Mem.perm_extends in SP_PERM; eauto.
+        eapply Mem.perm_valid_block in SP_PERM. contradiction. }
+    }
     { admit. (* ok *) }
+    { admit. }
     { eapply match_stacks_cross_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
