@@ -2486,6 +2486,11 @@ Proof.
     simpl. rewrite sep_assoc. eapply m_invar. eapply SEP. eapply Mem.unchanged_on_refl.
   + destruct (Mem.alloc m' (comp_of tf') 0 0) as [m'' dra'] eqn:alloc1.
     destruct (Mem.alloc m'' (comp_of tf') 0 0) as [m''' dsp'] eqn:alloc2.
+
+    assert (exists m'''', Mem.set_perm m''' sp' Readable = Some m'''') as [? Z].
+    { destruct SEP as (R & T).
+      admit.
+    }
     clear X. specialize (Y n).
     destruct Y as (? & ? & ?). subst.
     eexists; split.
@@ -2531,7 +2536,7 @@ Proof.
         congruence.
         auto.
         unfold loc_parameters in EV. rewrite map_map in EV. auto.
-      + rewrite alloc1, alloc2. eauto. }
+      + rewrite alloc1, alloc2. rewrite Z. eauto. }
     { apply Val.Vptr_has_type. }
     { intros; red.
       apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.
@@ -2546,7 +2551,8 @@ Proof.
     simpl. rewrite sep_assoc. eapply m_invar. eapply SEP.
     { eapply Mem.unchanged_on_trans.
       eapply Mem.alloc_unchanged_on; eauto.
-      eapply Mem.alloc_unchanged_on; eauto. }
+      eapply Mem.unchanged_on_trans.
+      eapply Mem.alloc_unchanged_on; eauto. admit. }
 
 - (* Ltailcall *)
   rewrite (sep_swap (stack_contents j s cs')) in SEP.

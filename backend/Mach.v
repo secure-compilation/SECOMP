@@ -466,7 +466,15 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (EV: call_trace ge (comp_of f) (comp_of fd) (Vptr f' Ptrofs.zero) args (sig_args sig) t),
       forall (allc: let (m', dummy_ra) := Mem.alloc m (comp_of fd) 0 0 in
                let (m'', dummy_sp) := Mem.alloc m' (comp_of fd) 0 0 in
-               m_res = m'' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp),
+               match sp with
+               | Vptr bsp osp =>
+                   match Mem.set_perm m'' bsp Readable with
+                   | Some m''' =>
+                       m_res = m''' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp
+                   | None => False
+                   end
+               | _ => m_res = m'' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp
+               end),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         t (Callstate (Stackframe fb sig sp ra c dra dsp :: s)
                        f' sig rs m_res (comp_of f))

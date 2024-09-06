@@ -1066,6 +1066,8 @@ Inductive match_stack: signature -> list Mach.stackframe -> Prop :=
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
       forall (COMP_SP: Mem.val_compartment m sp = comp_of f),
+      forall (SP_PERM: forall bsp osp, sp = Vptr bsp osp ->
+        Mem.perm m bsp 0 Max Nonempty),
       match_stack (Mach.fn_sig f) s ->
       match_stack sg (Mach.Stackframe fb sg sp ra c dra dsp :: s).
 
