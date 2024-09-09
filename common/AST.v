@@ -61,10 +61,6 @@ Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y ->
 Parameter pos_to_comp: positive -> compartment.
 Axiom pos_to_comp_inv: forall x, pos_to_comp (comp_to_pos x) = x.
 
-(* Parameter comp_eqb : compartment -> compartment -> bool. *)
-(* Axiom comp_eqb_refl : forall (cp : compartment), comp_eqb cp cp = true. *)
-(* Axiom comp_eqb_neq : forall (cp cp' : compartment), comp_eqb cp cp' = false <-> cp <> cp'. *)
-
 Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
   Definition t := compartment.
   Definition index := comp_to_pos.
