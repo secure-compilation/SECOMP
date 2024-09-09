@@ -547,8 +547,9 @@ Variable ge: genv.
 
 (* Parameter low_half: genv -> ident -> ptrofs -> ptrofs. *)
 (* Parameter high_half: genv -> ident -> ptrofs -> val. *)
-Program Definition low_half: genv -> ident -> ptrofs -> ptrofs :=
+Definition low_half: genv -> ident -> ptrofs -> ptrofs :=
   (fun _ _ _ => Ptrofs.zero).
+
 Definition high_half: genv -> ident -> ptrofs -> val :=
   (fun ge id ofs => match Genv.find_symbol ge id with
                     | Some b => Vptr b ofs
