@@ -801,7 +801,7 @@ Program Definition set_perm (m: mem) (b: block) (p: permission): option mem :=
   if plt b m.(nextblock) then
     Some (mkmem m.(mem_contents)
                (PMap.set b
-                  (fun ofs k => if m.(mem_access)#b ofs k then Some p else None)
+                  (fun ofs k => if m.(mem_access)#b ofs Max then Some p else None)
                   m.(mem_access))
                m.(mem_compartments)
                    m.(nextblock) _ _ _ _)
@@ -817,10 +817,12 @@ Next Obligation.
   apply access_max.
 Qed.
 Next Obligation.
-  exploit (nextblock_noaccess m b0 ofs k). auto. intros NOACC.
+  exploit (nextblock_noaccess m b0 ofs Max). auto. intros NOACC.
   rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
   rewrite NOACC. auto.
-  auto.
+  destruct k; auto.
+  exploit access_max; rewrite NOACC. simpl.
+  destruct ((mem_access m) # b0 ofs Cur); auto; contradiction.
 Qed.
 Next Obligation.
   apply contents_default.
@@ -3223,6 +3225,17 @@ Qed.
 End DROP.
 
 
+Theorem valid_set_perm:
+  forall m b p,
+    valid_block m b ->
+    {m' | set_perm m b p = Some m' }.
+Proof.
+  unfold valid_block, set_perm; intros.
+  destruct plt.
+  - eauto.
+  - contradiction.
+Defined.
+
 Section SET.
 
 Variable m: mem.
@@ -3290,42 +3303,12 @@ Proof.
   intros.
   unfold set_perm in SET.
   destruct plt; try discriminate.
-  (* destruct Z_le_dec; try lia; *)
-  (* destruct (range_perm_dec m b lo hi Cur Freeable); *)
-  (* destruct (can_access_block_dec m b cp); *)
   inv SET.
   unfold perm. simpl. rewrite PMap.gss. unfold perm in *.
-  destruct ((mem_access m) # b ofs k) eqn:?. constructor. simpl. inv H.
-Qed.
-
-(* Theorem perm_set_2: *)
-(*   forall ofs k p', lo <= ofs < hi -> perm m' b ofs k p' -> perm_order p p'. *)
-(* Proof. *)
-(*   intros. *)
-(*   unfold set_perm in SET. *)
-(*   destruct Z_le_dec; try lia; *)
-(*   destruct (range_perm_dec m b lo hi Cur Freeable); *)
-(*   destruct (can_access_block_dec m b cp); *)
-(*   inv SET. *)
-(*   revert H0. unfold perm; simpl. rewrite PMap.gss. unfold proj_sumbool. *)
-(*   rewrite zle_true. rewrite zlt_true. simpl. auto. *)
-(*   lia. lia. *)
-(* Qed. *)
-
-Theorem perm_set_3:
-  forall b' ofs k p', perm_order p p' -> perm m b' ofs k p' ->
-                 perm m' b' ofs k p'.
-Proof.
-  intros.
-  unfold set_perm in SET.
-  destruct plt; try discriminate.
-  (* destruct Z_le_dec; *)
-  (* destruct (range_perm_dec m b lo hi Cur Freeable); *)
-  (* destruct (can_access_block_dec m b cp); *)
-  inv SET; auto.
-  unfold perm in *; simpl in *. rewrite PMap.gsspec. destruct (peq b' b). subst b'.
-  destruct (((mem_access m) # b ofs k)); auto.
-  auto.
+  destruct ((mem_access m) # b ofs Max) eqn:?. constructor.
+  destruct k; auto. rewrite Heqo in H; inv H.
+  exploit access_max; rewrite Heqo; simpl.
+  destruct ((mem_access m) # b ofs Cur) eqn:?; contradiction.
 Qed.
 
 Theorem perm_set_2:
@@ -3354,6 +3337,24 @@ Proof.
   subst b'. contradiction.
 Qed.
 
+Theorem perm_set_3:
+  forall b' ofs k p', perm_order p p' ->
+                 perm m b' ofs k p' ->
+                 perm m' b' ofs k p'.
+Proof.
+  intros.
+  unfold set_perm in SET.
+  destruct plt; try discriminate.
+  inv SET; auto.
+  unfold perm in *; simpl in *. rewrite PMap.gsspec. destruct (peq b' b).
+  - subst b'.
+    destruct ((mem_access m) # b ofs Max) eqn:pmax; auto.
+    destruct k; try rewrite pmax in *; try contradiction.
+    exploit access_max; rewrite pmax; simpl.
+    destruct ((mem_access m) # b ofs Cur) eqn:pcur; try contradiction.
+  - auto.
+Qed.
+
 Theorem perm_set_4':
   forall b' ofs k p', b' <> b \/ not (perm m b ofs k Nonempty) -> perm m b' ofs k p' -> perm m' b' ofs k p'.
 Proof.
@@ -3372,36 +3373,38 @@ Proof.
   intros.
   unfold set_perm in SET. destruct plt; try discriminate.
   inv SET; auto.
-  assert (G: b' <> b \/ ~ perm m b ofs k Nonempty).
+  assert (G: b' <> b \/ ~ perm m b ofs Max Nonempty).
   { destruct H; try now left.
-    right. intros ?. eapply H. eapply perm_max. eauto. } clear H.
+    right. intros ?. eapply H. eauto. } clear H.
   revert G H0. unfold perm; simpl. rewrite PMap.gsspec. destruct (peq b' b).
-  subst b'. intros []; try now contradiction.
-  destruct ((mem_access m) # b ofs k). intros G. exfalso. eapply H. constructor.
-  intros G. inv G. eauto.
+  - subst b'. intros []; try now contradiction.
+    destruct ((mem_access m) # b ofs Max) eqn:pmax.
+    + exfalso; eapply H; constructor.
+    + contradiction.
+  - intros G; inv G; eauto.
 Qed.
 
 Lemma set_perm_perm:
-  forall b' ofs k p',
-    perm m' b' ofs k p' -> exists p'', perm m b' ofs k p''.
+  forall b' ofs p',
+    perm m' b' ofs Max p' -> exists p'', perm m b' ofs Max p''.
 Proof.
-  intros b' ofs k p' H.
+  intros b' ofs p' H.
+  (* assert (H': perm m' b' ofs Max p') by now eapply perm_max; eauto. *)
   destruct (peq b b').
   - subst. revert H.
     unfold set_perm in SET.
     destruct plt; try discriminate. inv SET. unfold perm. simpl.
     rewrite PMap.gsspec. rewrite peq_true.
-    destruct ((mem_access m) # b' ofs k) eqn:EQ.
+    destruct ((mem_access m) # b' ofs Max) eqn:EQ; try contradiction.
     simpl. eexists; eauto. constructor.
-    eexists; eauto.
   - eexists; eapply perm_set_2'; eauto.
 Qed.
 
 Lemma set_perm_range_perm:
-  forall b' lo hi k p',
-    range_perm m' b' lo hi k p' -> exists p'', range_perm m b' lo hi k p''.
+  forall b' lo hi p',
+    range_perm m' b' lo hi Max p' -> exists p'', range_perm m b' lo hi Max p''.
 Proof.
-  intros b' lo hi k p' H.
+  intros b' lo hi p' H.
   destruct (peq b b').
   - subst. revert H.
     unfold set_perm in SET.
@@ -3409,7 +3412,7 @@ Proof.
     rewrite PMap.gsspec. rewrite peq_true.
     intros H. eexists.
     intros ofs ofs_range; specialize (H ofs ofs_range).
-    destruct ((mem_access m) # b' ofs k) eqn:EQ.
+    destruct ((mem_access m) # b' ofs Max) eqn:EQ.
     simpl. constructor. eauto.
   - eexists; intros ofs ofs_range; specialize (H ofs ofs_range); eapply perm_set_2'; eauto.
 Qed.
@@ -4384,11 +4387,11 @@ Proof.
       unfold set_perm in set2, set1. destruct (plt b1 (nextblock m1)), (plt b2 (nextblock m2)); inv set1; inv set2.
       unfold perm in *; simpl in *.
       rewrite PMap.gsspec in *. rewrite peq_true in *.
-      destruct ((mem_access m1) # b1 ofs k) eqn:EQ1; try contradiction.
-      assert (perm m1 b1 ofs k p3). { unfold perm; rewrite EQ1. constructor. }
-      assert (perm m2 b2 (ofs + delta) k p3). { eapply mi_perm; eauto. }
+      destruct ((mem_access m1) # b1 ofs Max) eqn:EQ1; try contradiction.
+      assert (perm m1 b1 ofs Max p3). { unfold perm; rewrite EQ1. constructor. }
+      assert (perm m2 b2 (ofs + delta) Max p3). { eapply mi_perm; eauto. }
       unfold perm in H0.
-      destruct ((mem_access m2) # b2 (ofs + delta) k); auto.
+      destruct ((mem_access m2) # b2 (ofs + delta) Max); auto.
     + eapply perm_set_2' in PERM1' as PERM1; eauto.
       eapply perm_set_2; eauto. eapply mi_perm; eauto.
   (* own *)
@@ -4397,8 +4400,9 @@ Proof.
     rewrite <- (Haccess1 b0).
     pose proof (set_preserves_comp _ _ _ _ set2) as Haccess2.
     rewrite <- (Haccess2 b3).
+    eapply perm_max in H0.
     eapply set_perm_perm in set1 as [p1 G]; eauto.
-    erewrite mi_access with (ofs := ofs) (k := k); eauto.
+    erewrite mi_access with (ofs := ofs) (k := Max); eauto.
   (* align *)
   - intros.
     eapply set_perm_range_perm in set1 as [p1 G]; eauto.
@@ -4408,7 +4412,7 @@ Proof.
     replace (m1'.(mem_contents)#b0) with (m1.(mem_contents)#b0).
     replace (m2'.(mem_contents)#b3) with (m2.(mem_contents)#b3).
     destruct (peq b0 b1); eauto. subst.
-    { admit. }
+    { eapply mi_memval; eauto. admit. }
     eapply mi_memval; eauto.
     eapply perm_set_2'; eauto.
     unfold set_perm in set2;
@@ -4744,6 +4748,68 @@ Proof.
   subst b0. right; eapply perm_free_2; eauto.
   right; intuition eauto using perm_free_3.
 Qed.
+
+Theorem set_perm_parallel_extends:
+  forall m1 m2 b p m1',
+  extends m1 m2 ->
+  set_perm m1 b p = Some m1' ->
+  exists m2',
+     set_perm m2 b p = Some m2'
+  /\ extends m1' m2'.
+Proof.
+  intros.
+  assert ({ m2': mem | set_perm m2 b p = Some m2' }).
+    apply valid_set_perm.
+    red; intros. erewrite <- mext_next; eauto.
+    unfold set_perm in H0. destruct plt; try congruence.
+  destruct X as [m2' SET]. exists m2'; split; auto.
+  constructor.
+  rewrite (nextblock_set _ _ _ _ H0).
+  rewrite (nextblock_set _ _ _ _ SET).
+  inv H; auto.
+  { admit. }
+  (* eapply set_perm _right_inj with (m1 := m1'); eauto. *)
+  (* eapply free_left_inj; eauto. *)
+  (* inv H; auto. *)
+  (* unfold inject_id; intros. inv H1. *)
+  (* eapply perm_free_2. eexact H0. instantiate (1 := ofs); lia. eauto. *)
+  intros.
+  destruct (eq_block b b0).
+  - subst b0.
+    assert (set_perm_5: forall m m' b ofs p p0,
+               set_perm m b p = Some m' ->
+               perm m' b ofs Max p0 ->
+               perm_order p p0).
+    { clear.
+      intros until p0.
+      unfold set_perm. destruct plt; try congruence.
+      unfold perm.
+      intros G; inv G. simpl. rewrite PMap.gss.
+      destruct ((mem_access m) # b ofs Max); try contradiction.
+      now auto. }
+    assert (set_perm_5': forall m m' b ofs k p p0,
+               set_perm m b p = Some m' ->
+               (exists p1, (mem_access m') # b ofs Max = Some p1) ->
+               perm_order p p0 ->
+               perm m' b ofs k p0).
+    { clear.
+      intros until p0.
+      unfold set_perm. destruct plt; try congruence.
+      unfold perm.
+      intros G; inv G. simpl. rewrite PMap.gss.
+      destruct ((mem_access m) # b ofs Max).
+      - now auto.
+      - intros [? ?]; congruence. }
+    destruct ((mem_access m1') # b ofs Max) eqn:acc.
+    + left.
+      eapply set_perm_5'; eauto. eapply set_perm_5; eauto. eapply perm_max; eauto.
+    + right. unfold perm.
+      rewrite acc.
+      auto.
+  - exploit mext_perm_inv; eauto using perm_set_4. intros [A|A].
+    left. eapply perm_set_4'; eauto.
+    right. intros C. eapply A. eapply perm_set_2'; eauto.
+Admitted.
 
 Theorem valid_block_extends:
   forall m1 m2 b,
