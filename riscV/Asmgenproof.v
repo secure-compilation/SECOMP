@@ -572,7 +572,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb sp c ep ms m m' rs f tf tc bsp osp
         (STACKS: match_stack ge m (Mach.fn_sig f) s)
         (STACKS': match_stacks (comp_of f) s s')
-        (STACK_WF: stack_wf s')
+        (* (STACK_WF: stack_wf s') *)
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
@@ -591,7 +591,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig cp cp' f
         (STACKS: match_stack ge m (Mach.fn_sig f) s)
         (STACKS_COMP: Genv.find_comp_of_block ge fb = cp)
-        (STACK_WF: stack_wf s')
+        (* (STACK_WF: stack_wf s') *)
         (EXT: Genv.find_funct_ptr ge fb = Some (Internal f))
         (SIG: sig = Mach.fn_sig f)
         (STACKS': match_stacks cp s s')
@@ -605,7 +605,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig cp cp' ef
         (STACKS: match_stack ge m (ef_sig ef) s)
         (STACKS_COMP: Genv.find_comp_of_block ge fb = cp)
-        (STACK_WF: stack_wf s')
+        (* (STACK_WF: stack_wf s') *)
         (EXT: Genv.find_funct_ptr ge fb = Some (External ef))
         (SIG: sig = ef_sig ef)
         (SIG: Mach.parent_signature s = ef_sig ef)
@@ -623,7 +623,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
     forall s s' ms m m' rs cp sg
       (STACKS: match_stack ge m sg s)
       (STACKS': match_stacks cp s s')
-      (STACK_WF: stack_wf s')
+      (* (STACK_WF: stack_wf s') *)
       (MEXT: Mem.extends m m')
       (AG: agree ms (dummy_parent_sp s) rs)
       (ATPC: rs PC = dummy_parent_ra s)
@@ -636,7 +636,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
 Lemma exec_straight_steps:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp bsp osp ms2,
   match_stack ge m2 (Mach.fn_sig f) s ->
-  forall (STACK_WF: stack_wf s'),
+  (* forall (STACK_WF: stack_wf s'), *)
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
@@ -667,7 +667,7 @@ Qed.
 Lemma exec_straight_steps_goto:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp bsp osp ms2 lbl c',
   match_stack ge m2 (Mach.fn_sig f) s ->
-  forall (STACK_WF: stack_wf s'),
+  (* forall (STACK_WF: stack_wf s'), *)
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
@@ -718,7 +718,7 @@ Qed.
 Lemma exec_straight_opt_steps_goto:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp bsp osp ms2 lbl c',
   match_stack ge m2 (Mach.fn_sig f) s ->
-  forall (STACK_WF: stack_wf s'),
+  (* forall (STACK_WF: stack_wf s'), *)
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
@@ -841,6 +841,21 @@ Proof.
       * eauto.
     + intros; subst. eapply Mem.perm_alloc_1; eauto.
 Qed.
+
+Lemma match_stack_free: forall m m' b sig s cp lo hi,
+    match_stack ge m sig s ->
+    Mem.free m b lo hi cp = Some m' ->
+    match_stack ge m' sig s.
+Proof.
+  intros m m' b sig s cp lo hi MS H.
+  induction MS; intros.
+  - constructor; auto.
+  - econstructor; eauto.
+    + destruct sp; try auto; simpl in *.
+      erewrite <- Mem.free_preserves_comp; eauto.
+    + intros; subst. eapply Mem.perm_free_1; eauto.
+      admit.
+Admitted.
 
 Lemma match_stack_set_perm: forall m m' sig s b p,
     match_stack ge m sig s ->
@@ -1896,13 +1911,6 @@ Local Transparent destroyed_by_op.
   * rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
   * now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-  (* * intros _. *)
-  (*   eexists; eexists; split; [| split]; eauto. *)
-  (*   -- erewrite (agree_sp _ _ _ AG); eauto. admit. *)
-  (*   -- admit. *)
-  (*   -- admit. *)
-  (* * admit. *)
-  (*   (* { erewrite agree_sp; eauto. admit. (* OK *) } *) *)
   * unfold update_stack_call. Simpl. rewrite H7; simpl.
     unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
     rewrite <- (comp_transl_partial _ H4).
@@ -1954,19 +1962,6 @@ Local Transparent destroyed_by_op.
       - eapply match_stack_set_perm in perm; eauto.
         eapply match_stack_alloc in allc1; eauto.
         eapply match_stack_alloc; eauto. }
-    { constructor; eauto.
-      split.
-      - intros ?. subst fb.
-        (* SOL: add
-        Genv.find_funct_ptr (Genv.globalenv p) b = Some fd ->
-        Mem.perm m b ofs k p0 -> False
-        lemma
-         *)
-        admit.
-      - intros ?; subst b0.
-        eapply Mem.fresh_block_alloc in allc2.
-        eapply Mem.perm_alloc_1 in SP_PERM; eauto.
-        eapply Mem.perm_valid_block in SP_PERM. contradiction. }
     { eapply match_stacks_cross_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
@@ -2014,19 +2009,6 @@ Local Transparent destroyed_by_op.
       - eapply match_stack_set_perm in perm; eauto.
         eapply match_stack_alloc in allc1; eauto.
         eapply match_stack_alloc; eauto. }
-    { constructor; eauto.
-      split.
-      - intros ?. subst fb.
-        (* SOL: add
-        Genv.find_funct_ptr (Genv.globalenv p) b = Some fd ->
-        Mem.perm m b ofs k p0 -> False
-        lemma
-         *)
-        admit.
-      - intros ?; subst b0.
-        eapply Mem.fresh_block_alloc in allc2.
-        eapply Mem.perm_alloc_1 in SP_PERM; eauto.
-        eapply Mem.perm_valid_block in SP_PERM. contradiction. }
     { eapply match_stacks_cross_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
@@ -2088,13 +2070,6 @@ Local Transparent destroyed_by_op.
     * rewrite <- (comp_transl_partial _ H4).
       eapply allowed_call_translated; eauto.
     * now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-  (* * intros _. *)
-  (*   eexists; eexists; split; [| split]; eauto. *)
-  (*   -- erewrite (agree_sp _ _ _ AG); eauto. admit. *)
-  (*   -- admit. *)
-  (*   -- admit. *)
-  (* * admit. *)
-  (*   (* { erewrite agree_sp; eauto. admit. (* OK *) } *) *)
   * unfold update_stack_call. Simpl.
     unfold Genv.symbol_address.
       rewrite symbols_preserved, H. simpl.
@@ -2147,19 +2122,6 @@ Local Transparent destroyed_by_op.
       - eapply match_stack_set_perm in perm; eauto.
         eapply match_stack_alloc in allc1; eauto.
         eapply match_stack_alloc; eauto. }
-    { constructor; eauto.
-      split.
-      - intros ?. subst fb.
-        (* SOL: add
-        Genv.find_funct_ptr (Genv.globalenv p) b = Some fd ->
-        Mem.perm m b ofs k p0 -> False
-        lemma
-         *)
-        admit.
-      - intros ?; subst b0.
-        eapply Mem.fresh_block_alloc in allc2.
-        eapply Mem.perm_alloc_1 in SP_PERM; eauto.
-        eapply Mem.perm_valid_block in SP_PERM. contradiction. }
     { eapply match_stacks_cross_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
@@ -2207,19 +2169,6 @@ Local Transparent destroyed_by_op.
       - eapply match_stack_set_perm in perm; eauto.
         eapply match_stack_alloc in allc1; eauto.
         eapply match_stack_alloc; eauto. }
-    { constructor; eauto.
-      split.
-      - intros ?. subst fb.
-        (* SOL: add
-        Genv.find_funct_ptr (Genv.globalenv p) b = Some fd ->
-        Mem.perm m b ofs k p0 -> False
-        lemma
-         *)
-        admit.
-      - intros ?; subst b0.
-        eapply Mem.fresh_block_alloc in allc2.
-        eapply Mem.perm_alloc_1 in SP_PERM; eauto.
-        eapply Mem.perm_valid_block in SP_PERM. contradiction. }
     { eapply match_stacks_cross_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
@@ -2353,7 +2302,8 @@ Local Transparent destroyed_by_op.
   (* eauto. *)
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
-  { admit. }
+  {
+    admit. }
   instantiate (2 := tf); instantiate (1 := x).
   unfold nextinstr. rewrite Pregmap.gss.
   rewrite set_res_other. rewrite undef_regs_other_2.
