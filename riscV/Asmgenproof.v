@@ -2469,12 +2469,13 @@ Local Transparent destroyed_at_function_entry.
   intros. rewrite V by auto with asmgen. reflexivity.
 
 - congruence.
--
+- admit.
+- assert (ef0 = ef) by congruence. subst ef0.
   exploit functions_translated; eauto.
   intros [tf [A B]]. simpl in B. inv B.
 
-  assert (Mach.extcall_arguments (undef_caller_save_regs_ext rs sig) m (dummy_parent_sp s) (ef_sig ef) args).
-  { admit. }
+  assert (Mach.extcall_arguments (undef_caller_save_regs_ext rs (ef_sig ef)) m (dummy_parent_sp s) (ef_sig ef) args).
+  { unfold undef_caller_save_regs_ext. admit. }
   clear H0.
   exploit extcall_arguments_match; eauto.
   intros [args' [C D]].
@@ -2488,14 +2489,24 @@ Local Transparent destroyed_at_function_entry.
   econstructor; eauto.
   admit.
   erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto.
-  (* Simpl. rewrite ATLR. eauto. *)
-  eapply agree_set_other; eauto.
-  eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto.
-  Simpl. rewrite ATLR. eauto.
-  { rewrite SIG0. unfold Mach.set_pair.
+  { Simpl. rewrite ATLR.
+    eapply agree_set_other; eauto.
+    eapply agree_set_pair; eauto.
+    unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl.
+    constructor.
+    - simpl. eapply agree_sp; eauto.
+    - eapply agree_sp_def; eauto.
+    - intros. constructor. }
+  { unfold Mach.set_pair.
+    rewrite SIG0.
     generalize (loc_result (ef_sig ef)).
-    admit. }
-- admit.
+    unfold Mach.undef_caller_save_regs; simpl.
+    clear. intros. destruct r.
+    - simpl in *. rewrite Regmap.gso; auto. destruct mreg_eq; try now simpl in *.
+    - simpl in *. rewrite !Regmap.gso; auto.
+      destruct mreg_eq; try now simpl in *.
+      destruct mreg_eq, mreg_eq; try now simpl in *. }
+
 - (* external function *)
   assert (ef0 = ef) by congruence. subst ef0.
   exploit functions_translated; eauto.
