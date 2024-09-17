@@ -1058,9 +1058,9 @@ Section MATCH_STACK.
 Variable ge: Mach.genv.
 Variable m: mem.
 
-Inductive match_stack: signature -> list Mach.stackframe -> Prop :=
-  | match_stack_nil: forall sg,
-      match_stack sg nil
+Inductive match_stack: list Mach.stackframe -> Prop :=
+  | match_stack_nil:
+      match_stack nil
   | match_stack_cons: forall fb sg sp ra c s f tf tc dra dsp,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
@@ -1068,17 +1068,17 @@ Inductive match_stack: signature -> list Mach.stackframe -> Prop :=
       forall (COMP_SP: Mem.val_compartment m sp = comp_of f),
       forall (SP_VALID: forall bsp osp, sp = Vptr bsp osp ->
         Mem.valid_block m bsp ),
-      match_stack (Mach.fn_sig f) s ->
-      match_stack sg (Mach.Stackframe fb sg sp ra c dra dsp :: s).
+      match_stack s ->
+      match_stack (Mach.Stackframe fb sg sp ra c dra dsp :: s).
 
-Lemma parent_sp_def: forall sg s, match_stack sg s -> dummy_parent_sp s <> Vundef.
+Lemma parent_sp_def: forall s, match_stack s -> dummy_parent_sp s <> Vundef.
 Proof.
   induction 1; simpl.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
   destruct dsp; auto. discriminate.
 Qed.
 
-Lemma parent_ra_def: forall sg s, match_stack sg s -> dummy_parent_ra s <> Vundef.
+Lemma parent_ra_def: forall s, match_stack s -> dummy_parent_ra s <> Vundef.
 Proof.
   induction 1; simpl.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
@@ -1086,15 +1086,15 @@ Proof.
 Qed.
 
 Lemma lessdef_parent_sp:
-  forall sg s v,
-  match_stack sg s -> Val.lessdef (dummy_parent_sp s) v -> v = dummy_parent_sp s.
+  forall s v,
+  match_stack s -> Val.lessdef (dummy_parent_sp s) v -> v = dummy_parent_sp s.
 Proof.
   intros. inv H0. auto. exploit parent_sp_def; eauto. tauto.
 Qed.
 
 Lemma lessdef_parent_ra:
-  forall sg s v,
-  match_stack sg s -> Val.lessdef (dummy_parent_ra s) v -> v = dummy_parent_ra s.
+  forall s v,
+  match_stack s -> Val.lessdef (dummy_parent_ra s) v -> v = dummy_parent_ra s.
 Proof.
   intros. inv H0. auto. exploit parent_ra_def; eauto. tauto.
 Qed.
