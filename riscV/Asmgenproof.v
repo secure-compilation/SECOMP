@@ -572,7 +572,6 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb sp c ep ms m m' rs f tf tc bsp osp
         (STACKS: match_stack ge m (Mach.fn_sig f) s)
         (STACKS': match_stacks (comp_of f) s s')
-        (* (STACK_WF: stack_wf s') *)
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
@@ -587,7 +586,6 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig cp cp' f
         (STACKS: match_stack ge m (Mach.fn_sig f) s)
         (STACKS_COMP: Genv.find_comp_of_block ge fb = cp)
-        (* (STACK_WF: stack_wf s') *)
         (EXT: Genv.find_funct_ptr ge fb = Some (Internal f))
         (SIG: sig = Mach.fn_sig f)
         (STACKS': match_stacks cp s s')
@@ -601,15 +599,12 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig cp cp' ef
         (STACKS: match_stack ge m (ef_sig ef) s)
         (STACKS_COMP: Genv.find_comp_of_block ge fb = cp)
-        (* (STACK_WF: stack_wf s') *)
         (EXT: Genv.find_funct_ptr ge fb = Some (External ef))
         (SIG: sig = ef_sig ef)
         (SIG: Mach.parent_signature s = ef_sig ef)
         (STACKS': match_stacks cp s s')
         (MEXT: Mem.extends m m')
         (AG: agree (Mach.undef_caller_save_regs_ext ms sig) (dummy_parent_sp s) rs)
-        (* (EQ: dummy_parent_sp s = parent_sp s) *)
-        (* (EQ': dummy_parent_ra s = parent_ra s) *)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = dummy_parent_ra s),
       match_states (Mach.Callstate s fb sig ms m cp')

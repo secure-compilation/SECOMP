@@ -483,7 +483,6 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NEXTCOMP: Genv.find_comp_of_block ge f' = comp_of f),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      (* forall (SIG: sig_res sig = sig_res (fn_sig f)), *)
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (comp_of f)
       = Some (dummy_parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (comp_of f)
