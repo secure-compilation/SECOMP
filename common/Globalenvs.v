@@ -2061,7 +2061,7 @@ Definition allowed_addrof_b (ge: t) (cp: compartment) (id: ident) : bool :=
             | Gfun _ => true
             | _ => (* public_symbol ge id || *) flowsto_dec (comp_of gd) cp
           end
-      | None => false
+      | None => true
       end
   | None => false
   end.
@@ -2912,6 +2912,3 @@ End TRANSFORM_TOTAL.
 End Genv.
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
-
-(* Try to see if this solves the coercion problem. We need Coq 8.16 for that*)
-(* #[reversible] Coercion Genv.to_senv. *)

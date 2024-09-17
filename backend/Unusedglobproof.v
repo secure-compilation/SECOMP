@@ -665,6 +665,8 @@ Proof.
   destruct (Genv.find_def ge b) as [[]|] eqn:FD; try discriminate.
   exploit defs_inject; eauto. intros [-> [_ _]]; auto.
   exploit defs_inject; eauto. intros [-> [_ _]]; auto.
+  destruct (Genv.find_def tge b') as [[]|] eqn:TFD; auto.
+  exploit defs_rev_inject; eauto. intros []; congruence.
 Qed.
 
 (** Semantic preservation *)
@@ -1002,10 +1004,10 @@ Proof.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
   exploit symbols_inject_2; eauto. intros (b' & A & B). rewrite A.
   destruct (Genv.find_def ge b) as [[] |] eqn:FD; try discriminate.
-  exploit defs_inject; eauto.
-  intros [-> [_ ?]]. auto.
-  exploit defs_inject; eauto.
-  intros [-> [_ ?]]. auto.
+  exploit defs_inject; eauto. intros [-> [_ ?]]. auto.
+  exploit defs_inject; eauto. intros [-> [_ ?]]. auto.
+  destruct (Genv.find_def tge b') as [[] |] eqn:TFD; auto.
+  exploit defs_rev_inject; eauto. intros []; congruence.
   unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
   exploit symbols_inject_2; eauto. intros (b' & A & B). rewrite A.

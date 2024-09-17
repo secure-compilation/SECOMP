@@ -858,6 +858,21 @@ Proof.
       eapply Mem.set_perm_valid_block_1; eauto.
 Qed.
 
+Lemma match_stack_external_call: forall m m' s ef cp vargs t vres,
+    match_stack ge m s ->
+    external_call ef ge cp vargs m t vres m' ->
+    match_stack ge m' s.
+Proof.
+  intros m m' s ef cp vargs t vres MS H.
+  induction MS.
+  - constructor; auto.
+  - econstructor; eauto.
+    + destruct sp; try auto; simpl in *.
+      erewrite <- ec_preserves_comp; eauto using external_call_spec.
+    + intros; subst.
+      eapply ec_valid_block; eauto using external_call_spec.
+Qed.
+
 Lemma transl_code_at_pc_false_to_true:
   forall st rs b m f ofs ty dst c tf tc cp v,
   forall (AT: transl_code_at_pc ge (rs PC) b f (Mgetparam ofs ty dst :: c) false tf tc),
@@ -2213,9 +2228,9 @@ Local Transparent destroyed_by_op.
       rewrite symbols_preserved, H.
       rewrite find_comp_of_block_translated in NEXTCOMP.
       unfold Genv.find_comp_of_block in NEXTCOMP.
-      rewrite <- Genv.find_funct_ptr_iff.
-
-      assert (exists fd', Genv.find_def tge f' = Some (Gfun fd')) as [? ->] by admit.
+      destruct Genv.find_def as [[] |] eqn:TFD; auto.
+      simpl. rewrite <- (comp_transl_partial _ H6). rewrite <- NEXTCOMP.
+      simpl; destruct flowsto_dec; auto. exfalso; apply n; auto with comps.
     reflexivity.
     simpl. reflexivity. eauto. eauto.
     Simpl; eauto.
@@ -2261,7 +2276,7 @@ Local Transparent destroyed_by_op.
   eauto. eauto.
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
-  { admit. }
+  { eapply match_stack_external_call; eauto. }
   instantiate (2 := tf); instantiate (1 := x).
   unfold nextinstr. rewrite Pregmap.gss.
   rewrite set_res_other. rewrite undef_regs_other_2.
@@ -2273,7 +2288,8 @@ Local Transparent destroyed_by_op.
   apply agree_nextinstr. eapply agree_set_res; auto.
   eapply agree_undef_regs; eauto. intros. rewrite undef_regs_other_2; auto.
   rewrite ! Pregmap.gso; auto with asmgen.
-  admit. admit.
+  eapply ec_valid_block; eauto using external_call_spec.
+  simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec.
   congruence.
 
 - (* Mgoto *)
@@ -2385,7 +2401,7 @@ Local Transparent destroyed_by_op.
   generalize EQ; intros EQ'. monadInv EQ'.
   destruct (zlt Ptrofs.max_unsigned (list_length_z x0.(fn_code))); inversion EQ1. clear EQ1.
   subst x0.
-  assert (f0 = f) by congruence. subst f0.
+  (* assert (f0 = f) by congruence. subst f0. *)
   unfold store_stack in *.
   exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl.
   intros [m1' [C D]].
@@ -2424,6 +2440,9 @@ Local Transparent destroyed_by_op.
   left; eexists; split.
   eapply exec_straight_steps_1; eauto. lia. simpl. constructor.
   econstructor; eauto.
+  eapply match_stack_alloc with (m' := m1) in STACKS; eauto.
+  eapply match_stack_storev with (m' := m2) in STACKS; eauto.
+  eapply match_stack_storev with (m' := m3) in STACKS; eauto.
   erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. now simpl in STACKS'.
   rewrite X; econstructor; eauto.
   apply agree_exten with rs2; eauto with asmgen.
@@ -2436,17 +2455,55 @@ Local Transparent destroyed_by_op.
 Local Transparent destroyed_at_function_entry.
   simpl; intros; Simpl.
   unfold sp; congruence.
+  unfold sp; auto.
+  { unfold sp in *.
+    simpl in *.
+    eapply Mem.store_valid_block_1; eauto.
+    eapply Mem.store_valid_block_1; eauto.
+    eapply Mem.valid_new_block; eauto. }
+  { unfold sp in *.
+    simpl in *.
+    erewrite <- Mem.store_preserves_comp; eauto.
+    erewrite <- Mem.store_preserves_comp; eauto.
+    eapply Mem.owned_new_block; eauto. }
   intros. rewrite V by auto with asmgen. reflexivity.
 
 - congruence.
-- congruence.
+-
+  exploit functions_translated; eauto.
+  intros [tf [A B]]. simpl in B. inv B.
+
+  assert (Mach.extcall_arguments (undef_caller_save_regs_ext rs sig) m (dummy_parent_sp s) (ef_sig ef) args).
+  { admit. }
+  clear H0.
+  exploit extcall_arguments_match; eauto.
+  intros [args' [C D]].
+  exploit external_call_mem_extends; eauto.
+  intros [res' [m2' [P [Q [R S]]]]].
+ 
+  left; econstructor; split.
+  apply plus_one. eapply exec_step_external; eauto.
+  eapply Genv.find_funct_ptr_iff; eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor; eauto.
+  admit.
+  erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto.
+  (* Simpl. rewrite ATLR. eauto. *)
+  eapply agree_set_other; eauto.
+  eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto.
+  Simpl. rewrite ATLR. eauto.
+  { rewrite SIG0. unfold Mach.set_pair.
+    generalize (loc_result (ef_sig ef)).
+    admit. }
+- admit.
 - (* external function *)
   assert (ef0 = ef) by congruence. subst ef0.
   exploit functions_translated; eauto.
   intros [tf [A B]]. simpl in B. inv B.
-  exploit extcall_arguments_match; eauto.
-  rewrite EQ; eauto.
-  intros [args' [C D]].
+  eapply extcall_arguments_match in H0 as [args' [C D]]; eauto.
+  (* exploit extcall_arguments_match; eauto. *)
+  (* rewrite EQ; eauto. *)
+  (* intros [args' [C D]]. *)
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [P [Q [R S]]]]].
 
@@ -2457,6 +2514,7 @@ Local Transparent destroyed_at_function_entry.
   (* unfold_find_comp_in_genv STACKS_COMP H. subst cp. *)
   econstructor; eauto.
   erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto.
+  admit. admit.
   (* Simpl. rewrite ATLR. eauto. *)
   eapply agree_set_other; eauto.
   eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto.
