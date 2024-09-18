@@ -2488,9 +2488,13 @@ Proof.
     destruct (Mem.alloc m'' (comp_of tf') 0 0) as [m''' dsp'] eqn:alloc2.
 
     assert (exists m'''', Mem.set_perm m''' sp' Readable = Some m'''') as [? Z].
-    { destruct SEP as (R & T).
-      admit.
-    }
+    { assert (G: Mem.valid_block m' sp').
+      { eapply Mem.valid_block_inject_2; eauto.
+        eapply SEP. }
+      eapply Mem.valid_block_alloc in G; eauto.
+      eapply Mem.valid_block_alloc in G; eauto.
+      unfold Mem.set_perm. unfold Mem.valid_block in G.
+      destruct plt; try contradiction. eauto. }
     clear X. specialize (Y n).
     destruct Y as (? & ? & ?). subst.
     eexists; split.
@@ -2548,11 +2552,15 @@ Proof.
     intros; red.
     apply Z.le_trans with (size_arguments (Linear.funsig f')); auto. 
     apply loc_arguments_bounded; auto.
-    simpl. rewrite sep_assoc. eapply m_invar. eapply SEP.
+    simpl. rewrite sep_assoc.
+    assert (R: m''' |= frame_contents f j sp' rs (parent_locset s) (parent_sp cs') (parent_ra cs')
+                 (dummy_parent_sp cs') (dummy_parent_ra cs') (comp_of f) **
+                 stack_contents j s cs' ** minjection j m ** globalenv_inject ge j).
+    eapply m_invar. eapply SEP.
     { eapply Mem.unchanged_on_trans.
       eapply Mem.alloc_unchanged_on; eauto.
-      eapply Mem.unchanged_on_trans.
-      eapply Mem.alloc_unchanged_on; eauto. admit. }
+      eapply Mem.alloc_unchanged_on; eauto. }
+    clear -R. admit.
 
 - (* Ltailcall *)
   rewrite (sep_swap (stack_contents j s cs')) in SEP.
@@ -2568,7 +2576,6 @@ Proof.
     rewrite <- comp_transf_function; eauto. rewrite <- COMP.
     destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
     inv C. reflexivity.
-    (* erewrite <- sig_preserved; eauto. admit. *)
   traceEq.
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
@@ -2713,7 +2720,6 @@ Proof.
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  (* admit. *)
   eapply match_states_return with (j := j').
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_undef_caller_save_regs. 
