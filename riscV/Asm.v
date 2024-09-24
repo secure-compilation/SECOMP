@@ -1099,12 +1099,12 @@ Definition list_option_option_list {A: Type} (l: list (option A)): option (list 
                            | None, _ => None
                            end) (Some nil) l.
 
-Definition get_loc (rs: regset) (m: mem) (l: loc): option val :=
+Definition get_loc (rs: regset) (sp: val) (m: mem) (l: loc): option val :=
   match l with
   | R r => Some (rs (preg_of r))
   | S Incoming ofs ty =>
       let bofs := Stacklayout.fe_ofs_arg + 4 * ofs in
-      Mem.loadv (chunk_of_type ty) m (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) top
+      Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp (Ptrofs.repr bofs)) top
   | _ => None
   end.
 
@@ -1112,88 +1112,88 @@ Definition get_loc (rs: regset) (m: mem) (l: loc): option val :=
     We exploit the calling conventions from module [Conventions], except that
     we use RISC-V registers instead of locations. *)
 
-Inductive extcall_arg (rs: regset) (m: mem): loc -> val -> Prop :=
+Inductive extcall_arg (rs: regset) (sp: val) (m: mem): loc -> val -> Prop :=
   | extcall_arg_reg: forall r,
-      extcall_arg rs m (R r) (rs (preg_of r))
+      extcall_arg rs sp m (R r) (rs (preg_of r))
   | extcall_arg_stack: forall ofs ty bofs cp v,
       bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
       Mem.loadv (chunk_of_type ty) m
-                (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) cp = Some v ->
-      extcall_arg rs m (S Outgoing ofs ty) v.
+                (Val.offset_ptr sp (Ptrofs.repr bofs)) cp = Some v ->
+      extcall_arg rs sp m (S Outgoing ofs ty) v.
 
-Inductive extcall_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
+Inductive extcall_arg_pair (rs: regset) (sp: val) (m: mem): rpair loc -> val -> Prop :=
   | extcall_arg_one: forall l v,
-      extcall_arg rs m l v ->
-      extcall_arg_pair rs m (One l) v
+      extcall_arg rs sp m l v ->
+      extcall_arg_pair rs sp m (One l) v
   | extcall_arg_twolong: forall hi lo vhi vlo,
-      extcall_arg rs m hi vhi ->
-      extcall_arg rs m lo vlo ->
-      extcall_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo).
+      extcall_arg rs sp m hi vhi ->
+      extcall_arg rs sp m lo vlo ->
+      extcall_arg_pair rs sp m (Twolong hi lo) (Val.longofwords vhi vlo).
 
 Definition extcall_arguments
-    (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
-  list_forall2 (extcall_arg_pair rs m) (loc_arguments sg) args.
+    (rs: regset) (sp: val) (m: mem) (sg: signature) (args: list val) : Prop :=
+  list_forall2 (extcall_arg_pair rs sp m) (loc_arguments sg) args.
 
-Definition get_extcall_arguments' (rs: regset) (m: mem) (sg: signature) :=
+Definition get_extcall_arguments' (rs: regset) (sp: val) (m: mem) (sg: signature) :=
   List.map (fun x => match x with
-                  | One l => get_loc rs m l
+                  | One l => get_loc rs sp m l
                   | Twolong hi lo =>
-                      match get_loc rs m hi, get_loc rs m lo with
+                      match get_loc rs sp m hi, get_loc rs sp m lo with
                       | Some vhi, Some vlo => Some (Val.longofwords vhi vlo)
                       | _, _ => None
                       end
                   end) (loc_arguments sg).
 
-Definition get_extcall_arguments (rs: regset) (m: mem) (sg: signature) :=
-  list_option_option_list (get_extcall_arguments' rs m sg).
+Definition get_extcall_arguments (rs: regset) (sp: val) (m: mem) (sg: signature) :=
+  list_option_option_list (get_extcall_arguments' rs sp m sg).
 
 Lemma extcall_arguments_equiv:
-  forall rs m sg args,
-    extcall_arguments rs m sg args <-> get_extcall_arguments rs m sg = Some args.
+  forall rs sp m sg args,
+    extcall_arguments rs sp m sg args <-> get_extcall_arguments rs sp m sg = Some args.
 Proof.
   admit.
 Admitted.
 
 (** Extract the values of the arguments to a call. *)
 (* Note the difference: [loc_parameters] vs [loc_arguments] *)
-Inductive call_arg (rs: regset) (m: mem): loc -> val -> Prop :=
+Inductive call_arg (rs: regset) (sp: val) (m: mem): loc -> val -> Prop :=
   | call_arg_reg: forall r,
-      call_arg rs m (R r) (rs (preg_of r))
+      call_arg rs sp m (R r) (rs (preg_of r))
   | call_arg_stack: forall ofs ty bofs cp v,
       bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
       Mem.loadv (chunk_of_type ty) m
-                (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) cp = Some v ->
-      call_arg rs m (S Incoming ofs ty) v.
+                (Val.offset_ptr sp (Ptrofs.repr bofs)) cp = Some v ->
+      call_arg rs sp m (S Incoming ofs ty) v.
 
-Inductive call_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
+Inductive call_arg_pair (rs: regset) (sp: val) (m: mem): rpair loc -> val -> Prop :=
   | call_arg_one: forall l v,
-      call_arg rs m l v ->
-      call_arg_pair rs m (One l) v
+      call_arg rs sp m l v ->
+      call_arg_pair rs sp m (One l) v
   | call_arg_twolong: forall hi lo vhi vlo,
-      call_arg rs m hi vhi ->
-      call_arg rs m lo vlo ->
-      call_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo).
+      call_arg rs sp m hi vhi ->
+      call_arg rs sp m lo vlo ->
+      call_arg_pair rs sp m (Twolong hi lo) (Val.longofwords vhi vlo).
 
 Definition call_arguments
-    (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
-  list_forall2 (call_arg_pair rs m) (loc_parameters sg) args.
+    (rs: regset) (sp: val) (m: mem) (sg: signature) (args: list val) : Prop :=
+  list_forall2 (call_arg_pair rs sp m) (loc_parameters sg) args.
 
-Definition get_call_arguments' (rs: regset) (m: mem) (sg: signature) :=
+Definition get_call_arguments' (rs: regset) (sp: val) (m: mem) (sg: signature) :=
   List.map (fun x => match x with
-                  | One l => get_loc rs m l
+                  | One l => get_loc rs sp m l
                   | Twolong hi lo =>
-                      match get_loc rs m hi, get_loc rs m lo with
+                      match get_loc rs sp m hi, get_loc rs sp m lo with
                       | Some vhi, Some vlo => Some (Val.longofwords vhi vlo)
                       | _, _ => None
                       end
                   end) (loc_parameters sg).
 
-Definition get_call_arguments (rs: regset) (m: mem) (sg: signature) :=
-  list_option_option_list (get_call_arguments' rs m sg).
+Definition get_call_arguments (rs: regset) (sp: val) (m: mem) (sg: signature) :=
+  list_option_option_list (get_call_arguments' rs sp m sg).
 
 Lemma call_arguments_equiv:
-  forall rs m sg args,
-    call_arguments rs m sg args <-> get_call_arguments rs m sg = Some args.
+  forall rs sp m sg args,
+    call_arguments rs sp m sg args <-> get_call_arguments rs sp m sg = Some args.
 Proof.
   admit.
 Admitted.
@@ -1487,7 +1487,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (*             diff_sp_X2 st (rs X2)), (* makes proof simpler. Check if really needed *) *)
 
       forall (STUPD: update_stack_call st sig (comp_of f) rs' m' = Some (st', rs'', m'')),
-      forall (ARGS: call_arguments rs' m' sig args),
+      forall (ARGS: call_arguments rs' (rs'#SP) m' sig args),
       (* note: it doesn't matter which register file we use to get the arguments *)
       (* Check signature *)
       forall (CALLSIG:
@@ -1564,11 +1564,13 @@ Inductive step: state -> trace -> state -> Prop :=
                    (rs #X1 <- Vundef #X31 <- Vundef))) ->
       step (State st rs m (comp_of f)) t (State st rs' m' (comp_of f))
   | exec_step_external:
-      forall b ef args res rs m t rs' m' st cp,
+      forall b ef args res rs m t rs' m' st sp cp,
       rs PC = Vptr b Ptrofs.zero ->
+      forall (SP0: cp = bottom -> sp = rs SP)
+        (SP1: cp <> bottom -> sp = asm_parent_sp st),
       Genv.find_def ge b = Some (Gfun (External ef)) ->
       external_call ef ge cp args m t res m' ->
-      extcall_arguments rs m (ef_sig ef) args ->
+      extcall_arguments rs sp m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       step (State st rs m cp) t (ReturnState st rs' m' bottom).
 
@@ -1602,24 +1604,24 @@ Definition semantics (p: program) :=
 (** Determinacy of the [Asm] semantics. *)
 
 Remark extcall_arguments_determ:
-  forall rs m sg args1 args2,
-  extcall_arguments rs m sg args1 -> extcall_arguments rs m sg args2 -> args1 = args2.
+  forall rs sp m sg args1 args2,
+  extcall_arguments rs sp m sg args1 -> extcall_arguments rs sp m sg args2 -> args1 = args2.
 Proof.
   intros until m.
   assert (A: forall l v1 v2,
-             extcall_arg rs m l v1 -> extcall_arg rs m l v2 -> v1 = v2).
+             extcall_arg rs sp m l v1 -> extcall_arg rs sp m l v2 -> v1 = v2).
   { intros. inv H; inv H0. congruence.
-    destruct (rs X2); try discriminate.
+    destruct sp; try discriminate.
     simpl in H2, H5.
     apply Mem.load_result in H2.
     apply Mem.load_result in H5. congruence. }
   assert (B: forall p v1 v2,
-             extcall_arg_pair rs m p v1 -> extcall_arg_pair rs m p v2 -> v1 = v2).
+             extcall_arg_pair rs sp m p v1 -> extcall_arg_pair rs sp m p v2 -> v1 = v2).
   { intros. inv H; inv H0. 
     eapply A; eauto.
     f_equal; eapply A; eauto. }
-  assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs m) ll vl1 ->
-             forall vl2, list_forall2 (extcall_arg_pair rs m) ll vl2 -> vl1 = vl2).
+  assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs sp m) ll vl1 ->
+             forall vl2, list_forall2 (extcall_arg_pair rs sp m) ll vl2 -> vl1 = vl2).
   {
     induction 1; intros vl2 EA; inv EA.
     auto.
@@ -1628,24 +1630,24 @@ Proof.
 Qed.
 
 Remark call_arguments_determ:
-  forall rs m sg args1 args2,
-  call_arguments rs m sg args1 -> call_arguments rs m sg args2 -> args1 = args2.
+  forall rs sp m sg args1 args2,
+  call_arguments rs sp m sg args1 -> call_arguments rs sp m sg args2 -> args1 = args2.
 Proof.
   intros until m.
   assert (A: forall l v1 v2,
-             call_arg rs m l v1 -> call_arg rs m l v2 -> v1 = v2).
+             call_arg rs sp m l v1 -> call_arg rs sp m l v2 -> v1 = v2).
   { intros. inv H; inv H0. congruence.
-    destruct (rs X2); try discriminate.
+    destruct sp; try discriminate.
     simpl in H2, H5.
     apply Mem.load_result in H2.
     apply Mem.load_result in H5. congruence. }
   assert (B: forall p v1 v2,
-             call_arg_pair rs m p v1 -> call_arg_pair rs m p v2 -> v1 = v2).
+             call_arg_pair rs sp m p v1 -> call_arg_pair rs sp m p v2 -> v1 = v2).
   { intros. inv H; inv H0.
     eapply A; eauto.
     f_equal; eapply A; eauto. }
-  assert (C: forall ll vl1, list_forall2 (call_arg_pair rs m) ll vl1 ->
-             forall vl2, list_forall2 (call_arg_pair rs m) ll vl2 -> vl1 = vl2).
+  assert (C: forall ll vl1, list_forall2 (call_arg_pair rs sp m) ll vl1 ->
+             forall vl2, list_forall2 (call_arg_pair rs sp m) ll vl2 -> vl1 = vl2).
   {
     induction 1; intros vl2 EA; inv EA.
     auto.
@@ -1708,7 +1710,12 @@ intros; constructor; simpl; intros.
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H15. intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
-  + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
+  + assert (sp = sp0).
+    { destruct cp; try now rewrite SP0, SP2.
+      now rewrite SP1, SP3.
+      now rewrite SP1, SP3. }
+    subst sp0.
+    assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
     exploit external_call_determ. eexact H3. eexact H12. intros [A B].
     split. auto. intros. destruct B; auto. subst. congruence.
 - (* trace length *)

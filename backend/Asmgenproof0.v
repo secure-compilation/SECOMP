@@ -347,27 +347,27 @@ Qed.
     functions. *)
 
 Lemma extcall_arg_match:
-  forall ms sp rs m m' l v,
-  agree ms sp rs ->
+  forall ms sp sp' rs m m' l v,
+  agree ms sp' rs ->
   Mem.extends m m' ->
   Mach.extcall_arg ms m sp l v ->
-  exists v', Asm.extcall_arg rs m' l v' /\ Val.lessdef v v'.
+  exists v', Asm.extcall_arg rs sp m' l v' /\ Val.lessdef v v'.
 Proof.
   intros. inv H1.
   exists (rs#(preg_of r)); split. constructor. eapply preg_val; eauto.
   unfold load_stack in H2.
   exploit Mem.loadv_extends; eauto. intros [v' [A B]].
-  rewrite (sp_val _ _ _ H) in A.
+  (* rewrite (sp_val _ _ _ H) in A. *)
   exists v'; split; auto.
   econstructor. eauto. eassumption.
 Qed.
 
 Lemma extcall_arg_pair_match:
-  forall ms sp rs m m' p v,
-  agree ms sp rs ->
+  forall ms sp sp' rs m m' p v,
+  agree ms sp' rs ->
   Mem.extends m m' ->
   Mach.extcall_arg_pair ms m sp p v ->
-  exists v', Asm.extcall_arg_pair rs m' p v' /\ Val.lessdef v v'.
+  exists v', Asm.extcall_arg_pair rs sp m' p v' /\ Val.lessdef v v'.
 Proof.
   intros. inv H1.
 - exploit extcall_arg_match; eauto. intros (v' & A & B). exists v'; split; auto. constructor; auto.
@@ -377,10 +377,10 @@ Proof.
 Qed.
 
 Lemma extcall_args_match:
-  forall ms sp rs m m', agree ms sp rs -> Mem.extends m m' ->
+  forall ms sp sp' rs m m', agree ms sp' rs -> Mem.extends m m' ->
   forall ll vl,
   list_forall2 (Mach.extcall_arg_pair ms m sp) ll vl ->
-  exists vl', list_forall2 (Asm.extcall_arg_pair rs m') ll vl' /\ Val.lessdef_list vl vl'.
+  exists vl', list_forall2 (Asm.extcall_arg_pair rs sp m') ll vl' /\ Val.lessdef_list vl vl'.
 Proof.
   induction 3; intros.
   exists (@nil val); split. constructor. constructor.
@@ -390,10 +390,10 @@ Proof.
 Qed.
 
 Lemma extcall_arguments_match:
-  forall ms m m' sp rs sg args,
-  agree ms sp rs -> Mem.extends m m' ->
+  forall ms m m' sp sp' rs sg args,
+  agree ms sp' rs -> Mem.extends m m' ->
   Mach.extcall_arguments ms m sp sg args ->
-  exists args', Asm.extcall_arguments rs m' sg args' /\ Val.lessdef_list args args'.
+  exists args', Asm.extcall_arguments rs sp m' sg args' /\ Val.lessdef_list args args'.
 Proof.
   unfold Mach.extcall_arguments, Asm.extcall_arguments; intros.
   eapply extcall_args_match; eauto.
@@ -403,27 +403,27 @@ Qed.
     functions. *)
 
 Lemma call_arg_match:
-  forall ms sp rs m m' l v,
-  agree ms sp rs ->
+  forall ms sp sp' rs m m' l v,
+  agree ms sp' rs ->
   Mem.extends m m' ->
   Mach.call_arg ms m sp l v ->
-  exists v', Asm.call_arg rs m' l v' /\ Val.lessdef v v'.
+  exists v', Asm.call_arg rs sp m' l v' /\ Val.lessdef v v'.
 Proof.
   intros. inv H1.
   exists (rs#(preg_of r)); split. constructor. eapply preg_val; eauto.
   unfold load_stack in H2.
   exploit Mem.loadv_extends; eauto. intros [v' [A B]].
-  rewrite (sp_val _ _ _ H) in A.
+  (* rewrite (sp_val _ _ _ H) in A. *)
   exists v'; split; auto.
   econstructor. eauto. eassumption.
 Qed.
 
 Lemma call_arg_pair_match:
-  forall ms sp rs m m' p v,
-  agree ms sp rs ->
+  forall ms sp sp' rs m m' p v,
+  agree ms sp' rs ->
   Mem.extends m m' ->
   Mach.call_arg_pair ms m sp p v ->
-  exists v', Asm.call_arg_pair rs m' p v' /\ Val.lessdef v v'.
+  exists v', Asm.call_arg_pair rs sp m' p v' /\ Val.lessdef v v'.
 Proof.
   intros. inv H1.
 - exploit call_arg_match; eauto. intros (v' & A & B). exists v'; split; auto. constructor; auto.
@@ -433,10 +433,10 @@ Proof.
 Qed.
 
 Lemma call_args_match:
-  forall ms sp rs m m', agree ms sp rs -> Mem.extends m m' ->
+  forall ms sp sp' rs m m', agree ms sp' rs -> Mem.extends m m' ->
   forall ll vl,
   list_forall2 (Mach.call_arg_pair ms m sp) ll vl ->
-  exists vl', list_forall2 (Asm.call_arg_pair rs m') ll vl' /\ Val.lessdef_list vl vl'.
+  exists vl', list_forall2 (Asm.call_arg_pair rs sp m') ll vl' /\ Val.lessdef_list vl vl'.
 Proof.
   induction 3; intros.
   exists (@nil val); split. constructor. constructor.
@@ -446,10 +446,10 @@ Proof.
 Qed.
 
 Lemma call_arguments_match:
-  forall ms m m' sp rs sg args,
-  agree ms sp rs -> Mem.extends m m' ->
+  forall ms m m' sp sp' rs sg args,
+  agree ms sp' rs -> Mem.extends m m' ->
   Mach.call_arguments ms m sp sg args ->
-  exists args', Asm.call_arguments rs m' sg args' /\ Val.lessdef_list args args'.
+  exists args', Asm.call_arguments rs sp m' sg args' /\ Val.lessdef_list args args'.
 Proof.
   unfold Mach.call_arguments, Asm.call_arguments; intros.
   eapply call_args_match; eauto.
