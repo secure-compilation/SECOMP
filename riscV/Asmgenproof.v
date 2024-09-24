@@ -1753,7 +1753,7 @@ Local Transparent destroyed_by_op.
         - unfold invalidate_call. simpl; Simpl.
           eapply agree_sp; eauto.
         - eapply agree_sp_def; eauto.
-        - intros. unfold invalidate_call, undef_caller_save_regs_ext.
+        - intros. unfold invalidate_call, undef_caller_save_regs_ext. Simpl.
           destruct preg_eq. now exploit preg_of_not_PC; eauto.
           destruct preg_eq. destruct r; simpl in e; congruence.
           destruct preg_eq. destruct r; simpl in e; congruence.
@@ -2178,7 +2178,7 @@ Local Transparent destroyed_by_op.
         eapply in_map with (f := preg_of) in I. (* ok *)
         destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto.
         exfalso. apply n2.
-        eapply in_all_mregs_filter; eauto. } }
+        eapply in_all_mregs_filter; eauto. }
     * eauto.
 
   - (* Mtailcall *)
@@ -2492,7 +2492,38 @@ Local Transparent destroyed_at_function_entry.
             (ef_sig ef) args).
   { unfold undef_caller_save_regs_ext.
     clear -H0. revert H0.
-    generalize (ef_sig ef).
+    (* generalize (ef_sig ef). generalize (parent_sp s). *)
+    unfold Mach.extcall_arguments, LTL.parameters_mregs, loc_parameters.
+    generalize (parent_sp s). revert args. generalize (loc_arguments (ef_sig ef)).
+    induction l.
+    - intros; simpl. inv H0; constructor; eauto.
+    - intros; simpl. inv H0.
+      inv H2.
+      + inv H.
+        * simpl. constructor; eauto.
+          -- assert (rs r = (fun r0 : RegEq.t =>
+                               if
+                                 mreg_eq r0 r
+                                 || LTL.in_mreg r0 (LTL.filter_mregs (regs_of_rpairs (map (map_rpair parameter_of_argument) l)))
+                               then rs r0
+                               else Vundef) r) as ->.
+             { destruct mreg_eq; try congruence. reflexivity. }
+             constructor; constructor.
+          -- admit.
+        * simpl. constructor; eauto.
+          constructor; econstructor; eauto.
+      + inv H; inv H0.
+        * simpl. constructor; eauto.
+          -- admit.
+          -- admit.
+        * simpl. constructor; eauto.
+          -- admit.
+          -- admit.
+             * admit.
+        * simpl. constructor; eauto.
+          constructor; econstructor; eauto.
+  }
+
 
     admit. }
   clear H0.
