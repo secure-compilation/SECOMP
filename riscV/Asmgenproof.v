@@ -586,9 +586,6 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig cp cp'
         (STACKS: match_stack ge m s)
         (STACKS_COMP: Genv.find_comp_of_block ge fb = cp)
-        (* (STACKS_COMP': Mach.call_comp ge s = cp) *)
-        (* (EXT: forall ef, Genv.find_funct_ptr ge fb <> Some (External ef)) *)
-        (* (SIG: sig = Mach.fn_sig f) *)
         (STACKS': match_stacks cp s s')
         (MEXT: Mem.extends m m')
         (AG: agree (Mach.undef_caller_save_regs_ext ms sig) (dummy_parent_sp s) rs)
@@ -622,8 +619,8 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       (AG: agree ms (dummy_parent_sp s) rs)
       (ATPC: rs PC = dummy_parent_ra s)
       (INVREGS: forall r : mreg,
-          (* cp ⊈ Genv.find_comp_in_genv tge (parent_ra s) -> *)
-          LTL.in_mreg r (regs_of_rpair (loc_result (Mach.parent_signature s))) = false -> ms r = Vundef),
+          LTL.in_mreg r (regs_of_rpair (loc_result (Mach.parent_signature s))) = false ->
+          ms r = Vundef),
       match_states (Mach.Returnstate s ms m cp)
                    (Asm.ReturnState s' rs m' cp).
 
@@ -824,7 +821,7 @@ Proof.
     + destruct sp; try auto; simpl in *.
       erewrite Mem.alloc_block_compartment; eauto.
       destruct eq_block; subst.
-      * exploit SP_VALID; eauto; intros G.
+      * inversion SP; subst.
         eapply Mem.fresh_block_alloc in H.
         contradiction.
       * eauto.
@@ -869,7 +866,7 @@ Proof.
   induction MS.
   - constructor; auto.
   - econstructor; eauto.
-    + destruct sp; try auto; simpl in *.
+    + subst sp. simpl.
       erewrite <- ec_preserves_comp; eauto using external_call_spec.
     + intros; subst.
       eapply ec_valid_block; eauto using external_call_spec.
@@ -1491,13 +1488,13 @@ Opaque loadind.
       rewrite DXP; auto. destruct f0; destruct ISEMPTY; subst; simpl in *.
       inv STACKS.
       { rewrite H4. erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
-        simpl. rewrite <- COMP_SP0.
-        destruct sp; try now auto. simpl.
+        simpl. rewrite <- COMP_SP0. simpl.
+        (* destruct sp; try now auto. simpl. *)
         eapply Mem.mext_inj in MEXT. clear SP_VALID.
         erewrite <- (Mem.mi_access); eauto; try now eapply flowsto_refl.
         reflexivity.
         eapply Mem.load_valid_access in H1 as [G _]. eapply G.
-        instantiate (1 := Ptrofs.unsigned (Ptrofs.add i ofs)). destruct ty; simpl; lia. }
+        instantiate (1 := Ptrofs.unsigned (Ptrofs.add osp0 ofs)). destruct ty; simpl; lia. }
 
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
@@ -1717,8 +1714,7 @@ Local Transparent destroyed_by_op.
     destruct fd as [fi | ef].
     * eapply match_states_call; eauto.
       { econstructor; eauto.
-        eapply agree_sp_def; eauto.
-        intros ? ? G; inv G; eauto. }
+        eapply agree_sp_def; eauto. }
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. reflexivity. }
@@ -1740,8 +1736,7 @@ Local Transparent destroyed_by_op.
           eapply in_all_mregs_filter; eauto. }
     * eapply match_states_call_external; eauto.
       { econstructor; eauto.
-        eapply agree_sp_def; eauto.
-        intros ? ? G; inv G; eauto. }
+        eapply agree_sp_def; eauto. }
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. auto. }
@@ -1816,8 +1811,7 @@ Local Transparent destroyed_by_op.
     destruct fd.
     * econstructor; eauto.
       { econstructor; eauto.
-        eapply agree_sp_def; eauto.
-        intros ? ? G; inv G; eauto. }
+        eapply agree_sp_def; eauto. }
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. reflexivity. }
@@ -1839,8 +1833,7 @@ Local Transparent destroyed_by_op.
           eapply in_all_mregs_filter; eauto. }
     * eapply match_states_call_external; eauto.
       { econstructor; eauto.
-        eapply agree_sp_def; eauto.
-        intros ? ? G; inv G; eauto. }
+        eapply agree_sp_def; eauto. }
       { econstructor. eauto. simpl.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. reflexivity. }
@@ -1950,8 +1943,7 @@ Local Transparent destroyed_by_op.
         destruct eq_block; subst; eauto.
         { exfalso. eapply Mem.fresh_block_alloc in allc1'.
           erewrite Mem.valid_block_extends with (m2 := m') in SP_VALID; eauto. }
-      - intros ? ? G; inv G; eauto.
-        eapply Mem.set_perm_valid_block_1; eauto.
+      - eapply Mem.set_perm_valid_block_1; eauto.
         eapply Mem.valid_block_alloc; eauto.
         eapply Mem.valid_block_alloc; eauto.
       - eapply match_stack_set_perm in perm; eauto.
@@ -1993,8 +1985,7 @@ Local Transparent destroyed_by_op.
         destruct eq_block; subst; eauto.
         { exfalso. eapply Mem.fresh_block_alloc in allc1'.
           erewrite Mem.valid_block_extends with (m2 := m') in SP_VALID; eauto. }
-      - intros ? ? G; inv G; eauto.
-        eapply Mem.set_perm_valid_block_1; eauto.
+      - eapply Mem.set_perm_valid_block_1; eauto.
         eapply Mem.valid_block_alloc; eauto.
         eapply Mem.valid_block_alloc; eauto.
       - eapply match_stack_set_perm in perm; eauto.
@@ -2105,8 +2096,7 @@ Local Transparent destroyed_by_op.
         destruct eq_block; subst; eauto.
         { exfalso. eapply Mem.fresh_block_alloc in allc1'.
           erewrite Mem.valid_block_extends with (m2 := m') in SP_VALID; eauto. }
-      - intros ? ? G; inv G; eauto.
-        eapply Mem.set_perm_valid_block_1; eauto.
+      - eapply Mem.set_perm_valid_block_1; eauto.
         eapply Mem.valid_block_alloc; eauto.
         eapply Mem.valid_block_alloc; eauto.
       - eapply match_stack_set_perm in perm; eauto.
@@ -2148,8 +2138,7 @@ Local Transparent destroyed_by_op.
         destruct eq_block; subst; eauto.
         { exfalso. eapply Mem.fresh_block_alloc in allc1'.
           erewrite Mem.valid_block_extends with (m2 := m') in SP_VALID; eauto. }
-      - intros ? ? G; inv G; eauto.
-        eapply Mem.set_perm_valid_block_1; eauto.
+      - eapply Mem.set_perm_valid_block_1; eauto.
         eapply Mem.valid_block_alloc; eauto.
         eapply Mem.valid_block_alloc; eauto.
       - eapply match_stack_set_perm in perm; eauto.
@@ -2494,10 +2483,21 @@ Local Transparent destroyed_at_function_entry.
     clear -H0. revert H0.
     (* generalize (ef_sig ef). generalize (parent_sp s). *)
     unfold Mach.extcall_arguments, LTL.parameters_mregs, loc_parameters.
+    assert (uniq: forall r n n', nth_error (loc_arguments (ef_sig ef)) n = Some (One (R r)) ->
+                            nth_error (loc_arguments (ef_sig ef)) n' = Some (One (R r)) ->
+                            n = n').
+    { admit. }
+    revert uniq.
     generalize (parent_sp s). revert args. generalize (loc_arguments (ef_sig ef)).
     induction l.
     - intros; simpl. inv H0; constructor; eauto.
     - intros; simpl. inv H0.
+      assert (uniq': forall (r : mreg) (n n' : nat),
+         nth_error l n = Some (One (R r)) -> nth_error l n' = Some (One (R r)) -> n = n').
+      { intros.
+        assert (Datatypes.S n = Datatypes.S n') by now eapply uniq; eauto.
+        congruence. }
+      specialize (IHl _ _ uniq' H4).
       inv H2.
       + inv H.
         * simpl. constructor; eauto.
@@ -2509,7 +2509,8 @@ Local Transparent destroyed_at_function_entry.
                                else Vundef) r) as ->.
              { destruct mreg_eq; try congruence. reflexivity. }
              constructor; constructor.
-          -- admit.
+          -- (* using [uniq] one should be able to prove the result *)
+            admit.
         * simpl. constructor; eauto.
           constructor; econstructor; eauto.
       + inv H; inv H0.
@@ -2523,9 +2524,6 @@ Local Transparent destroyed_at_function_entry.
         * simpl. constructor; eauto.
           constructor; econstructor; eauto.
   }
-
-
-    admit. }
   clear H0.
   exploit extcall_arguments_match; eauto.
   intros [args' [C D]].
@@ -2571,10 +2569,12 @@ Local Transparent destroyed_at_function_entry.
 
 - inv STACKS.
   inv STACKS'; simpl in *.
-  + assert (t = E0) as ->.
+  +
+    assert (t = E0) as ->.
     { inv EV; auto.
       simpl in H.
-      destruct (flowsto_dec cp (Genv.find_comp_of_block ge f)); try congruence. }
+      destruct flowsto_dec; try congruence.
+      exfalso; apply n; auto with comps. }
     destruct ISEMPTY; subst.
     left.
     assert (LD: Val.lessdef (Mach.return_value rs sg) (return_value rs0 sg)).
@@ -2597,13 +2597,12 @@ Local Transparent destroyed_at_function_entry.
     eapply exec_step_return.
     rewrite ATPC. unfold Vnullptr; simpl; now destruct Archi.ptr64.
     rewrite ATPC. simpl; discriminate.
-
-    { eexists; eexists; eexists; eauto. }
-
+    eauto. eauto.
     { rewrite ATPC. simpl.
       rewrite <- find_comp_of_block_translated.
       now erewrite (Genv.find_funct_ptr_find_comp_of_block); eauto. }
-    now erewrite (Genv.find_funct_ptr_find_comp_of_block) in H6; simpl in *; eauto.
+    eapply Genv.find_funct_ptr_find_comp_of_block in H3; rewrite H3; auto with comps.
+   
     admit.
     econstructor; eauto.
     now erewrite (Genv.find_funct_ptr_find_comp_of_block) in H1; simpl in *; eauto.
@@ -2679,31 +2678,29 @@ Local Transparent destroyed_at_function_entry.
     left.
     eexists; split.
     eapply plus_one. eapply exec_step_return_cross.
-    rewrite ATPC. unfold Vnullptr; now destruct Archi.ptr64.
-    rewrite ATPC. discriminate.
-    rewrite ATPC. auto.
-    eapply agree_sp; eauto.
+    rewrite ATPC. destruct dra; unfold Vnullptr; now destruct Archi.ptr64.
+    rewrite ATPC. destruct dra; discriminate.
+    rewrite ATPC. simpl. inv H11. auto.
+    inv H11; eapply agree_sp; eauto.
     simpl. reflexivity.
-    simpl. reflexivity.
-    eapply Genv.not_ptr_transf_lessdef. eauto.
-    eapply NO_CROSS_PTR. simpl.
-    destruct (flowsto_dec cp (Genv.find_comp_of_block ge f)); try contradiction; auto.
-    simpl. reflexivity.
-    rewrite <- find_comp_of_block_translated; eauto.
+    simpl. reflexivity. simpl.
+    inv H11; simpl. eapply Genv.not_ptr_transf_lessdef. eauto.
+    intros ?. eapply NO_CROSS_PTR; eauto.
+    inv H11; simpl. rewrite <- find_comp_of_block_translated; eauto.
     eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
           eauto using senv_preserved.
-    inv EV; simpl in *; try now destruct flowsto_dec.
-    simpl.
+    inv H11; eauto.
+    inv H11; eauto.
+    inv H11. simpl.
+
     admit.
     reflexivity.
     reflexivity.
-    simpl. admit.
-    simpl. unfold invalidate_cross_return. simpl. admit. (* same as before *)
-    admit.
-    rewrite <- find_comp_of_block_translated; eauto.
+    simpl. inv H11. admit.
     erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
     econstructor; eauto.
 
+    admit.
     { rewrite <- find_comp_of_block_translated in *; eauto.
       erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto. simpl in *. eauto. }
     { constructor.

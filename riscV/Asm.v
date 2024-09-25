@@ -1511,17 +1511,14 @@ Inductive step: state -> trace -> state -> Prop :=
       (* We attempt a return, so we go to a ReturnState*)
       step (State st rs m cp) E0 (ReturnState st rs' m' (comp_of f))
   | exec_step_return:
-      forall st rs rs' m sg rec_cp cp,
+      forall st rs rs' m rec_cp cp b ofs fd,
         rs PC <> Vnullptr ->
         rs PC <> Vundef ->
-        (* rs PC <> asm_parent_dummy_ra st -> *)
-        (exists b ofs fd, rs PC = Vptr b ofs /\
-                       Genv.find_def ge b = Some (Gfun (Internal fd)) /\
-                       fn_sig fd = sg) ->
+        forall (ATPC: rs PC = Vptr b ofs),
+        forall (FD: Genv.find_def ge b = Some (Gfun (Internal fd))),
         forall (NEXTCOMP: Genv.find_comp_in_genv ge (rs PC) = cp),
-        forall (INTERNAL_RET: rec_cp ⊆ cp),
-        (* forall (SIG_STACK: fn_sig fd = sg), *)
-        forall (INVALIDATE: invalidate_return rs sg = rs'),
+        forall (INTERNAL_RET: rec_cp = cp),
+        forall (INVALIDATE: invalidate_return rs (fn_sig fd) = rs'),
           step (ReturnState st rs m rec_cp) E0 (State st rs' m cp)
   | exec_step_return_cross:
       forall st st' rs rs' rs'' m m' sg t rec_cp cp',
@@ -1535,10 +1532,10 @@ Inductive step: state -> trace -> state -> Prop :=
         forall (STUPD: update_stack_return st = Some st'),
         forall (SIG_STACK: sig_of_call st = sg),
         (* We do not return a pointer *)
-        forall (NO_CROSS_PTR: not_ptr (return_value rs sg)),
+        forall (NO_CROSS_PTR: Genv.type_of_call cp' rec_cp = Genv.CrossCompartmentCall ->
+                         not_ptr (return_value rs sg)),
         forall (COMP: Genv.find_comp_in_genv ge (asm_parent_ra st) = cp'),
         forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
-        forall (EV': t <> E0),
         forall (DUMMY_DIFF: asm_parent_dummy_sp st <> asm_parent_sp st),
       forall (INVALIDATE: invalidate_return rs sg = rs'),
       forall (INVALIDATE: invalidate_cross_return rs' st = rs''),
@@ -1546,8 +1543,6 @@ Inductive step: state -> trace -> state -> Prop :=
                              | Vptr bsp _ => Mem.set_perm m bsp Freeable
                              | _ => None
                              end),
-      forall (FREE_INVARAIANT: asm_parent_dummy_sp st = rs'' X2),
-      forall (FREE_DIFF: asm_parent_sp st <> asm_parent_sp st'),
           step (ReturnState st rs m rec_cp) t (State st' rs'' m' cp')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
@@ -1699,14 +1694,11 @@ intros; constructor; simpl; intros.
   + now destruct i0.
   + now destruct i0.
   + split. constructor. auto.
-  + destruct H3 as (? & ? & ? & ? &? & ?).
-    destruct H11 as (? & ? & ? & ? &? & ?). assert (sg = sg0) by congruence. subst.
-    rewrite H7.
-    split; econstructor; eauto.
+  + split; constructor; auto.
   + admit.
   + admit.
   + inv EV; inv EV0; try congruence.
-    admit.
+    admit. admit.
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H15. intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.

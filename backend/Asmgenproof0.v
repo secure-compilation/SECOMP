@@ -1061,13 +1061,13 @@ Variable m: mem.
 Inductive match_stack: list Mach.stackframe -> Prop :=
   | match_stack_nil:
       match_stack nil
-  | match_stack_cons: forall fb sg sp ra c s f tf tc dra dsp,
+  | match_stack_cons: forall fb sg sp ra c s f tf tc dra dsp bsp osp,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
       forall (COMP_SP: Mem.val_compartment m sp = comp_of f),
-      forall (SP_VALID: forall bsp osp, sp = Vptr bsp osp ->
-        Mem.valid_block m bsp ),
+      forall (SP: sp = Vptr bsp osp),
+      forall (SP_VALID: Mem.valid_block m bsp),
       match_stack s ->
       match_stack (Mach.Stackframe fb sg sp ra c dra dsp :: s).
 
