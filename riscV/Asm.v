@@ -1536,7 +1536,7 @@ Inductive step: state -> trace -> state -> Prop :=
                          not_ptr (return_value rs sg)),
         forall (COMP: Genv.find_comp_in_genv ge (asm_parent_ra st) = cp'),
         forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
-        forall (DUMMY_DIFF: asm_parent_dummy_sp st <> asm_parent_sp st),
+        (* forall (DUMMY_DIFF: asm_parent_dummy_sp st <> asm_parent_sp st), *)
       forall (INVALIDATE: invalidate_return rs sg = rs'),
       forall (INVALIDATE: invalidate_cross_return rs' st = rs''),
       forall (MAKE_FREEABLE: Some m' = match asm_parent_sp st with

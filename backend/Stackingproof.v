@@ -2752,6 +2752,7 @@ Proof.
       now rewrite <- H1 in NO_CROSS_PTR.
     (* TODO: write a lemma about that *)
   }
+  { (* See the call case, do the same *) admit. }
   { assert (SAMECOMP: comp_of (Internal trf) = comp_of f) by
       (rewrite (comp_transl_partial _ TRF); reflexivity).
     setoid_rewrite SAMECOMP.
@@ -2770,8 +2771,10 @@ Proof.
   (* TODO: fix this unshelving *)
   Unshelve.
   all: try exact None.
+  admit.
   exact (Linear.funsig f').
   exact (Linear.funsig f').
+  admit.
 Admitted.
 
 Lemma transf_initial_states:

@@ -566,15 +566,19 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb sig rs m cp)
          t (Returnstate s rs' m' bottom)
   | exec_return:
-      forall s f sp ra c rs m sg cp t dra dsp,
+      forall s f sp ra c rs m m' sg cp t dra dsp,
       forall cp' (CURCOMP: Genv.find_comp_of_block ge f = cp'),
       forall (NO_CROSS_PTR: Genv.type_of_call cp' cp = Genv.CrossCompartmentCall ->
                        not_ptr (return_value rs sg)),
       (* forall (RETREGS: forall r, (LTL.in_mreg r (regs_of_rpair (loc_result sg)) = false) -> *)
       (*   rs r = Vundef), *)
+      forall (SET_PERM: match sp with
+                   | Vptr bsp _ =>
+                       if cp_eq_dec cp' cp then m = m' else Mem.set_perm m bsp Freeable = Some m'
+                   | _ => False end),
       forall (EV: return_trace ge cp' cp (return_value rs sg) (sig_res sg) t),
       step (Returnstate (Stackframe f sg sp ra c dra dsp :: s) rs m cp)
-        t (State s f sp c rs m).
+        t (State s f sp c rs m').
 
 End RELSEM.
 

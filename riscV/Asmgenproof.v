@@ -2592,7 +2592,10 @@ Local Transparent destroyed_at_function_entry.
       intros [tf0 [? ?]]. simpl in H0. monadInv H0.
       exists x. split; eauto.
       apply Genv.find_funct_ptr_iff; eauto. }
-    eexists (State s' (invalidate_return rs0 sg) m' (comp_of f0)). split.
+    destruct cp_eq_dec; try congruence. subst m'.
+    (* exploit Mem.set_perm_parallel_extends; eauto. *)
+    (* intros [m'' [SET_PERM' MEXT']]. *)
+    eexists (State s' (invalidate_return rs0 sg) m'0 (comp_of f0)). split.
     eapply plus_one.
     eapply exec_step_return.
     rewrite ATPC. unfold Vnullptr; simpl; now destruct Archi.ptr64.
@@ -2675,6 +2678,13 @@ Local Transparent destroyed_at_function_entry.
       - eapply Val.longofwords_lessdef.
         eapply agree_mregs; eauto.
         eapply agree_mregs; eauto. }
+    destruct cp_eq_dec; try congruence.
+    exploit Mem.set_perm_parallel_extends; eauto.
+    intros [m'' [SET_PERM' MEXT']].
+    (* assert (exists m'', Mem.set_perm m' bsp Freeable = Some m'') as [m'' ?]. *)
+    (* { rewrite Mem.valid_block_extends in SP_VALID; eauto. *)
+    (*   pose proof (Mem.valid_set_perm m' _ Freeable SP_VALID) as [m'' ?]. *)
+    (*   eauto. } *)
     left.
     eexists; split.
     eapply plus_one. eapply exec_step_return_cross.
@@ -2689,13 +2699,13 @@ Local Transparent destroyed_at_function_entry.
     simpl. rewrite <- find_comp_of_block_translated; eauto.
     eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
       eauto using senv_preserved.
-    admit.
     reflexivity.
     reflexivity.
-    simpl. admit.
+    simpl; eauto.
     erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
     econstructor; eauto.
 
+    eapply match_stack_set_perm; eauto.
     erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto. simpl in *. eauto.
     eapply functions_transl; eauto.
 
@@ -2762,6 +2772,8 @@ Local Transparent destroyed_at_function_entry.
                simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
                rewrite filter_In; split; intuition auto. }
     }
+    eapply Mem.set_perm_valid_block_1; eauto. simpl.
+    erewrite <- Mem.set_preserves_comp; eauto.
     easy.
 Admitted.
 
