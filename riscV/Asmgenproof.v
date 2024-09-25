@@ -2667,7 +2667,7 @@ Local Transparent destroyed_at_function_entry.
     }
     easy.
 
-  + inv H8.
+  + inv H8. inv H11.
     assert (Val.lessdef (Mach.return_value rs sg) (return_value rs0 sg)).
     { unfold Mach.return_value, return_value.
       destruct loc_result.
@@ -2678,39 +2678,37 @@ Local Transparent destroyed_at_function_entry.
     left.
     eexists; split.
     eapply plus_one. eapply exec_step_return_cross.
-    rewrite ATPC. destruct dra; unfold Vnullptr; now destruct Archi.ptr64.
-    rewrite ATPC. destruct dra; discriminate.
-    rewrite ATPC. simpl. inv H11. auto.
-    inv H11; eapply agree_sp; eauto.
-    simpl. reflexivity.
-    simpl. reflexivity. simpl.
-    inv H11; simpl. eapply Genv.not_ptr_transf_lessdef. eauto.
+    rewrite ATPC. unfold Vnullptr; now destruct Archi.ptr64.
+    rewrite ATPC; discriminate.
+    rewrite ATPC; reflexivity.
+    eapply agree_sp; eauto.
+    simpl; reflexivity.
+    simpl; reflexivity.
+    eapply Genv.not_ptr_transf_lessdef. eauto.
     intros ?. eapply NO_CROSS_PTR; eauto.
-    inv H11; simpl. rewrite <- find_comp_of_block_translated; eauto.
+    simpl. rewrite <- find_comp_of_block_translated; eauto.
     eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
-          eauto using senv_preserved.
-    inv H11; eauto.
-    inv H11; eauto.
-    inv H11. simpl.
-
+      eauto using senv_preserved.
     admit.
     reflexivity.
     reflexivity.
-    simpl. inv H11. admit.
+    simpl. admit.
     erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
     econstructor; eauto.
 
-    admit.
-    { rewrite <- find_comp_of_block_translated in *; eauto.
-      erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto. simpl in *. eauto. }
+    erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto. simpl in *. eauto.
+    eapply functions_transl; eauto.
+
+    unfold invalidate_cross_return, invalidate_return. simpl.
+    econstructor; eauto.
     { constructor.
-      - unfold invalidate_cross_return, invalidate_return. simpl. reflexivity.
+      - unfold invalidate_cross_return, invalidate_return; reflexivity.
       - auto.
       - unfold invalidate_return.
-    { assert (NCP: cp ⊈ Genv.find_comp_of_block tge f).
-      { rewrite <- find_comp_of_block_translated; eauto. }
+    { (* assert (NCP: cp ⊈ Genv.find_comp_of_block tge f). *)
+      (* { rewrite <- find_comp_of_block_translated; eauto. } *)
 
-      clear -prog tprog ge tge comp_of_main AG ATPC NCP INVREGS.
+      clear -prog tprog ge tge comp_of_main AG ATPC (* NCP  *)INVREGS.
       intros r. unfold invalidate_cross_return.
       destruct (preg_eq (preg_of r) PC); (try now destruct r).
       rewrite orb_false_l.
@@ -2781,17 +2779,17 @@ Proof.
      with (Vptr fb Ptrofs.zero).
   econstructor; eauto.
   constructor.
-  admit.
-  admit.
   constructor.
   eapply Mem.extends_refl.
-  constructor; eauto.
+  constructor. Simpl.
   simpl. unfold Vnullptr; destruct Archi.ptr64; now congruence.
+  constructor; eauto.
+  (* simpl. unfold Vnullptr; destruct Archi.ptr64; now congruence. *)
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
   unfold ge; rewrite H1. auto.
-Admitted.
+Qed.
 
 Lemma transf_final_states:
   forall st1 st2 r,
