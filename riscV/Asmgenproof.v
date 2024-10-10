@@ -1169,7 +1169,7 @@ Lemma loadarg_cross_correct:
     (dsp: block)
     (c: list Mach.instruction) (tc : list instruction) (rs: regset) (m: mem) (v : val) (b: block) (f: Mach.function) (tf: function),
   forall (AT: transl_code_at_pc ge (rs PC) b f (Mgetparam ofs ty dst :: c) true tf tc),
-  forall (VALID_PARAM : Stacklayout.is_valid_param_loc (Mach.fn_sig f) (Ptrofs.unsigned ofs)),
+  forall (VALID_PARAM : Stacklayout.is_valid_param_loc (parent_signature st) (Ptrofs.unsigned ofs) ty),
   forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (asm_parent_sp st) ofs) top = Some v),
   forall (ATDUM: asm_parent_dummy_sp st = Vptr dsp Ptrofs.zero),
   forall (IN_X30: rs X30 = Vptr dsp Ptrofs.zero),
@@ -1221,7 +1221,7 @@ Lemma loadarg_cross_correct:
         eapply find_instr_tail. rewrite <- H4; eauto.
         { rewrite Ptrofs.add_zero_l.
           inv AT. monadInv H2. destruct zlt; try congruence. inv EQ0.
-          monadInv EQ; auto. }
+          monadInv EQ; eauto. }
         { rewrite Ptrofs.add_zero_l. eauto. }
         { intros ? V; inv V. reflexivity. }
         { intros ? V; inv V. }
@@ -1262,7 +1262,7 @@ Lemma loadarg_cross_correct:
         { simpl in OFF_PC; rewrite Ptrofs.add_zero_l in OFF_PC.
           inv OFF_PC.
           inv AT. monadInv H5. destruct zlt; try congruence. inv EQ0.
-          monadInv EQ; auto. }
+          monadInv EQ; eauto. }
         { simpl in OFF_PC; rewrite Ptrofs.add_zero_l in OFF_PC.
           inv OFF_PC. eauto. }
         { intros ? V; inv V; reflexivity. }
@@ -1316,7 +1316,7 @@ Lemma loadarg_cross_correct:
         eapply find_instr_tail. rewrite <- H4; eauto.
         { rewrite Ptrofs.add_zero_l.
           inv AT. monadInv H2. destruct zlt; try congruence. inv EQ0.
-          monadInv EQ; auto. }
+          monadInv EQ; eauto. }
         { rewrite Ptrofs.add_zero_l. eauto. }
         { intros ? V; inv V. }
         { intros ? V; inv V. reflexivity. }
@@ -1357,7 +1357,7 @@ Lemma loadarg_cross_correct:
         { simpl in OFF_PC; rewrite Ptrofs.add_zero_l in OFF_PC.
           inv OFF_PC.
           inv AT. monadInv H5. destruct zlt; try congruence. inv EQ0.
-          monadInv EQ; auto. }
+          monadInv EQ; eauto. }
         { simpl in OFF_PC; rewrite Ptrofs.add_zero_l in OFF_PC.
           inv OFF_PC. eauto. }
         { intros ? V; inv V. }
@@ -1508,8 +1508,11 @@ Opaque loadind.
         intros. rewrite rs'_others; auto using preg_of_not_X30; try congruence. }
     * inv H6. remember (Stackframe b sg cp v0 ofs0 db1 db2) as f'.
       exploit loadarg_cross_correct; eauto.
-      instantiate (2 := (f' :: s'0)); subst; eauto.
+      simpl in VALID_PARAM.
+      instantiate (1 := (f' :: s'0)); subst; eauto.
       subst; simpl; eauto.
+      subst; simpl; eauto.
+      (* subst; simpl; eauto. *)
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply PLUS.
@@ -1560,8 +1563,12 @@ Opaque loadind.
       }
     * inv H6. remember (Stackframe b sg cp v0 ofs0 db1 db2) as f'.
       exploit loadarg_cross_correct; eauto.
-      instantiate (2 := (f' :: s'0)); subst; eauto.
+      simpl in VALID_PARAM.
+      instantiate (1 := (f' :: s'0)); subst; eauto.
       subst; simpl; eauto.
+      subst; simpl; eauto.
+      (* instantiate (2 := (f' :: s'0)); subst; eauto. *)
+      (* subst; simpl; eauto. *)
       intros [rs'' [PLUS [rs''_dst [rs''_others [tc'' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply star_plus_trans; eauto.
@@ -1683,6 +1690,7 @@ Local Transparent destroyed_by_op.
     simpl; eauto.
     simpl; eauto.
     Simpl; eauto.
+  admit.
     rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
     { left. simpl. erewrite Genv.find_funct_ptr_find_comp_of_block, ALLOWED; auto with comps. }
@@ -1782,6 +1790,7 @@ Local Transparent destroyed_by_op.
     simpl; eauto.
     Simpl; eauto.
     unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    admit.
     rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
     { left. simpl; erewrite Genv.find_funct_ptr_find_comp_of_block, ALLOWED; auto with comps. }
@@ -1900,6 +1909,7 @@ Local Transparent destroyed_by_op.
   * simpl; eauto.
   * simpl; eauto.
   * Simpl; eauto.
+  * admit.
   * rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
   * now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
@@ -2052,6 +2062,7 @@ Local Transparent destroyed_by_op.
     * Simpl; eauto.
       unfold Genv.symbol_address.
       rewrite symbols_preserved, H. reflexivity.
+      * admit.
     * rewrite <- (comp_transl_partial _ H4).
       eapply allowed_call_translated; eauto.
     * now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
@@ -2531,40 +2542,41 @@ Local Transparent destroyed_at_function_entry.
   intros [res' [m2' [P [Q [R S]]]]].
  
   left; econstructor; split.
-  apply plus_one. eapply exec_step_external with (sp := parent_sp s); eauto.
-  { intros ?. eapply Genv.find_funct_ptr_find_comp_of_block in EXT.
-    rewrite EXT in STACKS'. inv STACKS'.
-    - inv H0.
-    - simpl in AG. destruct f; simpl in AG, ISEMPTY; simpl. destruct ISEMPTY as [_ ->].
-      eapply sp_val; eauto.
-    - simpl in *; congruence. }
-  { intros ?. eapply Genv.find_funct_ptr_find_comp_of_block in EXT.
-    rewrite EXT in STACKS'. inv STACKS'.
-    - reflexivity.
-    - simpl in *; congruence.
-    - simpl; inv H7; auto. }
-  eapply Genv.find_funct_ptr_iff; eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor; eauto.
-  { eapply match_stack_external_call; eauto. }
-  erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto.
-  { Simpl. rewrite ATLR.
-    eapply agree_set_other; eauto.
-    eapply agree_set_pair; eauto.
-    unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl.
-    constructor.
-    - simpl. eapply agree_sp; eauto.
-    - eapply agree_sp_def; eauto.
-    - intros. constructor. }
-  { unfold Mach.set_pair.
-    rewrite SIG0.
-    generalize (loc_result (ef_sig ef)).
-    unfold Mach.undef_caller_save_regs; simpl.
-    clear. intros. destruct r.
-    - simpl in *. rewrite Regmap.gso; auto. destruct mreg_eq; try now simpl in *.
-    - simpl in *. rewrite !Regmap.gso; auto.
-      destruct mreg_eq; try now simpl in *.
-      destruct mreg_eq, mreg_eq; try now simpl in *. }
+  admit. admit.
+  (* apply plus_one. eapply exec_step_external with (sp := parent_sp s); eauto. *)
+  (* { intros ?. eapply Genv.find_funct_ptr_find_comp_of_block in EXT. *)
+  (*   rewrite EXT in STACKS'. inv STACKS'. *)
+  (*   - inv H0. *)
+  (*   - simpl in AG. destruct f; simpl in AG, ISEMPTY; simpl. destruct ISEMPTY as [_ ->]. *)
+  (*     eapply sp_val; eauto. *)
+  (*   - simpl in *; congruence. } *)
+  (* { intros ?. eapply Genv.find_funct_ptr_find_comp_of_block in EXT. *)
+  (*   rewrite EXT in STACKS'. inv STACKS'. *)
+  (*   - reflexivity. *)
+  (*   - simpl in *; congruence. *)
+  (*   - simpl; inv H7; auto. } *)
+  (* eapply Genv.find_funct_ptr_iff; eauto. *)
+  (* eapply external_call_symbols_preserved; eauto. apply senv_preserved. *)
+  (* econstructor; eauto. *)
+  (* { eapply match_stack_external_call; eauto. } *)
+  (* erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto. *)
+  (* { Simpl. rewrite ATLR. *)
+  (*   eapply agree_set_other; eauto. *)
+  (*   eapply agree_set_pair; eauto. *)
+  (*   unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl. *)
+  (*   constructor. *)
+  (*   - simpl. eapply agree_sp; eauto. *)
+  (*   - eapply agree_sp_def; eauto. *)
+  (*   - intros. constructor. } *)
+  (* { unfold Mach.set_pair. *)
+  (*   rewrite SIG0. *)
+  (*   generalize (loc_result (ef_sig ef)). *)
+  (*   unfold Mach.undef_caller_save_regs; simpl. *)
+  (*   clear. intros. destruct r. *)
+  (*   - simpl in *. rewrite Regmap.gso; auto. destruct mreg_eq; try now simpl in *. *)
+  (*   - simpl in *. rewrite !Regmap.gso; auto. *)
+  (*     destruct mreg_eq; try now simpl in *. *)
+  (*     destruct mreg_eq, mreg_eq; try now simpl in *. } *)
 
 
 - inv STACKS.
@@ -2691,9 +2703,11 @@ Local Transparent destroyed_at_function_entry.
     rewrite ATPC. unfold Vnullptr; now destruct Archi.ptr64.
     rewrite ATPC; discriminate.
     rewrite ATPC; reflexivity.
+    eauto.
     eapply agree_sp; eauto.
     simpl; reflexivity.
     simpl; reflexivity.
+    simpl.
     eapply Genv.not_ptr_transf_lessdef. eauto.
     intros ?. eapply NO_CROSS_PTR; eauto.
     simpl. rewrite <- find_comp_of_block_translated; eauto.

@@ -1444,8 +1444,8 @@ Inductive step: state -> trace -> state -> Prop :=
       (* gets replaced with actual stack pointer *)
       asm_parent_sp st = sp ->
 
-      Stacklayout.is_valid_param_loc (fn_sig f)
-        (Ptrofs.unsigned (Ptrofs.add o' (eval_offset o))) ->
+      Stacklayout.is_valid_param_loc (parent_signature st)
+        (Ptrofs.unsigned (Ptrofs.add o' (eval_offset o))) ty ->
 
       Mem.loadv (chunk_of_type ty) m
                 (Val.offset_ptr sp (Ptrofs.add o' (eval_offset o))) top = Some v ->
@@ -1468,28 +1468,25 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State st rs m cp) E0 (State st rs' m' (comp_of f))
 
   | exec_step_internal_call:
-      forall b ofs f i sig rs m rs' m' m'' b'  st st' args t rs'' rs''',
+      forall b ofs f i sig rs m rs' m' m'' b'  st st' args t rs'' rs''' f',
       rs PC = Vptr b ofs ->
       Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m (comp_of f) = Next rs' m' ->
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' Ptrofs.zero), (* Only allow to call to ofs zero *)
+      forall (NEXT_INT: Genv.find_def ge b' = Some (Gfun (Internal f'))),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
       forall cp' (NEXTCOMP: Genv.find_comp_of_block ge b' = cp'),
-      (* Is a call, we update the stack *)
-      (* forall (SP_HAS_PTR: comp_of f <> cp' -> *)
-      (*                exists bsp osp, rs SP = Vptr bsp osp *)
-      (*                           /\ (forall fd, (Genv.find_def ge bsp <> Some (Gfun fd))) *)
-      (*                           /\ (Mem.perm m bsp 0 Max Nonempty)), *)
-      (* forall (DIFF_SP: (* Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall -> *) *)
-      (*     comp_of f <> cp' -> *)
-      (*             diff_sp_X2 st (rs X2)), (* makes proof simpler. Check if really needed *) *)
 
+
+
+      (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st sig (comp_of f) rs' m' = Some (st', rs'', m'')),
       forall (ARGS: call_arguments rs' (rs'#SP) m' sig args),
       (* note: it doesn't matter which register file we use to get the arguments *)
       (* Check signature *)
+
       forall (CALLSIG:
           Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
         (exists fd, Genv.find_def ge b' = Some (Gfun fd) /\ sig = funsig fd)),
@@ -1526,6 +1523,8 @@ Inductive step: state -> trace -> state -> Prop :=
         rs PC <> Vundef ->
         rs PC = asm_parent_dummy_ra st ->
         (* rs PC = Vone -> *)
+        (* Cross ret *)
+        forall (CROSS_RET: rec_cp <> cp'),
         forall (RESTORE_SP: rs SP = asm_parent_dummy_sp st),
         (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
@@ -1558,16 +1557,36 @@ Inductive step: state -> trace -> state -> Prop :=
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs #X1 <- Vundef #X31 <- Vundef))) ->
       step (State st rs m (comp_of f)) t (State st rs' m' (comp_of f))
-  | exec_step_external:
-      forall b ef args res rs m t rs' m' st sp cp,
-      rs PC = Vptr b Ptrofs.zero ->
-      forall (SP0: cp = bottom -> sp = rs SP)
-        (SP1: cp <> bottom -> sp = asm_parent_sp st),
-      Genv.find_def ge b = Some (Gfun (External ef)) ->
-      external_call ef ge cp args m t res m' ->
-      extcall_arguments rs sp m (ef_sig ef) args ->
-      rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
-      step (State st rs m cp) t (ReturnState st rs' m' bottom).
+  | exec_step_external_call:
+      forall b ofs f i sig rs m rs' rs'' m' m'' b'  st args t ef res,
+      rs PC = Vptr b ofs ->
+      Genv.find_def ge b = Some (Gfun (Internal f)) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m (comp_of f) = Next rs' m' ->
+      sig_call i = Some sig ->
+      forall (NEXTPC: rs' PC = Vptr b' Ptrofs.zero), (* Only allow to call to ofs zero *)
+      forall (NEXT_EXT: Genv.find_def ge b' = Some (Gfun (External ef))),
+
+
+      external_call ef ge (comp_of f) args m' t res m'' ->
+      extcall_arguments rs' (rs' # SP) m' (ef_sig ef) args ->
+      rs'' = (invalidate_return
+              (set_pair (loc_external_result (ef_sig ef))
+                 res rs')
+              (ef_sig ef)) # PC <- (Val.offset_ptr (rs PC) Ptrofs.one) ->
+
+      step (State st rs m (comp_of f)) t (State st rs'' m'' (comp_of f))
+.
+  (* | exec_step_external: *)
+  (*     forall b ef args res rs m t rs' m' st sp cp, *)
+  (*     rs PC = Vptr b Ptrofs.zero -> *)
+  (*     forall (SP0: cp = bottom -> sp = rs SP) *)
+  (*       (SP1: cp <> bottom -> sp = asm_parent_sp st), *)
+  (*     Genv.find_def ge b = Some (Gfun (External ef)) -> *)
+  (*     external_call ef ge cp args m t res m' -> *)
+  (*     extcall_arguments rs sp m (ef_sig ef) args -> *)
+  (*     rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) -> *)
+  (*     step (State st rs m cp) t (ReturnState st rs' m' bottom). *)
 
 End RELSEM.
 
@@ -1676,7 +1695,14 @@ intros; constructor; simpl; intros.
   + split. constructor. auto.
   + split. constructor.
     destruct rd0.
-    admit. admit.
+    * exploit H9; eauto. exploit H23; eauto.
+      assert (ty = ty0) as <- by admit.
+      assert (v = v0) as <- by congruence.
+      congruence.
+    * exploit H10; eauto. exploit H24; eauto.
+      assert (ty = ty0) as <- by admit.
+      assert (v = v0) as <- by congruence.
+      congruence.
   + admit.
   + admit.
   + split. constructor. auto.
@@ -1694,22 +1720,30 @@ intros; constructor; simpl; intros.
   + now destruct i0.
   + now destruct i0.
   + split. constructor. auto.
+  + now destruct i0.
   + split; constructor; auto.
   + admit.
   + admit.
+  (* + admit. *)
+  (* + admit. *)
   + inv EV; inv EV0; try congruence.
-    admit. admit.
+    split. constructor. intros _.
+    assert (m' = m'0) as <- by congruence.
+    reflexivity.
+    assert (res = res0) as <- by (eapply eventval_match_determ_2; eauto).
+    split. constructor. intros _.
+    assert (m' = m'0) as <- by congruence.
+    reflexivity.
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H15. intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
-  + assert (sp = sp0).
-    { destruct cp; try now rewrite SP0, SP2.
-      now rewrite SP1, SP3.
-      now rewrite SP1, SP3. }
-    subst sp0.
-    assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
-    exploit external_call_determ. eexact H3. eexact H12. intros [A B].
-    split. auto. intros. destruct B; auto. subst. congruence.
+  + now destruct i0.
+  +
+    (* assert (ef = ef0) as <- by congruence. *)
+    assert (args0 = args) as ->
+        by (eapply extcall_arguments_determ; eauto).
+    exploit external_call_determ. eexact H6. eexact H18. intros [A B].
+    split. auto. intros. destruct B; auto. subst. eauto.
 - (* trace length *)
   red; intros. inv H; simpl.
   lia. lia. lia.
