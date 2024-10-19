@@ -1920,6 +1920,7 @@ Local Transparent destroyed_by_op.
     destruct cp_eq_dec; try congruence.
     rewrite <- H2. rewrite allc1', allc2'.
     erewrite agree_sp; eauto; simpl.
+    assert (Genv.find_def (Genv.globalenv tprog) bsp = None) as -> by admit.
     rewrite perm'. reflexivity.
   * Simpl; erewrite agree_sp; eauto.
   * intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
@@ -2075,6 +2076,7 @@ Local Transparent destroyed_by_op.
     destruct cp_eq_dec; try congruence.
     rewrite <- H2. rewrite allc1', allc2'.
     erewrite agree_sp; eauto; simpl.
+    assert (Genv.find_def (Genv.globalenv tprog) bsp = None) as -> by admit.
     rewrite perm'. reflexivity.
   * Simpl; erewrite agree_sp; eauto.
   * intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.

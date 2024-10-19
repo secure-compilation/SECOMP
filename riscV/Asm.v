@@ -1261,16 +1261,22 @@ Definition initial_stack: stack := nil.
       let (m', dummy_ra) := Mem.alloc m cp' 0 0 in
       let (m'', dummy_sp) := Mem.alloc m' cp' 0 0 in
       match sp' with
-        | Vptr bsp _ => match Mem.set_perm m'' bsp Readable with
-                         | Some m''' => match ra' with
-                                       | Vptr f retaddr =>
-                                           Some (Stackframe f sg cp' sp' retaddr dummy_ra dummy_sp :: s,
-                                               (rs' # SP <- (Vptr dummy_sp Ptrofs.zero) # RA <- (Vptr dummy_ra Ptrofs.zero)),
-                                               m''')
-                                       | _ => None
-                                       end
-                       | _ => None
-                       end
+        | Vptr bsp _ =>
+            match Genv.find_def ge bsp with
+              (* Even if it's a pointer, we really don't want it to be
+                 statically allocated *)
+            | None => match Mem.set_perm m'' bsp Readable with
+                     | Some m''' => match ra' with
+                                   | Vptr f retaddr =>
+                                       Some (Stackframe f sg cp' sp' retaddr dummy_ra dummy_sp :: s,
+                                           (rs' # SP <- (Vptr dummy_sp Ptrofs.zero) # RA <- (Vptr dummy_ra Ptrofs.zero)),
+                                           m''')
+                                   | _ => None
+                                   end
+                     | _ => None
+                     end
+            | Some _ => None
+            end
       | _ => None
       end.
 
@@ -1284,6 +1290,7 @@ Definition initial_stack: stack := nil.
     destruct cp_eq_dec; try congruence.
     do 2 destruct Mem.alloc.
     destruct (rs X2); try discriminate.
+    destruct (Genv.find_def); try discriminate.
     destruct (Mem.set_perm); try discriminate.
     destruct (rs X1); try discriminate. inv H.
     rewrite Pregmap.gso; auto; now congruence.
