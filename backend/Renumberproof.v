@@ -34,6 +34,9 @@ Hypothesis TRANSL: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
+Let cp_main := comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
+
 Lemma functions_translated:
   forall v f,
   Genv.find_funct ge v = Some f ->
@@ -207,7 +210,7 @@ Inductive match_frames: RTL.stackframe -> RTL.stackframe -> Prop :=
 Lemma match_stacks_call_comp:
   forall stk1 stk2,
   list_forall2 match_frames stk1 stk2 ->
-  call_comp stk1 = call_comp stk2.
+  call_comp cp_main stk1 = call_comp cp_main stk2.
 Proof.
   intros stk1 stk2 H.
   destruct H; trivial.
@@ -330,6 +333,11 @@ Proof.
     rewrite symbols_preserved. rewrite (match_program_main TRANSL). eauto.
     eapply function_ptr_translated; eauto.
     rewrite <- H3; apply sig_preserved.
+
+  assert (comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite <- (match_program_main); eauto.
+    rewrite <- (Genv.find_comp_match TRANSL); eauto. }
   constructor. constructor.
 Qed.
 

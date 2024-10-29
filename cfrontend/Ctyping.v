@@ -2004,6 +2004,7 @@ Variable prog: program.
 Hypothesis WTPROG: wt_program prog.
 Let ge := globalenv prog.
 Let gtenv := bind_globdef (PTree.empty _) prog.(prog_defs).
+Let cp_main := comp_of_main prog.
 
 Inductive wt_expr_cont: typenv -> function -> cont -> Prop :=
   | wt_Kdo: forall te f k,
@@ -2219,7 +2220,7 @@ Proof.
 Qed.
 
 Lemma preservation_sstep:
-  forall S t S', sstep ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', sstep cp_main ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   induction 1; intros WT; inv WT.
 - inv WTS; eauto with ty.
@@ -2268,7 +2269,7 @@ Proof.
 Qed.
 
 Theorem preservation:
-  forall S t S', step ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', step cp_main ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   intros. destruct H. eapply preservation_estep; eauto. eapply preservation_sstep; eauto.
 Qed.

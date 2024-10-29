@@ -265,6 +265,9 @@ Hypothesis TRANSL: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
+Let cp_main := comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
+
 Lemma functions_translated:
   forall v f,
   Genv.find_funct ge v = Some f ->
@@ -611,7 +614,7 @@ Qed.
 Lemma match_stackframes_call_comp:
   forall s ts,
   list_forall2 match_stackframes s ts ->
-  call_comp s = call_comp ts.
+  call_comp cp_main s = call_comp cp_main ts.
 Proof.
   intros s ts H.
   destruct H as [|sf1 ? sf2 ? STACK]; eauto.
@@ -801,7 +804,7 @@ Proof.
   assert (SIG : parent_signature s = parent_signature ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
   rewrite SIG.
-  assert (CALLER : call_comp s = call_comp ts).
+  assert (CALLER : call_comp cp_main s = call_comp cp_main ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
   constructor; eauto using return_regs_ext_lessdef, match_parent_locset.
 - (* internal function *)
@@ -811,7 +814,7 @@ Proof.
   eapply exec_function_internal; eauto.
   assert (SIG : parent_signature s = parent_signature ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
-  assert (CALLER : call_comp s = call_comp ts).
+  assert (CALLER : call_comp cp_main s = call_comp cp_main ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
   assert (CALLEE : comp_of f = comp_of (tunnel_function f)).
   { reflexivity. }
@@ -825,9 +828,9 @@ Proof.
   intros (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
-  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
+  replace (call_comp cp_main ts) with (call_comp cp_main s) by (inv STK; auto; inv H; auto).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
+  replace (call_comp cp_main ts) with (call_comp cp_main s) by (inv STK; auto; inv H; auto).
   econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.
@@ -848,7 +851,11 @@ Lemma transf_initial_states:
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0 top); split.
+  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0 (comp_of_main prog)); split.
+  assert (comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite (match_program_main TRANSL); eauto.
+    rewrite (Genv.find_comp_match TRANSL); eauto. }
   econstructor; eauto.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).

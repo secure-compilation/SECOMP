@@ -366,6 +366,9 @@ Hypothesis TRANSL: match_prog prog tprog.
 Let ge : CminorSel.genv := Genv.globalenv prog.
 Let tge : RTL.genv := Genv.globalenv tprog.
 
+Let cp_main := CminorSel.comp_of_main prog.
+Let cp_main' := RTL.comp_of_main tprog.
+
 (** Relationship between the global environments for the original
   CminorSel program and the generated RTL program. *)
 
@@ -1340,7 +1343,7 @@ with match_stacks: rettype -> CminorSel.cont -> list RTL.stackframe -> Prop :=
 Lemma match_stacks_call_comp:
   forall ty k stk,
   match_stacks ty k stk ->
-  CminorSel.call_comp k = call_comp stk.
+  CminorSel.call_comp cp_main k = call_comp cp_main stk.
 Proof.
   intros ty k stk H.
   destruct H; trivial; simpl.
@@ -1751,6 +1754,10 @@ Proof.
   symmetry; eapply match_program_main; eauto.
   eexact A.
   rewrite <- H2. apply sig_transl_function; auto.
+  assert (CminorSel.comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold CminorSel.comp_of_main, comp_of_main.
+    erewrite <- (match_program_main); eauto.
+    rewrite <- (Genv.find_comp_match TRANSL); eauto. }
   constructor. auto. constructor.
   constructor. apply Mem.extends_refl.
 Qed.

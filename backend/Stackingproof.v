@@ -88,6 +88,8 @@ Variable tprog: Mach.program.
 Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+Let cp_main := Linear.comp_of_main prog.
+Let cp_main' := Mach.comp_of_main tprog.
 
 Section FRAME_PROPERTIES.
 
@@ -1673,7 +1675,7 @@ Qed.
 Lemma match_stacks_call_comp:
   forall j cs cs' sg,
   match_stacks j cs cs' sg ->
-  call_comp tge cs' = (Linear.call_comp cs).
+  call_comp tge cp_main cs' = (Linear.call_comp cp_main cs).
 Proof.
   unfold call_comp.
   intros j cs cs' sg H.
@@ -2789,6 +2791,10 @@ Proof.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
   set (j := Mem.flat_inj (Mem.nextblock m0)).
+  assert (Linear.comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite (match_program_main TRANSF); eauto.
+    rewrite (Genv.find_comp_match TRANSF); eauto. }
   eapply match_states_call with (j := j); eauto.
   constructor. red; intros. rewrite H3, loc_arguments_main in H. contradiction.
   red; simpl; auto.

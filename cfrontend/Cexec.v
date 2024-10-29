@@ -98,6 +98,7 @@ Defined.
 
 Section EXEC.
 
+Variable cp_main: compartment.
 Variable ge: genv.
 
 (** Accessing locations *)
@@ -1608,13 +1609,13 @@ Qed.
   whose trace is not accepted by the external world. *)
 
 Definition can_crash_world (w: world) (S: state) : Prop :=
-  exists t, exists S', Csem.step ge S t S' /\ forall w', ~possible_trace w t w'.
+  exists t, exists S', Csem.step cp_main ge S t S' /\ forall w', ~possible_trace w t w'.
 
 Theorem not_imm_safe_t:
   forall K C a m f k,
   context K RV C ->
   ~imm_safe_t (comp_of f) K a m ->
-  Csem.step ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
+  Csem.step cp_main ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
 Proof.
   intros. destruct (classic (imm_safe ge e (comp_of f) K a m)).
   exploit imm_safe_imm_safe_t; eauto.
@@ -1815,7 +1816,7 @@ Definition do_step (w: world) (s: state) : list transition :=
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs (fn_comp f);
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ tres _) vargs k m =>
-      match do_external _ _ ge do_external_function do_inline_assembly ef (call_comp k) w vargs m with
+      match do_external _ _ ge do_external_function do_inline_assembly ef (call_comp cp_main k) w vargs m with
       | None => nil
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (rettype_of_type tres) bottom) :: nil
       end
@@ -1851,7 +1852,7 @@ Local Hint Extern 3 => exact I : core.
 Theorem do_step_sound:
   forall w S rule t S',
   In (TR rule t S') (do_step w S) ->
-  Csem.step ge S t S' \/ (t = E0 /\ S' = Stuckstate /\ can_crash_world w S).
+  Csem.step cp_main ge S t S' \/ (t = E0 /\ S' = Stuckstate /\ can_crash_world w S).
 Proof with try (left; right; econstructor; eauto; fail).
   intros until S'. destruct S; simpl.
 (* State *)
@@ -1919,7 +1920,7 @@ Qed.
 
 Theorem do_step_complete:
   forall w S t S' w',
-  possible_trace w t w' -> Csem.step ge S t S' -> exists rule, In (TR rule t S') (do_step w S).
+  possible_trace w t w' -> Csem.step cp_main ge S t S' -> exists rule, In (TR rule t S') (do_step w S).
 Proof with (unfold ret; eauto with coqlib).
   intros until w'; intros PT H.
   destruct H.

@@ -294,6 +294,8 @@ Hypothesis TRANSF: match_prog prog tprog.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+Let cp_main := comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -463,7 +465,7 @@ Qed.
 Lemma match_stacks_call_comp:
   forall s ts,
   list_forall2 match_stackframes s ts ->
-  call_comp s = call_comp ts.
+  call_comp cp_main s = call_comp cp_main ts.
 Proof.
   intros s ts H.
   destruct H; trivial.
@@ -602,7 +604,7 @@ Proof.
   econstructor; split.
   apply plus_one.  econstructor. inv TRF; eauto. traceEq.
   rewrite (parent_locset_match _ _ STACKS).
-  assert (CALLER: call_comp s = call_comp ts).
+  assert (CALLER: call_comp cp_main s = call_comp cp_main ts).
   { inv STACKS. reflexivity.
     inv H0. inv H2. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
@@ -618,7 +620,7 @@ Proof.
 
   apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity. reflexivity.
 
-  assert (CALLER: call_comp s = call_comp ts).
+  assert (CALLER: call_comp cp_main s = call_comp cp_main ts).
   { inv H8. reflexivity.
     inv H1. inv H3. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
@@ -652,7 +654,11 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 AST.COMP.top); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 (comp_of_main prog)); split.
+  assert (comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite (match_program_main TRANSF); eauto.
+    rewrite (Genv.find_comp_match TRANSF); eauto. }
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.

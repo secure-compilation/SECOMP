@@ -52,6 +52,8 @@ Hypothesis TRANSL: match_prog prog tprog.
 
 Let ge := Csem.globalenv prog.
 Let tge := Clight.globalenv tprog.
+Let cp_main := Csem.comp_of_main prog.
+Let cp_main' := Clight.comp_of_main tprog.
 
 (** Invariance properties. *)
 
@@ -954,7 +956,7 @@ Lemma step_makeif:
   forall f a s1 s2 k e le m v1 b,
   eval_expr tge e (comp_of f) le m a v1 ->
   bool_val v1 (typeof a) m = Some b ->
-  star step1 tge (State f (makeif a s1 s2) k e le m)
+  star (step1 cp_main) tge (State f (makeif a s1 s2) k e le m)
              E0 (State f (if b then s1 else s2) k e le m).
 Proof.
   intros. functional induction (makeif a s1 s2).
@@ -973,7 +975,7 @@ Lemma step_make_set:
   Csem.deref_loc ge (comp_of f) ty m b ofs bf t v ->
   eval_lvalue tge e (comp_of f) le m a b ofs bf ->
   typeof a = ty ->
-  step1 tge (State f (make_set (comp_of f) bf id a) k e le m)
+  step1 cp_main tge (State f (make_set (comp_of f) bf id a) k e le m)
           t (State f Sskip k e (PTree.set id v le) m).
 Proof.
   intros. exploit deref_loc_translated; eauto. rewrite <- H1.
@@ -995,7 +997,7 @@ Lemma step_make_assign:
   eval_expr tge e (comp_of f) le m a2 v2 ->
   sem_cast v2 (typeof a2) ty m = Some v ->
   typeof a1 = ty ->
-  step1 tge (State f (make_assign (comp_of f) bf a1 a2) k e le m)
+  step1 cp_main tge (State f (make_assign (comp_of f) bf a1 a2) k e le m)
           t (State f Sskip k e le m').
 Proof.
   intros. exploit assign_loc_translated; eauto. rewrite <- H3.
@@ -1025,7 +1027,7 @@ Qed.
 
 Lemma push_seq:
   forall f sl k e le m,
-  star step1 tge (State f (makeseq sl) k e le m)
+  star (step1 cp_main) tge (State f (makeseq sl) k e le m)
               E0 (State f Sskip (Kseqlist sl k) e le m).
 Proof.
   intros. unfold makeseq. generalize Sskip. revert sl k.
@@ -1041,7 +1043,7 @@ Lemma step_tr_rvalof:
   tr_rvalof ce (comp_of f) ty a sl a' tmp ->
   typeof a = ty ->
   exists le',
-    star step1 tge (State f Sskip (Kseqlist sl k) e le m)
+    star (step1 cp_main) tge (State f Sskip (Kseqlist sl k) e le m)
                  t (State f Sskip k e le' m)
   /\ eval_expr tge e (comp_of f) le' m a' v
   /\ typeof a' = typeof a
@@ -1185,7 +1187,7 @@ Qed.
 Lemma match_cont_call_comp:
   forall ce cp k tk,
   match_cont ce cp k tk ->
-  Csem.call_comp k = call_comp tk.
+  Csem.call_comp cp_main k = call_comp cp_main tk.
 Proof.
   intros ce cp k tk H.
 
@@ -1609,8 +1611,8 @@ Lemma estep_simulation:
   forall S1 t S2, Cstrategy.estep ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
-     (plus step1 tge S1' t S2' \/
-       (star step1 tge S1' t S2' /\ measure S2 < measure S1)%nat)
+     (plus (step1 cp_main) tge S1' t S2' \/
+       (star (step1 cp_main) tge S1' t S2' /\ measure S2 < measure S1)%nat)
   /\ match_states S2 S2'.
 Proof.
 
@@ -2260,11 +2262,11 @@ Proof.
 Qed.
 
 Lemma sstep_simulation:
-  forall S1 t S2, Csem.sstep ge S1 t S2 ->
+  forall S1 t S2, Csem.sstep cp_main ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
-     (plus step1 tge S1' t S2' \/
-       (star step1 tge S1' t S2' /\ measure S2 < measure S1)%nat)
+     (plus (step1 cp_main) tge S1' t S2' \/
+       (star (step1 cp_main) tge S1' t S2' /\ measure S2 < measure S1)%nat)
   /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS.
@@ -2554,14 +2556,20 @@ Qed.
 (** Semantic preservation *)
 
 Theorem simulation:
-  forall S1 t S2, Cstrategy.step ge S1 t S2 ->
+  forall S1 t S2, Cstrategy.step cp_main ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
-     (plus step1 tge S1' t S2' \/
-       (star step1 tge S1' t S2' /\ measure S2 < measure S1)%nat)
+     (plus (step1 cp_main') tge S1' t S2' \/
+       (star (step1 cp_main') tge S1' t S2' /\ measure S2 < measure S1)%nat)
   /\ match_states S2 S2'.
 Proof.
-  intros S1 t S2 STEP. destruct STEP.
+  intros S1 t S2 STEP.
+  assert (cp_main = cp_main') as <-.
+  unfold cp_main, cp_main', Csem.comp_of_main, comp_of_main.
+  replace (prog_main tprog) with (prog_main prog).
+  erewrite (Genv.find_comp_match (proj1 TRANSL)); eauto.
+  destruct TRANSL. destruct H as (A & B & C). simpl in B. auto.
+  destruct STEP.
   apply estep_simulation; auto.
   apply sstep_simulation; auto.
 Qed.

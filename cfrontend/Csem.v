@@ -44,6 +44,7 @@ Definition empty_env: env := (PTree.empty (block * type)).
 
 Section SEMANTICS.
 
+Variable cp_main: compartment.
 Variable ge: genv.
 
 (** [deref_loc ty m b ofs bf t v] computes the value of a datum
@@ -561,7 +562,7 @@ Definition is_call_cont (k: cont) : Prop :=
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
   | Kcall f _ _ _ _ => comp_of f
-  | _ => top
+  | _ => cp_main
   end.
 
 (** Execution states of the program are grouped in 4 classes corresponding
@@ -861,9 +862,12 @@ Inductive final_state: state -> int -> Prop :=
       final_state (Returnstate (Vint r) Kstop m ty cp) r.
 
 (** Wrapping up these definitions in a small-step semantics. *)
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
 
 Definition semantics (p: program) :=
-  Semantics_gen step (initial_state p) final_state (globalenv p) (globalenv p).
+  Semantics_gen (step (comp_of_main p)) (initial_state p) final_state (globalenv p) (globalenv p).
 
 (** This semantics has the single-event property. *)
 

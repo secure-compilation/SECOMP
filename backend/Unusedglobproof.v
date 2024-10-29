@@ -469,6 +469,9 @@ Let ge := Genv.globalenv p.
 Let tge := Genv.globalenv tp.
 Let pm := prog_defmap p.
 
+Let cp_main := comp_of_main p.
+Let cp_main' := comp_of_main tp.
+
 
 Definition kept (id: ident) : Prop := IS.In id used.
 
@@ -745,7 +748,7 @@ Qed.
 Lemma match_stacks_call_comp:
   forall j stk1 stk2 b1 b2,
   match_stacks j stk1 stk2 b1 b2 ->
-  call_comp stk1 = call_comp stk2.
+  call_comp cp_main stk1 = call_comp cp_main stk2.
 Proof.
   intros j stk1 stk2 b1 b2 H.
   now destruct H.
@@ -1472,9 +1475,14 @@ Proof.
   exploit defs_inject. eauto. eexact Q. exact H2.
   intros (R & S & T).
   rewrite <- Genv.find_funct_ptr_iff in R.
-  exists (Callstate nil f nil tm top); split.
+  exists (Callstate nil f nil tm (comp_of_main tp)); split.
   econstructor; eauto.
   fold tge. erewrite match_prog_main by eauto. auto.
+  unfold comp_of_main.
+  erewrite <- match_prog_main in P by eauto.
+  unfold Genv.find_comp_of_ident. unfold ge, tge in *. subst ge0. rewrite H1, P.
+  unfold Genv.find_comp_of_block. rewrite H2.
+  exploit defs_inject; eauto. unfold tge; intros [-> _].
   econstructor; eauto.
   constructor. auto.
   erewrite <- Genv.init_mem_genv_next by eauto. apply Ple_refl.

@@ -32,6 +32,7 @@ Require Import Clight.
 
 Section BIGSTEP.
 
+Variable cp_main: compartment.
 Variable ge: genv.
 
 (** ** Big-step semantics for terminating statements and functions *)
@@ -258,7 +259,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      eval_funcall ge top m0 f nil t m1 (Vint r) ->
+      eval_funcall ge (comp_of_main p) m0 f nil t m1 (Vint r) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -281,6 +282,7 @@ Section BIGSTEP_TO_TRANSITIONS.
 
 Variable prog: program.
 Let ge : genv := globalenv prog.
+Let cp_main := comp_of_main prog.
 
 Inductive outcome_state_match
        (e: env) (le: temp_env) (m: mem) (f: function) (k: cont): outcome -> state -> Prop :=
@@ -311,7 +313,7 @@ Lemma exec_stmt_eval_funcall_steps:
    exec_stmt ge e c le m s t le' m' out ->
    forall f k, c = (comp_of f) ->
    exists S,
-   star step1 ge (State f s k e le m) t S
+   star (step1 cp_main) ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S)
 /\
   (forall c m fd args t m' res,
@@ -319,8 +321,8 @@ Lemma exec_stmt_eval_funcall_steps:
    forall k tyargs tyres cconv,
    forall RETTYPE: type_of_fundef fd = Tfunction tyargs tyres cconv,
    is_call_cont k ->
-   forall COMP: c = call_comp k,
-   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type tyres) (comp_of fd))).
+   forall COMP: c = call_comp cp_main k,
+   star (step1 cp_main) ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type tyres) (comp_of fd))).
 Proof.
   apply exec_stmt_funcall_ind; intros; try subst c.
 
@@ -500,7 +502,7 @@ Lemma exec_stmt_steps:
    forall e c le m s t le' m' out,
    exec_stmt ge e c le m s t le' m' out ->
    forall f k, c = (comp_of f) -> exists S,
-   star step1 ge (State f s k e le m) t S
+   star (step1 cp_main) ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S.
 Proof.
   exact (proj1 exec_stmt_eval_funcall_steps).
@@ -512,23 +514,23 @@ Lemma eval_funcall_steps:
    forall k tyargs tyres cconv,
    forall RETTYPE: type_of_fundef fd = Tfunction tyargs tyres cconv,
    is_call_cont k ->
-   forall COMP: c = call_comp k,
-   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type tyres) (comp_of fd)).
+   forall COMP: c = call_comp cp_main k,
+   star (step1 cp_main) ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type tyres) (comp_of fd)).
 Proof. apply (proj2 exec_stmt_eval_funcall_steps). Qed.
 
 Definition order (x y: unit) := False.
 
 Lemma evalinf_funcall_forever:
   forall cp m fd args T k,
-  forall (KCOMP: cp = call_comp k),
+  forall (KCOMP: cp = call_comp cp_main k),
   evalinf_funcall ge m fd args T ->
-  forever_N step1 order ge tt (Callstate fd args k m) T.
+  forever_N (step1 cp_main) order ge tt (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall e c le m s T f k,
           c = (comp_of f) ->
           execinf_stmt ge e c le m s T ->
-          forever_N step1 order ge tt (State f s k e le m) T).
+          forever_N (step1 cp_main) order ge tt (State f s k e le m) T).
   cofix CIH_STMT.
   intros. inv H0.
 

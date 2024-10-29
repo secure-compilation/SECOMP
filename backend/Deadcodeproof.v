@@ -441,6 +441,9 @@ Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
+Let cp_main := comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
+
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSF).
@@ -627,7 +630,7 @@ Inductive match_stackframes: stackframe -> stackframe -> Prop :=
 Lemma match_stacks_call_comp:
   forall s s',
   list_forall2 match_stackframes s s' ->
-  call_comp s = call_comp s'.
+  call_comp cp_main s = call_comp cp_main s'.
 Proof.
   intros ?? H.
   destruct H; trivial.
@@ -1328,7 +1331,11 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil tf nil m0 top); split.
+  exists (Callstate nil tf nil m0 (comp_of_main prog)); split.
+  assert (comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite <- (match_program_main); eauto.
+    rewrite <- (Genv.find_comp_match TRANSF); eauto. }
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSF); eauto.
   replace (prog_main tprog) with (prog_main prog).

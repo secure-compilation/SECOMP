@@ -40,6 +40,9 @@ Hypothesis TRANSF: match_prog prog tprog.
 Let ge := globalenv prog.
 Let tge := globalenv tprog.
 
+Let cp_main := comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
+
 Lemma comp_env_preserved:
   genv_cenv tge = genv_cenv ge.
 Proof.
@@ -356,7 +359,7 @@ Lemma step_Sdebug_temp:
   forall f id ty k e le m v,
   le!id = Some v ->
   val_casted v ty ->
-  step2 tge (State f (Sdebug_temp id ty) k e le m)
+  step2 cp_main tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
@@ -367,7 +370,7 @@ Qed.
 Lemma step_Sdebug_var:
   forall f id ty k e le m b,
   e!id = Some(b, ty) ->
-  step2 tge (State f (Sdebug_var id ty) k e le m)
+  step2 cp_main tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
@@ -380,11 +383,11 @@ Lemma step_Sset_debug:
   forall f id ty a k e le m v v',
   eval_expr tge e (comp_of f) le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
-  plus step2 tge (State f (Sset_debug id ty a) k e le m)
+  plus (step2 cp_main) tge (State f (Sset_debug id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
 Proof.
   intros; unfold Sset_debug.
-  assert (forall k, step2 tge (State f (Sset id (make_cast a ty)) k e le m)
+  assert (forall k, step2 cp_main tge (State f (Sset id (make_cast a ty)) k e le m)
                            E0 (State f Sskip k e (PTree.set id v' le) m)).
   { intros. apply step_set. eapply make_cast_correct; eauto. }
   destruct (Compopts.debug tt).
@@ -400,7 +403,7 @@ Qed.
 Lemma step_add_debug_vars:
   forall f s e le m vars k,
   (forall id ty, In (id, ty) vars -> exists b, e!id = Some (b, ty)) ->
-  star step2 tge (State f (add_debug_vars vars s) k e le m)
+  star (step2 cp_main) tge (State f (add_debug_vars vars s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt).
@@ -434,7 +437,7 @@ Lemma step_add_debug_params:
   list_norepet (var_names params) ->
   list_forall2 val_casted vl (map snd params) ->
   bind_parameter_temps params vl le1 = Some le ->
-  star step2 tge (State f (add_debug_params params s) k e le m)
+  star (step2 cp_main) tge (State f (add_debug_params params s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt).
@@ -1180,7 +1183,7 @@ Theorem store_params_correct:
   (forall id, ~In id (var_names params) -> tle2!id = tle1!id) ->
   (forall id, In id (var_names params) -> le!id = None) ->
   exists tle, exists tm',
-  star step2 tge (State f (store_params cenv params s) k te tle tm)
+  star (step2 cp_main) tge (State f (store_params cenv params s) k te tle tm)
               E0 (State f s k te tle tm')
   /\ bind_parameter_temps params targs tle2 = Some tle
   /\ Mem.inject j m' tm'
@@ -1823,7 +1826,7 @@ Qed.
 Lemma match_cont_call_comp:
   forall f cenv cp k tk m bound tbound,
   match_cont f cenv cp k tk m bound tbound ->
-  call_comp k = call_comp tk.
+  call_comp cp_main k = call_comp cp_main tk.
 Proof.
   intros f cenv cp k tk m bound tbound H.
   unfold call_comp.
@@ -2182,9 +2185,14 @@ End FIND_LABEL.
 
 
 Lemma step_simulation:
-  forall S1 t S2, step1 ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1'), exists S2', plus step2 tge S1' t S2' /\ match_states S2 S2'.
+  forall S1 t S2, step1 cp_main ge S1 t S2 ->
+  forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 cp_main') tge S1' t S2' /\ match_states S2 S2'.
 Proof.
+  assert (cp_main = cp_main') as <-.
+  { unfold cp_main, cp_main', comp_of_main.
+    replace (prog_main tprog) with (prog_main prog).
+    erewrite (Genv.find_comp_match (proj1 TRANSF)); eauto.
+    destruct TRANSF. destruct H as (A & B & C). simpl in B. auto. }
   induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS).
 
 (* assign *)

@@ -10166,7 +10166,7 @@ Section Simulation.
               now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
             + pose proof (match_prog_notdef _ _ _ _ match_W1_W3 id G) as DEF2'.
               rewrite DEF1, DEF2 in DEF2'.
-              inv DEF2'. inv H6. inv H4.
+              inv DEF2'. inv H5. inv H3.
               (* injection DEF2' as ->. *)
               simpl in *.
               rewrite (Genv.init_mem_find_def _ _ H B') in *.
@@ -10174,7 +10174,7 @@ Section Simulation.
               simpl in *.
               rewrite (Genv.init_mem_find_def _ _ H B') in *.
               now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
-              inv H4.
+              inv H3.
               simpl in *.
               rewrite (Genv.init_mem_find_def _ _ H B') in *.
               now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
@@ -10390,7 +10390,7 @@ Section Simulation.
               now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
             + pose proof (match_prog_notdef _ _ _ _ match_W2_W3 id G) as DEF2'.
               rewrite DEF1, DEF2 in DEF2'.
-              inv DEF2'. inv H6. inv H4.
+              inv DEF2'. inv H5. inv H3.
               (* injection DEF2' as ->. *)
               simpl in *.
               rewrite (Genv.init_mem_find_def _ _ H B') in *.
@@ -10398,7 +10398,7 @@ Section Simulation.
               simpl in *.
               rewrite (Genv.init_mem_find_def _ _ H B') in *.
               now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
-              inv H4.
+              inv H3.
               simpl in *.
               rewrite (Genv.init_mem_find_def _ _ H B') in *.
               now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
@@ -10628,11 +10628,11 @@ Section Simulation.
         -- eapply match_states_left; simpl; eauto.
            ++ econstructor; eauto.
            ++ split; eauto using init_meminj_preserves_globals.
+              unfold cp_main.
               rewrite <- !rewr_cp_main, same_cp_main2.
               econstructor; eauto.
               ** constructor. subst rs0. Simpl. eauto.
               ** constructor. Simpl. eauto.
-              ** simpl. unfold cp_main. rewrite <- rewr_cp_main. auto.
               ** { subst rs0. intros x.
                    setoid_rewrite Pregmap.gsspec.
                    destruct (Pregmap.elt_eq).
@@ -10661,25 +10661,27 @@ Section Simulation.
               econstructor; eauto.
               ** constructor. subst rs1. Simpl. eauto.
               ** constructor. Simpl. eauto.
-              ** rewrite <- !rewr_cp_main, same_cp_main1. auto.
-              ** rewrite <- !rewr_cp_main, same_cp_main1. auto.
-              ** rewrite <- !rewr_cp_main, same_cp_main2. auto.
-              ** rewrite <- !rewr_cp_main, same_cp_main2. auto.
+              ** unfold cp_main. rewrite <- !rewr_cp_main, same_cp_main1. auto.
+              ** unfold cp_main. rewrite <- !rewr_cp_main, same_cp_main1. auto.
+              ** unfold cp_main. rewrite <- !rewr_cp_main, same_cp_main2. auto.
+              ** unfold cp_main. rewrite <- !rewr_cp_main, same_cp_main2. auto.
               ** eapply init_mem_correct2; eauto.
         -- eapply match_states_right; simpl; eauto.
            ++ econstructor; eauto.
            ++ split; eauto using init_meminj_preserves_globals.
+              unfold cp_main.
               rewrite <- !rewr_cp_main, same_cp_main2.
               econstructor; eauto.
               ** constructor. subst rs1. Simpl. eauto. eauto.
               ** constructor. Simpl. eauto.
               ** eapply init_mem_correct1; eauto.
            ++ split; eauto using init_meminj_preserves_globals.
+              unfold cp_main.
               rewrite <- !rewr_cp_main, same_cp_main1, same_cp_main2.
               econstructor; eauto.
               ** constructor. subst rs1. Simpl. eauto.
               ** constructor. Simpl. eauto.
-              ** simpl. unfold cp_main. rewrite <- rewr_cp_main. auto.
+              (* ** simpl. unfold cp_main. rewrite <- rewr_cp_main. auto. *)
               ** { subst rs1. intros x.
                    setoid_rewrite Pregmap.gsspec.
                    destruct (Pregmap.elt_eq).

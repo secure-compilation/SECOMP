@@ -147,9 +147,9 @@ Inductive state: Type :=
              (cp: compartment),       (**r compartment we're returning from *)
       state.
 
-Definition call_comp (stack: list stackframe): compartment :=
+Definition call_comp cp_main (stack: list stackframe): compartment :=
   match stack with
-  | nil => top
+  | nil => cp_main
   | Stackframe f _ _ _ _ :: _ => comp_of f
   end.
 
@@ -295,6 +295,10 @@ Inductive step: state -> trace -> state -> Prop :=
 
 End RELSEM.
 
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
+
 Inductive initial_state (p: program): state -> Prop :=
   | initial_state_intro: forall b f m0,
       let ge := Genv.globalenv p in
@@ -302,7 +306,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil f signature_main (Locmap.init Vundef) m0 top).
+      initial_state p (Callstate nil f signature_main (Locmap.init Vundef) m0 (comp_of_main p)).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m retcode cp,

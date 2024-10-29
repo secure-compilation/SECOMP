@@ -2442,6 +2442,9 @@ Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
+Let cp_main := RTL.comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
+
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof. exact (Genv.find_symbol_match TRANSF). Qed.
@@ -2676,7 +2679,7 @@ Qed.
 Lemma match_stackframes_call_comp:
   forall s ts sg,
   match_stackframes s ts sg ->
-  RTL.call_comp s = call_comp ts.
+  RTL.call_comp cp_main s = call_comp cp_main ts.
 Proof.
   intros s ts sg H.
   destruct H; trivial; simpl.
@@ -3390,13 +3393,17 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf signature_main (Locmap.init Vundef) m0 top); split.
+  exists (LTL.Callstate nil tf signature_main (Locmap.init Vundef) m0 (LTL.comp_of_main tprog)); split.
   econstructor; eauto.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite symbols_preserved.
   rewrite (match_program_main TRANSF).  auto.
   congruence.
   rewrite <- H3, <- SIG.
+  assert (RTL.comp_of_main prog = LTL.comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite (match_program_main TRANSF); eauto.
+    rewrite (Genv.find_comp_match TRANSF); eauto. }
   constructor; auto.
   constructor. rewrite SIG; rewrite H3; auto.
   rewrite SIG, H3, loc_arguments_main. auto.

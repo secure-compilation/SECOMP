@@ -209,6 +209,7 @@ Section CONSTRUCTORS.
 
 Variables cunit prog: Clight.program.
 Hypothesis LINK: linkorder cunit prog.
+Variable cp_main: compartment.
 Variable ge: genv.
 
 Section WithCp.
@@ -998,7 +999,7 @@ Lemma make_store_bitfield_correct:
   eval_expr ge e (comp_of f) le m src v ->
   assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs (Bits sz sg pos width) v m' ->
   make_store_bitfield sz sg pos width dst src = OK s ->
-  step ge (State f s k e le m) E0 (State f Sskip k e le m').
+  step cp_main ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros until s; intros DST SRC ASG MK.
   inv ASG. inv H5. unfold make_store_bitfield in MK.
@@ -1018,7 +1019,7 @@ Lemma make_memcpy_correct:
   assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs Full v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
-  step ge (State f s k e le m) E0 (State f Sskip k e le m').
+  step cp_main ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
   monadInv H3.
@@ -1039,7 +1040,7 @@ Lemma make_store_correct:
   eval_expr ge e (comp_of f) le m addr (Vptr b ofs) ->
   eval_expr ge e (comp_of f) le m rhs v ->
   assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs bf v m' ->
-  step ge (State f code k e le m) E0 (State f Sskip k e le m').
+  step cp_main ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
   inversion ASSIGN; subst.
@@ -1085,6 +1086,8 @@ Hypothesis TRANSL: match_prog prog tprog.
 
 Let ge := globalenv prog.
 Let tge := Genv.globalenv tprog.
+Let cp_main := Clight.comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
 
 Lemma symbols_preserved:
   forall s, Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -1503,7 +1506,7 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
 Lemma match_transl_step:
   forall ts tk ts' tk' f te le m,
   match_transl (Sblock ts) tk ts' tk' ->
-  star step tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
+  star (step cp_main) tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
 Proof.
   intros. inv H.
   apply star_one. constructor.
@@ -1727,7 +1730,7 @@ Qed.
 Lemma match_cont_call_comp:
   forall ce cp tyret nbrk ncnt k tk,
   match_cont ce cp tyret nbrk ncnt k tk ->
-  Clight.call_comp k = call_comp tk.
+  Clight.call_comp cp_main k = call_comp cp_main tk.
 Proof.
   intros ce cp tyret nbrk ncnt k tk H.
   unfold Clight.call_comp, call_comp.
@@ -1742,10 +1745,15 @@ Qed.
 (** The simulation proof *)
 
 Lemma transl_step:
-  forall S1 t S2, Clight.step2 ge S1 t S2 ->
+  forall S1 t S2, Clight.step2 cp_main ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists T2, plus step tge T1 t T2 /\ match_states S2 T2.
+  exists T2, plus (step cp_main') tge T1 t T2 /\ match_states S2 T2.
 Proof.
+  assert (cp_main = cp_main') as <-.
+  { unfold cp_main, cp_main', Clight.comp_of_main, comp_of_main.
+    replace (prog_main prog) with (AST.prog_main tprog).
+    erewrite (Genv.find_comp_match TRANSL); auto.
+    destruct TRANSL as (A & B & C); simpl in B; auto. }
   induction 1; intros T1 MST; inv MST.
 
 - (* assign *)

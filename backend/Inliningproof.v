@@ -1592,7 +1592,11 @@ Lemma transf_initial_states:
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & FIND & TR & LINK).
-  exists (Callstate nil tf nil m0 top); split.
+  exists (Callstate nil tf nil m0 (comp_of_main prog)); split.
+  assert (comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite <- (match_program_main); eauto.
+    rewrite <- (Genv.find_comp_match TRANSF); eauto. }
   econstructor; eauto.
     eapply (Genv.init_mem_match TRANSF); eauto.
     rewrite symbols_preserved. replace (prog_main tprog) with (prog_main prog). auto.

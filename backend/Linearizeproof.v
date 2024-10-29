@@ -38,6 +38,8 @@ Hypothesis TRANSF: match_prog prog tprog.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+Let cp_main := LTL.comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
 
 Lemma functions_translated:
   forall v f,
@@ -606,7 +608,7 @@ Qed.
 Lemma match_stacks_call_comp:
   forall s ts,
   list_forall2 match_stackframes s ts ->
-  LTL.call_comp s = call_comp ts.
+  LTL.call_comp cp_main s = call_comp cp_main ts.
 Proof.
   intros s ts H.
   destruct H; trivial.
@@ -772,7 +774,7 @@ Proof.
   simpl. apply plus_one. econstructor; eauto.
   rewrite (stacksize_preserved _ _ TRF). erewrite comp_preserved; eauto.
   rewrite (match_parent_locset _ _ STACKS).
-  assert (CALLER: LTL.call_comp s = call_comp ts).
+  assert (CALLER: LTL.call_comp cp_main s = call_comp cp_main ts).
   { inv STACKS. reflexivity.
     inv H0. simpl. erewrite comp_preserved; eauto. }
   assert (SIG: LTL.parent_signature s = parent_signature ts).
@@ -791,7 +793,7 @@ Proof.
   rewrite (stacksize_preserved _ _ EQ).
   rewrite (comp_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
-  assert (CALLER: LTL.call_comp s = call_comp ts).
+  assert (CALLER: LTL.call_comp cp_main s = call_comp cp_main ts).
   { inv H8. reflexivity.
     inv H0. simpl. erewrite comp_preserved; eauto. }
   assert (SIG: LTL.parent_signature s = parent_signature ts).
@@ -830,11 +832,15 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 top); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 (comp_of_main tprog)); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
   rewrite <- H3. apply sig_preserved. auto.
+  assert (LTL.comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold LTL.comp_of_main, comp_of_main.
+    rewrite (match_program_main TRANSF).
+    rewrite <- (Genv.find_comp_match TRANSF); eauto. }
   constructor. constructor. auto.
 Qed.
 

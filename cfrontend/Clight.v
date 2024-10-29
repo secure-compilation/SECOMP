@@ -256,6 +256,7 @@ Inductive assign_loc (ce: composite_env) (cp: compartment) (ty: type) (m: mem) (
 
 Section SEMANTICS.
 
+Variable cp_main: compartment.
 Variable ge: genv.
 
 (** Allocation of function-local variables.
@@ -494,10 +495,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : compartment :=
+Definition call_comp cp_main (k: cont) : compartment :=
   match call_cont k with
   | Kcall _ f _ _ _ => comp_of f
-  | _ => top
+  | _ => cp_main
   end.
 
 (** States *)
@@ -686,7 +687,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
-      external_call ef ge (call_comp k) vargs m t vres m' ->
+      external_call ef ge (call_comp cp_main k) vargs m t vres m' ->
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m' (rettype_of_type tres) bottom)
 
@@ -731,7 +732,7 @@ Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
-Definition step1 (ge: genv) := step ge (function_entry1 ge).
+Definition step1 cp_main (ge: genv) := step cp_main ge (function_entry1 ge).
 
 (** Second, parameters as temporaries. *)
 
@@ -744,17 +745,20 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m'.
 
-Definition step2 (ge: genv) := step ge (function_entry2 ge).
+Definition step2 cp_main (ge: genv) := step cp_main ge (function_entry2 ge).
 
 (** Wrapping up these definitions in two small-step semantics. *)
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
 
 Definition semantics1 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step1 (initial_state p) final_state ge ge.
+  Semantics_gen (step1 (comp_of_main p)) (initial_state p) final_state ge ge.
 
 Definition semantics2 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step2 (initial_state p) final_state ge ge.
+  Semantics_gen (step2 (comp_of_main p)) (initial_state p) final_state ge ge.
 
 (** This semantics is receptive to changes in events. *)
 
@@ -764,7 +768,7 @@ Proof.
   intros. unfold semantics1.
   set (ge := globalenv p). constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step1 ge s t2 s2).
+  assert (t1 = E0 -> exists s2, step1 (comp_of_main p) ge s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   (* call *)
@@ -1037,12 +1041,12 @@ Local Ltac parallel_find_funct :=
     setoid_rewrite H1 in H2; injection H2 as <-
   end.
 
-Lemma step1_E0_determ: forall {ge s s1 s2},
-  step1 ge s E0 s1 ->
-  step1 ge s E0 s2 ->
+Lemma step1_E0_determ: forall {cp_main ge s s1 s2},
+  step1 cp_main ge s E0 s1 ->
+  step1 cp_main ge s E0 s2 ->
   s1 = s2.
 Proof.
-  intros ge s s1 s2 STEP1 STEP2.
+  intros cp_main ge s s1 s2 STEP1 STEP2.
   inv STEP1; inv STEP2;
     try parallel_statements;
     try easy;
@@ -1087,12 +1091,12 @@ Proof.
 Qed.
 
 (* Related to old [state_determinism'] *)
-Lemma step1_event_determ: forall {ge s s1 s2 e},
-  step1 ge s (e :: nil) s1 ->
-  step1 ge s (e :: nil) s2 ->
+Lemma step1_event_determ: forall {cp_main ge s s1 s2 e},
+  step1 cp_main ge s (e :: nil) s1 ->
+  step1 cp_main ge s (e :: nil) s2 ->
   s1 = s2.
 Proof.
-  intros ge s s1 s2 e STEP1 STEP2.
+  intros cp_main ge s s1 s2 e STEP1 STEP2.
   inv STEP1; inv STEP2; simpl in *.
   - destruct (eval_expr_determ H0 H15).
     assert (fd = fd0) as <- by congruence.
@@ -1110,8 +1114,8 @@ Proof.
 Qed.
 
 Lemma step1_determ: forall {p s s1 s2 t},
-  step1 (globalenv p) s t s1 ->
-  step1 (globalenv p) s t s2 ->
+  step1 (comp_of_main p) (globalenv p) s t s1 ->
+  step1 (comp_of_main p) (globalenv p) s t s2 ->
   s1 = s2.
 Proof.
   clear.
@@ -1123,12 +1127,12 @@ Proof.
     inv CONTRA. inv H0.
 Qed.
 
-Lemma step1_E0_event_False: forall {ge s s1 s2 e},
-  step1 ge s E0 s1 ->
-  step1 ge s (e :: nil) s2 ->
+Lemma step1_E0_event_False: forall {cp_main ge s s1 s2 e},
+  step1 cp_main ge s E0 s1 ->
+  step1 cp_main ge s (e :: nil) s2 ->
   False.
 Proof.
-  intros ge s s1 s2 e STEP1 STEP2.
+  intros cp_main ge s s1 s2 e STEP1 STEP2.
   inv STEP1; inv STEP2;
     try parallel_statements.
   - parallel_classify_fun.

@@ -34,7 +34,8 @@ Variable tprog: Asm.program.
 Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
-Let comp_of_main := comp_of_main tprog.
+Let cp_main := Mach.comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
 
 
 Lemma symbols_preserved:
@@ -549,7 +550,7 @@ Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop :=
     (* Intra-compartment calls create a new frame in the source, but not the target *)
     forall cp cp' s s' f,
     match_stacks cp s s' ->
-    Mach.call_comp ge (f :: s) = cp -> (* meaning, we are staying in the same
+    Mach.call_comp ge cp_main (f :: s) = cp -> (* meaning, we are staying in the same
                                                compartment *)
     forall (ISEMPTY: match f with
     | Mach.Stackframe _ _ _ _ _ dra dsp => dra = None /\ dsp = None
@@ -560,7 +561,7 @@ Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop :=
     (* Cross-compartment calls create a new frame in both the source and the target *)
     forall cp cp' s s' f f',
     match_stacks cp' s s' ->
-    Mach.call_comp ge (f :: s) = cp' ->
+    Mach.call_comp ge cp_main (f :: s) = cp' ->
     call_comp tge (f' :: s') = cp' ->
     cp <> cp' ->
     match_stackframe f f' ->
@@ -602,7 +603,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (SIG: sig = ef_sig ef)
         (SIG: Mach.parent_signature s = ef_sig ef)
         (STACKS': match_stacks cp s s')
-        (CALL_COMP: Mach.call_comp ge s = cp')
+        (CALL_COMP: Mach.call_comp ge cp_main s = cp')
         (MEXT: Mem.extends m m')
         (AG: agree (Mach.undef_caller_save_regs_ext ms sig) (dummy_parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -2632,7 +2633,7 @@ Local Transparent destroyed_at_function_entry.
       - unfold invalidate_return. simpl. eapply agree_sp; eauto.
       - eapply agree_sp_def; eauto.
       - {
-          clear -prog tprog ge tge comp_of_main AG ATPC INVREGS.
+          clear -prog tprog ge tge cp_main AG ATPC INVREGS.
       intros r. unfold invalidate_return.
       destruct (preg_eq (preg_of r) PC); (try now destruct r).
       rewrite orb_false_l.
@@ -2738,7 +2739,7 @@ Local Transparent destroyed_at_function_entry.
     { (* assert (NCP: cp ⊈ Genv.find_comp_of_block tge f). *)
       (* { rewrite <- find_comp_of_block_translated; eauto. } *)
 
-      clear -prog tprog ge tge comp_of_main AG ATPC (* NCP  *)INVREGS.
+      clear -prog tprog ge tge cp_main AG ATPC (* NCP  *)INVREGS.
       intros r. unfold invalidate_cross_return.
       destruct (preg_eq (preg_of r) PC); (try now destruct r).
       rewrite orb_false_l.
@@ -2809,6 +2810,10 @@ Proof.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   replace (Genv.symbol_address (Genv.globalenv tprog) (prog_main tprog) Ptrofs.zero)
      with (Vptr fb Ptrofs.zero).
+  assert (Mach.comp_of_main prog = cp_main') as ->.
+  { unfold Mach.comp_of_main, cp_main', Asm.comp_of_main.
+    erewrite (match_program_main TRANSF); eauto.
+    rewrite (Genv.find_comp_match TRANSF); eauto. }
   econstructor; eauto.
   constructor.
   constructor.

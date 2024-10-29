@@ -1602,6 +1602,9 @@ Inductive step: state -> trace -> state -> Prop :=
 End RELSEM.
 
 (** Execution of whole programs. *)
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
 
 Inductive initial_state (p: program): state -> Prop :=
   | initial_state_intro: forall m0,
@@ -1612,7 +1615,7 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State nil rs0 m0 top).
+      initial_state p (State nil rs0 m0 (comp_of_main p)).
 
 Inductive final_state (p: program): state -> int -> Prop :=
   | final_state_intro: forall rs m r cp,
@@ -1621,9 +1624,6 @@ Inductive final_state (p: program): state -> int -> Prop :=
       final_state p (ReturnState nil rs m cp) r
 .
 
-Definition comp_of_main (p: program) :=
-  let ge := Genv.globalenv p in
-  Genv.find_comp_of_ident ge (prog_main p).
 Definition semantics (p: program) :=
   Semantics step (initial_state p) (final_state p) (Genv.globalenv p).
 (** Determinacy of the [Asm] semantics. *)

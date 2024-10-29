@@ -416,10 +416,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : compartment :=
+Definition call_comp cp_main (k: cont) : compartment :=
   match call_cont k with
   | Kcall _ f _ _ _ => comp_of f
-  | _ => top
+  | _ => cp_main
   end.
 
 (** Find the statement and manufacture the continuation
@@ -579,6 +579,9 @@ End RELSEM.
   from an initial state to a final state.  An initial state is a [Callstate]
   corresponding to the invocation of the ``main'' function of the program
   without arguments and with an empty continuation. *)
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
 
 Inductive initial_state (p: program): state -> Prop :=
   | initial_state_intro: forall b f m0,
@@ -587,7 +590,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0 top).
+      initial_state p (Callstate f nil Kstop m0 (comp_of_main p)).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -983,7 +986,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      eval_funcall ge top m0 f nil t m (Vint r) ->
+      eval_funcall ge (comp_of_main p) m0 f nil t m (Vint r) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -994,7 +997,7 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      evalinf_funcall ge top m0 f nil t ->
+      evalinf_funcall ge (comp_of_main p) m0 f nil t ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=
@@ -1306,7 +1309,7 @@ Proof.
 (* termination *)
   inv H. econstructor; econstructor.
   split. econstructor; eauto.
-  split. eapply (eval_funcall_steps top); try red; eauto.
+  split. eapply (eval_funcall_steps (comp_of_main prog)); try red; eauto.
   econstructor.
 (* divergence *)
   inv H. econstructor.

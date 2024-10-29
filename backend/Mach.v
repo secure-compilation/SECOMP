@@ -375,9 +375,9 @@ Definition dummy_parent_ra (s: list stackframe) : val :=
   | Stackframe f _ sp ra c _ _ :: s' => Vptr f ra
   end.
 
-Definition call_comp (s: list stackframe): compartment :=
+Definition call_comp cp_main (s: list stackframe): compartment :=
   match s with
-  | nil => top
+  | nil => cp_main
   | Stackframe f _ _ _ _ _ _ :: _ => Genv.find_comp_of_block ge f
   end.
 
@@ -582,12 +582,16 @@ Inductive step: state -> trace -> state -> Prop :=
 
 End RELSEM.
 
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
+
 Inductive initial_state (p: program): state -> Prop :=
   | initial_state_intro: forall fb m0,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some fb ->
-      initial_state p (Callstate nil fb signature_main (Regmap.init Vundef) m0 top).
+      initial_state p (Callstate nil fb signature_main (Regmap.init Vundef) m0 (comp_of_main p)).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m r retcode cp,

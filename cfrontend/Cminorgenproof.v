@@ -39,6 +39,9 @@ Hypothesis TRANSL: match_prog prog tprog.
 Let ge : Csharpminor.genv := Genv.globalenv prog.
 Let tge: genv := Genv.globalenv tprog.
 
+Let cp_main := Csharpminor.comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
+
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_transf_partial TRANSL).
@@ -1677,7 +1680,7 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       (ISCC: Csharpminor.is_call_cont k)
       (ARGSINJ: Val.inject_list f args targs),
       match_states (Csharpminor.Callstate fd args k m)
-                   (Callstate tfd targs tk tm (Csharpminor.call_comp k))
+                   (Callstate tfd targs tk tm (Csharpminor.call_comp cp_main k))
   | match_returnstate:
       forall v k m tv tk tm cp f cs cenv sg
       (MINJ: Mem.inject f m tm)
@@ -1711,7 +1714,7 @@ Qed.
 Lemma match_cont_call_comp:
   forall k tk cenv xenv cs,
   match_cont k tk cenv xenv cs ->
-  Csharpminor.call_comp k = call_comp tk.
+  Csharpminor.call_comp cp_main k = call_comp cp_main tk.
 Proof.
   intros k tk cenv xenv cs H.
   unfold Csharpminor.call_comp, call_comp.
@@ -2055,7 +2058,7 @@ Definition measure (S: Csharpminor.state) : nat :=
   end.
 
 Lemma transl_step_correct:
-  forall S1 t S2, Csharpminor.step ge S1 t S2 ->
+  forall S1 t S2, Csharpminor.step cp_main ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
   (exists T2, plus step tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
@@ -2142,7 +2145,7 @@ Proof.
   now rewrite (comp_of_fun_transl TRANS).
   rewrite <- (comp_of_fun_transl TRANS). monadInv TRF; unfold comp_of; simpl.
   eapply call_trace_translated; eauto.
-  replace (comp_of tfn) with (Csharpminor.call_comp (Csharpminor.Kcall optid f e le k)).
+  replace (comp_of tfn) with (Csharpminor.call_comp cp_main (Csharpminor.Kcall optid f e le k)).
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.
@@ -2380,12 +2383,19 @@ Proof.
   eapply match_program_main; eauto. 
   eexact FIND.
   rewrite <- H2. apply sig_preserved; auto.
-  eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m0)) (cs := @nil frame) (cenv := PTree.empty Z).
+  replace (comp_of_main tprog) with (Csharpminor.call_comp cp_main Csharpminor.Kstop).
+  eapply match_callstate with
+    (f := Mem.flat_inj (Mem.nextblock m0))
+    (cs := @nil frame) (cenv := PTree.empty Z).
   auto.
   eapply Genv.initmem_inject; eauto.
   apply mcs_nil with (Mem.nextblock m0). apply match_globalenvs_init; auto. extlia. extlia.
   constructor. red; auto.
   constructor.
+
+  unfold comp_of_main, cp_main, Csharpminor.comp_of_main, Csharpminor.call_comp; simpl.
+  rewrite (match_program_main TRANSL).
+  rewrite (Genv.find_comp_match TRANSL); auto.
 Qed.
 
 Lemma transl_final_states:

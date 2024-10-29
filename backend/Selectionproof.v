@@ -136,6 +136,9 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 Hypothesis TRANSF: match_prog prog tprog.
 
+Let cp_main := Cminor.comp_of_main prog.
+Let cp_main' := CminorSel.comp_of_main tprog.
+
 Lemma wt_prog : wt_program prog.
 Proof.
   red; intros. destruct TRANSF as [A _].
@@ -1260,7 +1263,7 @@ Qed.
 Lemma match_call_cont_call_comp:
   forall k k',
   match_call_cont k k' ->
-  Cminor.call_comp k = call_comp k'.
+  Cminor.call_comp cp_main k = call_comp cp_main k'.
 Proof.
   intros k k' H. destruct H; simpl.
   reflexivity.
@@ -1664,6 +1667,10 @@ Proof.
   rewrite (match_program_main TRANSF). fold tge. rewrite symbols_preserved. eauto.
   eexact A.
   rewrite <- H2. eapply sig_function_translated; eauto.
+  assert (Cminor.comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold Cminor.comp_of_main, comp_of_main.
+    rewrite (match_program_main TRANSF).
+    rewrite <- (Genv.find_comp_match TRANSF); eauto. }
   econstructor; eauto. constructor. apply Mem.extends_refl.
 Qed.
 

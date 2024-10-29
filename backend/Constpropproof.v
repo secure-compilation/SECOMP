@@ -36,6 +36,8 @@ Hypothesis TRANSL: match_prog prog tprog.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+Let cp_main := comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
 
 (** * Correctness of the code transformation *)
 
@@ -408,7 +410,7 @@ Qed.
 Lemma match_stacks_call_comp:
   forall s s',
   list_forall2 match_stackframes s s' ->
-  call_comp s = call_comp s'.
+  call_comp cp_main s = call_comp cp_main s'.
 Proof.
   intros s s' H.
   destruct H; trivial.
@@ -707,7 +709,11 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & FIND & LINK).
-  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0 top); split.
+  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0 (comp_of_main prog)); split.
+  assert (comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite <- (match_program_main); eauto.
+    rewrite <- (Genv.find_comp_match TRANSL); eauto. }
   econstructor; eauto.
   apply (Genv.init_mem_match TRANSL); auto.
   replace (prog_main tprog) with (prog_main prog).

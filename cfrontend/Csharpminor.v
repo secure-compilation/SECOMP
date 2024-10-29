@@ -189,10 +189,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : compartment :=
+Definition call_comp comp_of_main (k: cont) : compartment :=
   match call_cont k with
   | Kcall _ f _ _ _ => comp_of f
-  | _ => top
+  | _ => comp_of_main
   end.
 
 (** Resolve [switch] statements. *)
@@ -300,6 +300,7 @@ Definition blocks_of_env (e: env) : list (block * Z * Z) :=
 
 Section RELSEM.
 
+Variable cp_main: compartment.
 Variable ge: genv.
 
 (* Evaluation of the address of a variable:
@@ -475,7 +476,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge (call_comp k) vargs m t vres m' ->
+      external_call ef ge (call_comp cp_main k) vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 
@@ -508,6 +509,9 @@ Inductive final_state: state -> int -> Prop :=
       final_state (Returnstate (Vint r) Kstop m sg cp) r.
 
 (** Wrapping up these definitions in a small-step semantics. *)
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
 
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+  Semantics (step (comp_of_main p)) (initial_state p) final_state (Genv.globalenv p).

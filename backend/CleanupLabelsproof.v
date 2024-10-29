@@ -37,6 +37,8 @@ Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+Let cp_main := comp_of_main prog.
+Let cp_main' := comp_of_main tprog.
 
 Lemma symbols_preserved:
   forall id,
@@ -280,7 +282,7 @@ Qed.
 Lemma match_stacks_call_comp:
   forall s ts,
   list_forall2 match_stackframes s ts ->
-  call_comp s = call_comp ts.
+  call_comp cp_main s = call_comp cp_main ts.
 Proof.
   intros s ts H.
   destruct H; auto.
@@ -389,7 +391,7 @@ Proof.
   left; econstructor; split.
   econstructor; eauto.
   erewrite <- match_parent_locset; eauto.
-  assert (CALLER: call_comp s = call_comp ts).
+  assert (CALLER: call_comp cp_main s = call_comp cp_main ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
@@ -400,7 +402,7 @@ Proof.
 (* internal function *)
   left; econstructor; split.
   econstructor; simpl; eauto.
-  assert (CALLER: call_comp s = call_comp ts).
+  assert (CALLER: call_comp cp_main s = call_comp cp_main ts).
   { inv H8. reflexivity.
     inv H0. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
@@ -432,6 +434,10 @@ Proof.
   rewrite (match_program_main TRANSL), symbols_preserved; eauto.
   apply function_ptr_translated; eauto.
   rewrite sig_function_translated. auto.
+  assert (comp_of_main prog = comp_of_main tprog) as ->.
+  { unfold comp_of_main.
+    erewrite (match_program_main TRANSL); eauto.
+    rewrite (Genv.find_comp_match TRANSL); eauto. }
   constructor; auto. constructor.
 Qed.
 

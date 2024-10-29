@@ -185,9 +185,9 @@ Inductive state : Type :=
              (cp: compartment),       (**r compartment we're returning from *)
       state.
 
-Definition call_comp (stack: list stackframe): compartment :=
+Definition call_comp cp_main (stack: list stackframe): compartment :=
   match stack with
-  | nil => top
+  | nil => cp_main
   | Stackframe _ _ f _ _ _ :: _ => comp_of f
   end.
 
@@ -354,6 +354,9 @@ End RELSEM.
   from an initial state to a final state.  An initial state is a [Callstate]
   corresponding to the invocation of the ``main'' function of the program
   without arguments and with an empty call stack. *)
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  Genv.find_comp_of_ident ge (prog_main p).
 
 Inductive initial_state (p: program): state -> Prop :=
   | initial_state_intro: forall b f m0,
@@ -362,7 +365,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil f nil m0 top).
+      initial_state p (Callstate nil f nil m0 (comp_of_main p)).
 
 (** A final state is a [Returnstate] with an empty call stack. *)
 
