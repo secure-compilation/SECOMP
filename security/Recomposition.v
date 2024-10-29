@@ -7334,6 +7334,9 @@ Section Theorems.
           destruct (Genv.find_def ge1 b6) eqn:fd1; try discriminate.
           destruct (Genv.find_def ge2 b7) eqn:fd2; try discriminate.
 
+          destruct (Mem.perm_dec m1 b6 0 Max Freeable) as [get_perm1 |]; try discriminate.
+          destruct (Mem.perm_dec m5 b7 0 Max Freeable) as [get_perm2 |]; try discriminate.
+
           destruct (Mem.set_perm m1 b6 Readable) eqn:set_perm1; try discriminate.
           destruct (Mem.set_perm m5 b7 Readable) eqn:set_perm2; try discriminate.
           inv H11. inv H12.
@@ -7351,8 +7354,17 @@ Section Theorems.
           { destruct (Genv.find_def ge3 b9) eqn:?; auto.
             exploit (defs_rev_inject s _ W1 W3 j__δ inj_pres_δ); eauto.
             intros [? [? _]]; congruence. }
-
           rewrite fd3.
+
+          assert (get_perm3: Mem.perm m3'' b9 0 Max Freeable).
+          { assert (delta = 0) as -> by now eapply (delta_zero _ _ _ j__δ); eauto.
+            replace 0 with (0 + 0) by lia.
+            eapply incr, H16, H21 in H27.
+            eapply Mem.perm_inject; eauto using partial_mem_inject. }
+          destruct (Mem.perm_dec m3'' b9 0 Max Freeable) as [yes|]; try congruence.
+          clear yes.
+
+
           eapply (set_perm_preserves_rel s W1 W2 W3) in SS'; eauto using match_prog_unique.
           destruct SS' as [m3''' [set_perm3 [mrel1 [mrel2 strel]]]].
           rewrite set_perm3, rs3'_X1.
@@ -7924,9 +7936,44 @@ Section Theorems.
                  inv COMP2; eauto. rewrite eq_pc' in *; auto.
                  rewrite <- H32. simpl.
                  unfold Genv.find_comp_of_block at 1; rewrite find_funct; auto.
-              -- admit.
-              -- admit.
-              -- admit.
+              -- { clear -get_perm1 S'. simpl in *.
+                   induction S'.
+                   - constructor.
+                   - constructor; eauto.
+                     inv H.
+                     + destruct sp1; auto.
+                       intros ?; subst. eapply PERM1.
+                       eapply Mem.perm_implies; eauto. constructor.
+                     + destruct sp1; auto.
+                       intros ?; subst. eapply PERM1.
+                       eapply Mem.perm_implies; eauto. constructor. }
+              -- { assert (get_perm2': Mem.perm m4 b7 0 Max Freeable).
+                   { clear -get_perm2 alloc2'.
+                     eapply Mem.perm_alloc_4; eauto.
+                     intros ?; subst.
+                     eapply Mem.perm_alloc_3 in alloc2'; eauto. lia. }
+                  clear -get_perm2' SS. simpl in *.
+                   induction SS.
+                   - constructor.
+                   - constructor; eauto.
+                     inv H.
+                     + destruct sp1; auto.
+                       intros ?; subst. eapply PERM1.
+                       eapply Mem.perm_implies; eauto. constructor.
+                     + destruct sp1; auto.
+                       intros ?; subst. eapply PERM1.
+                       eapply Mem.perm_implies; eauto. constructor. }
+              -- { clear -get_perm3 S'. simpl in *.
+                   induction S'.
+                   - constructor.
+                   - constructor; eauto.
+                     inv H.
+                     + destruct sp3; auto.
+                       intros ?; subst. eapply PERM3.
+                       eapply Mem.perm_implies; eauto. constructor.
+                     + destruct sp3; auto.
+                       intros ?; subst. eapply PERM3.
+                       eapply Mem.perm_implies; eauto. constructor. }
             * intros _.
               eapply regset_rel_inject. eapply regset_rel_inject. eapply H19.
               -- econstructor.
@@ -7976,6 +8023,9 @@ Section Theorems.
           destruct (Genv.find_def ge1 b6) eqn:fd1; try discriminate.
           destruct (Genv.find_def ge2 b7) eqn:fd2; try discriminate.
 
+          destruct (Mem.perm_dec m1 b6 0 Max Freeable) as [get_perm1|]; try discriminate.
+          destruct (Mem.perm_dec m5 b7 0 Max Freeable) as [get_perm2|]; try discriminate.
+
           destruct (Mem.set_perm m1 b6 Readable) eqn:set_perm1; try discriminate.
           destruct (Mem.set_perm m5 b7 Readable) eqn:set_perm2; try discriminate.
           inv H11. inv H12.
@@ -7991,6 +8041,14 @@ Section Theorems.
             intros [? [? _]]; congruence. }
 
           rewrite fd3.
+
+          assert (get_perm3: Mem.perm m3'' b9 0 Max Freeable).
+          { assert (delta = 0) as -> by now eapply (delta_zero _ _ _ j__δ); eauto.
+            replace 0 with (0 + 0) by lia.
+            eapply incr, H23, H26 in H28.
+            eapply Mem.perm_inject; eauto using partial_mem_inject. }
+          destruct (Mem.perm_dec m3'' b9 0 Max Freeable) as [yes|]; try congruence.
+          clear yes.
 
           assert (mem_rel s ge2 ge3 j (opposite (opposite (s (Genv.find_comp_of_block ge1 b')))) m5 m3'').
           { replace (opposite (opposite (s (Genv.find_comp_of_block ge1 b')))) with (s (Genv.find_comp_of_block ge1 b')).
@@ -8571,9 +8629,44 @@ Section Theorems.
                inv COMP2; eauto. rewrite eq_pc' in *; auto.
                rewrite <- H34. simpl.
                unfold Genv.find_comp_of_block at 1; rewrite find_funct; auto.
-            -- admit.
-            -- admit.
-            -- admit.
+            -- { assert (get_perm1': Mem.perm m0 b6 0 Max Freeable).
+                 { clear -get_perm1 alloc1'.
+                   eapply Mem.perm_alloc_4; eauto.
+                   intros ?; subst.
+                   eapply Mem.perm_alloc_3 in alloc1'; eauto. lia. }
+                 clear -get_perm1' H24. simpl in *.
+                 induction H24.
+                 - constructor.
+                 - constructor; eauto.
+                   inv H.
+                   + destruct sp1; auto.
+                     intros ?; subst. eapply PERM1.
+                     eapply Mem.perm_implies; eauto. constructor.
+                   + destruct sp1; auto.
+                     intros ?; subst. eapply PERM1.
+                     eapply Mem.perm_implies; eauto. constructor. }
+            -- { clear -get_perm2 H24. simpl in *.
+                 induction H24.
+                 - constructor.
+                 - constructor; eauto.
+                   inv H.
+                   + destruct sp2; auto.
+                     intros ?; subst. eapply PERM2.
+                     eapply Mem.perm_implies; eauto. constructor.
+                   + destruct sp2; auto.
+                     intros ?; subst. eapply PERM2.
+                     eapply Mem.perm_implies; eauto. constructor. }
+              -- { clear -get_perm3 H24. simpl in *.
+                   induction H24.
+                   - constructor.
+                   - constructor; eauto.
+                     inv H.
+                     + destruct sp3; auto.
+                       intros ?; subst. eapply PERM3.
+                       eapply Mem.perm_implies; eauto. constructor.
+                     + destruct sp3; auto.
+                       intros ?; subst. eapply PERM3.
+                       eapply Mem.perm_implies; eauto. constructor. }
           }
           split; eauto.
           split; eauto. now destruct s.

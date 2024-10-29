@@ -1265,21 +1265,24 @@ Definition initial_stack: stack := nil.
             match Genv.find_def ge bsp with
               (* Even if it's a pointer, we really don't want it to be
                  statically allocated *)
-            | None => match Mem.set_perm m'' bsp Readable with
-                     | Some m''' => match ra' with
-                                   | Vptr f retaddr =>
-                                       Some (Stackframe f sg cp' sp' retaddr dummy_ra dummy_sp :: s,
-                                           (rs' # SP <- (Vptr dummy_sp Ptrofs.zero) # RA <- (Vptr dummy_ra Ptrofs.zero)),
-                                           m''')
-                                   | _ => None
-                                   end
-                     | _ => None
-                     end
+            | None =>
+                (* it has to be freeable, otherwise it's not a new frame and someone's trying to trick us *)
+                if Mem.perm_dec m'' bsp 0 Max Freeable then
+                  match Mem.set_perm m'' bsp Readable with
+                  | Some m''' => match ra' with
+                                | Vptr f retaddr =>
+                                    Some (Stackframe f sg cp' sp' retaddr dummy_ra dummy_sp :: s,
+                                        (rs' # SP <- (Vptr dummy_sp Ptrofs.zero) # RA <- (Vptr dummy_ra Ptrofs.zero)),
+                                        m''')
+                                | _ => None
+                                end
+                  | _ => None
+                  end
+                else None
             | Some _ => None
             end
       | _ => None
       end.
-
   Lemma update_stack_call_PC s sg cp rs m:
     forall s' rs' m',
       update_stack_call s sg cp rs m = Some (s', rs', m') ->
@@ -1291,6 +1294,7 @@ Definition initial_stack: stack := nil.
     do 2 destruct Mem.alloc.
     destruct (rs X2); try discriminate.
     destruct (Genv.find_def); try discriminate.
+    destruct (Mem.perm_dec); try discriminate.
     destruct (Mem.set_perm); try discriminate.
     destruct (rs X1); try discriminate. inv H.
     rewrite Pregmap.gso; auto; now congruence.

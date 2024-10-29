@@ -1921,6 +1921,8 @@ Local Transparent destroyed_by_op.
     rewrite <- H2. rewrite allc1', allc2'.
     erewrite agree_sp; eauto; simpl.
     assert (Genv.find_def (Genv.globalenv tprog) bsp = None) as -> by admit.
+    assert (Mem.perm m2'' bsp 0 Max Freeable) by admit.
+    destruct Mem.perm_dec; try congruence.
     rewrite perm'. reflexivity.
   * Simpl; erewrite agree_sp; eauto.
   * intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
@@ -2077,6 +2079,8 @@ Local Transparent destroyed_by_op.
     rewrite <- H2. rewrite allc1', allc2'.
     erewrite agree_sp; eauto; simpl.
     assert (Genv.find_def (Genv.globalenv tprog) bsp = None) as -> by admit.
+    assert (Mem.perm m2'' bsp 0 Max Freeable) by admit.
+    destruct Mem.perm_dec; try congruence.
     rewrite perm'. reflexivity.
   * Simpl; erewrite agree_sp; eauto.
   * intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
