@@ -439,15 +439,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mcall_int:
-      forall s fb sp sig ros c rs m f f' ra fd args,
+      forall s fb sp sig ros c rs m f f' ra fd (* args *),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: comp_of fd = comp_of f),
       forall (SIG: sig = funsig fd),
-      forall (ARGS: call_arguments
-                 (undef_regs destroyed_at_function_entry rs) m sp sig args), (* simpler for later pass*)
+      (* forall (ARGS: call_arguments *)
+      (*            (undef_regs destroyed_at_function_entry rs) m sp sig args), (* simpler for later pass*) *)
       step (State s fb sp (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sig sp ra c None None :: s)
                        f' sig rs m (comp_of f))

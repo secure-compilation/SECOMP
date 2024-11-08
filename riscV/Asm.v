@@ -1494,7 +1494,8 @@ Inductive step: state -> trace -> state -> Prop :=
 
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st sig (comp_of f) rs' m' = Some (st', rs'', m'')),
-      forall (ARGS: call_arguments rs' (rs'#SP) m' sig args),
+      forall (ARGS: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
+               call_arguments rs' (rs'#SP) m' sig args),
       (* note: it doesn't matter which register file we use to get the arguments *)
       (* Check signature *)
 

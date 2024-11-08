@@ -2585,6 +2585,17 @@ Variable mergeable: state L -> Prop.
 Hypothesis mergeable_dec: forall s, {mergeable s} + {not (mergeable s)}.
 Hypothesis mergeable_safe: forall s,
     mergeable s -> exists s', Step L s E0 s' /\ not (mergeable s').
+Lemma mergeable_step_E0: forall s s' t,
+    mergeable s ->
+    Step L s t s' ->
+    t = E0.
+Proof.
+  intros. exploit mergeable_safe; eauto.
+  intros [? [? ?]].
+  pose proof (sd_determ determinacy _ _ _ _ _ H0 H1) as [A B]; eauto.
+  inv A. reflexivity.
+Qed.
+
 Lemma mergeable_step_not_mergeable: forall s s' t,
     mergeable s ->
     Step L s t s' ->
@@ -2596,19 +2607,24 @@ Proof.
   inv A. exploit B; auto; now intros ->.
 Qed.
 
-Hypothesis step_not_mergeable: forall s t s',
-    t <> E0 ->
+Hypothesis mergeable_step_not_final: forall s s' t,
+    mergeable s ->
     Step L s t s' ->
-    not (mergeable s').
+    forall n, not (final_state L s' n).
+
+(* Hypothesis step_not_mergeable: forall s t s', *)
+(*     t <> E0 -> *)
+(*     Step L s t s' -> *)
+(*     not (mergeable s'). *)
 
 Inductive merged_step (ge: genvtype L): state L -> trace -> state L -> Prop :=
   | merged_step_not_mergeable: forall s s' t,
+      not (mergeable s) ->
       Step L s t s' ->
-      not (mergeable s') ->
       merged_step ge s t s'
   | merged_step_mergeable: forall s s' s'' t,
+      mergeable s ->
       Step L s E0 s' ->
-      mergeable s' ->
       Step L s' t s'' ->
       merged_step ge s t s''.
 
@@ -2625,17 +2641,17 @@ Definition mergedL : semantics := {|
 Variant match_states_merged: state L -> state mergedL -> Prop :=
 | match_not_mergeable: forall s,
     match_states_merged s s
-| match_mergeable: forall s t s',
-    Step L s t s' ->
+| match_mergeable: forall s s',
+    mergeable s ->
+    Step L s E0 s' ->
     (forall n, not (final_state L s' n)) ->
-    mergeable s' ->
     match_states_merged s' s
 .
 
 Definition meas (s: state L): nat :=
   match mergeable_dec s with
-  | left _ => 0
-  | right _ => 1
+  | left _ => 1
+  | right _ => 0
   end.
 
 Lemma forward_simulation_merged:
@@ -2645,35 +2661,27 @@ Proof.
                                       (measure := meas); eauto.
   - intros; eexists; split; eauto. constructor.
   - intros. inv H; eauto.
-    exfalso; eapply H2; eauto.
+    exfalso; eapply H3; eauto.
   - intros.
-    destruct (Classical_Prop.classic (mergeable s1')).
-    + assert (t = E0) as ->.
-      { destruct t; auto. exploit step_not_mergeable; try now eauto. now auto. }
-      inv H0.
-      * right; split; [| split]; auto.
+    destruct (Classical_Prop.classic (mergeable s1)).
+    + inv H0.
+      * assert (t = E0) as ->.
+        { exploit mergeable_step_E0; eauto. }
+        assert (not (mergeable s1')).
+        { eapply mergeable_step_not_mergeable; eauto. }
+        right; split; [| split]; auto.
         unfold meas.
         destruct mergeable_dec; try now auto.
-        destruct mergeable_dec as [mer |]; try now auto.
-        pose proof (mergeable_step_not_mergeable _ mer H); now eauto.
-        econstructor; eauto.
-        exploit mergeable_safe; eauto.
-        intros [s' [? ?]].
-        intros ? fin.
-        exploit sd_final_nostep; eauto.
+        destruct mergeable_dec; try now auto.
+        constructor; eauto.
+
       * exploit mergeable_step_not_mergeable; eauto. contradiction.
     + inv H0.
       * left; eexists; split.
-        -- eapply plus_one.
-           constructor; eauto.
+        -- eapply plus_one; constructor; eauto.
         -- constructor.
       * left; eexists; split.
-        -- assert (t0 = E0) as ->.
-           { destruct t0; auto. exploit step_not_mergeable; try now eauto. now auto. }
-           eapply plus_star_trans.
-           eapply plus_one; eapply merged_step_mergeable; eauto.
-           eapply star_refl; econstructor; eauto.
-           traceEq.
+        -- eapply plus_one; eapply merged_step_mergeable; eauto.
         -- constructor.
 Qed.
 
