@@ -306,6 +306,99 @@ Definition call_arguments
     (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=
   list_forall2 (call_arg_pair rs m sp) (loc_parameters sg) args.
 
+Definition list_option_option_list {A: Type} (l: list (option A)): option (list A) :=
+  List.fold_right (fun a x => match a, x with
+                           | _, None => None
+                           | Some y, Some xs => Some (y :: xs)
+                           | None, _ => None
+                           end) (Some nil) l.
+
+Definition get_loc (rs: regset) (sp: val) (m: mem) (l: loc): option val :=
+  match l with
+  | R r => Some (rs r)
+  | S Incoming ofs ty =>
+      let bofs := Stacklayout.fe_ofs_arg + 4 * ofs in
+      Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp (Ptrofs.repr bofs)) top
+  | _ => None
+  end.
+Definition get_call_arguments' (rs: regset) (sp: val) (m: mem) (sg: signature) :=
+  List.map (fun x => match x with
+                  | One l => get_loc rs sp m l
+                  | Twolong hi lo =>
+                      match get_loc rs sp m hi, get_loc rs sp m lo with
+                      | Some vhi, Some vlo => Some (Val.longofwords vhi vlo)
+                      | _, _ => None
+                      end
+                  end) (loc_parameters sg).
+
+Definition get_call_arguments (rs: regset) (sp: val) (m: mem) (sg: signature) :=
+  list_option_option_list (get_call_arguments' rs sp m sg).
+
+Lemma call_arguments_equiv:
+  forall rs sp m sg args,
+    call_arguments rs m sp sg args <-> get_call_arguments rs sp m sg = Some args.
+Proof.
+  intros. split.
+  - unfold get_call_arguments, list_option_option_list, get_call_arguments'.
+    intros H.
+    induction H.
+    + reflexivity.
+    + simpl. rewrite IHlist_forall2.
+      inv H.
+      * inv H1. simpl. reflexivity.
+        unfold load_stack in H. simpl in *.
+        destruct sp; simpl in *; try congruence.
+        eapply Mem.load_Some_None in H.
+        rewrite H. reflexivity.
+      * inv H1; simpl.
+        -- inv H2; simpl. reflexivity.
+           unfold load_stack in H. simpl in *.
+           destruct sp; simpl in *; try congruence.
+           eapply Mem.load_Some_None in H.
+           rewrite H. reflexivity.
+        -- unfold load_stack in H. simpl in *.
+           destruct sp; simpl in *; try congruence.
+           eapply Mem.load_Some_None in H.
+           rewrite H.
+           inv H2; simpl. reflexivity.
+           unfold load_stack in H1. simpl in *.
+           eapply Mem.load_Some_None in H1.
+           rewrite H1. reflexivity.
+  - unfold get_call_arguments, list_option_option_list, get_call_arguments', call_arguments.
+    remember (loc_parameters sg) as lp eqn:eqlp; clear eqlp.
+    revert args.
+    induction lp.
+    + simpl. intros ? H; inv H; constructor.
+    + intros args H.
+      destruct a.
+      * simpl in H.
+        destruct (get_loc rs sp m r) eqn:at_loc; try now destruct fold_right; congruence.
+        destruct fold_right; try congruence.
+        inv H.
+        constructor; eauto.
+        destruct r; econstructor; simpl in at_loc.
+        -- inv at_loc.
+           econstructor.
+        -- destruct sl; try congruence.
+           econstructor; eauto.
+      * simpl in H.
+        destruct (get_loc rs sp m rhi) as [vi |] eqn:at_rhi;
+          destruct (get_loc rs sp m rlo) as [vo |] eqn:at_rlo;
+          try now destruct fold_right; congruence.
+        destruct fold_right; try congruence.
+        inv H.
+        constructor; eauto.
+        constructor.
+        -- destruct rhi; simpl in at_rhi.
+           ++ inv at_rhi; constructor.
+           ++ destruct sl; try congruence.
+              econstructor; eauto.
+        -- destruct rlo; simpl in at_rlo.
+           ++ inv at_rlo; constructor.
+           ++ destruct sl; try congruence.
+              econstructor; eauto.
+Qed.
+
 Definition return_value (rs: regset) (sg: signature) :=
   match loc_result sg with
   | One l => rs l
@@ -676,3 +769,148 @@ Lemma wf_initial:
 Proof.
   intros. inv H. fold ge. constructor. constructor.
 Qed.
+
+Section DETERMINACY.
+Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
+
+Hypothesis return_address_offset_determinate:
+  forall f c ofs1 ofs2,
+    return_address_offset f c ofs1 ->
+    return_address_offset f c ofs2 ->
+    ofs1 = ofs2.
+
+Remark extcall_arguments_determ:
+  forall rs sp m sg args1 args2,
+  extcall_arguments rs m sp sg args1 ->
+  extcall_arguments rs m sp sg args2 -> args1 = args2.
+Proof.
+  intros until m.
+  assert (A: forall l v1 v2,
+             extcall_arg rs m sp l v1 -> extcall_arg rs m sp l v2 -> v1 = v2).
+  { intros. inv H; inv H0. congruence.
+    destruct sp; try discriminate.
+    simpl in H1, H4.
+    apply Mem.load_result in H1.
+    apply Mem.load_result in H4. congruence. }
+  assert (B: forall p v1 v2,
+             extcall_arg_pair rs m sp p v1 -> extcall_arg_pair rs m sp p v2 -> v1 = v2).
+  { intros. inv H; inv H0.
+    eapply A; eauto.
+    f_equal; eapply A; eauto. }
+  assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs m sp) ll vl1 ->
+             forall vl2, list_forall2 (extcall_arg_pair rs m sp) ll vl2 -> vl1 = vl2).
+  {
+    induction 1; intros vl2 EA; inv EA.
+    auto.
+    f_equal; eauto. }
+  intros. eapply C; eauto.
+Qed.
+
+Remark call_arguments_determ:
+  forall rs sp m sg args1 args2,
+  call_arguments rs m sp sg args1 -> call_arguments rs m sp sg args2 -> args1 = args2.
+Proof.
+  intros until m.
+  assert (A: forall l v1 v2,
+             call_arg rs m sp l v1 -> call_arg rs m sp l v2 -> v1 = v2).
+  { intros. inv H; inv H0. congruence.
+    destruct sp; try discriminate.
+    simpl in H1, H4.
+    apply Mem.load_result in H1.
+    apply Mem.load_result in H4. congruence. }
+  assert (B: forall p v1 v2,
+             call_arg_pair rs m sp p v1 -> call_arg_pair rs m sp p v2 -> v1 = v2).
+  { intros. inv H; inv H0.
+    eapply A; eauto.
+    f_equal; eapply A; eauto. }
+  assert (C: forall ll vl1, list_forall2 (call_arg_pair rs m sp) ll vl1 ->
+             forall vl2, list_forall2 (call_arg_pair rs m sp) ll vl2 -> vl1 = vl2).
+  {
+    induction 1; intros vl2 EA; inv EA.
+    auto.
+    f_equal; eauto. }
+  intros. eapply C; eauto.
+Qed.
+
+
+Lemma semantics_determinate: forall p, determinate (semantics return_address_offset p).
+Proof.
+Ltac Equalities :=
+  match goal with
+  | [ H1: ?a = ?b, H2: ?a = ?c |- _ ] =>
+      rewrite H1 in H2; inv H2; Equalities
+  | _ => idtac
+  end.
+intros; constructor; simpl; intros.
+- (* determ *)
+  inv H; inv H0; Equalities; try discriminate;
+    try now (split; constructor; auto).
+  + split. constructor.
+    assert (ra = ra0) as <-
+        by (eapply return_address_offset_determinate; eauto).
+    auto.
+  + congruence.
+  + congruence.
+  + inv EV; inv EV0; try congruence.
+    * split. constructor.
+      assert (args0 = args) by (eapply call_arguments_determ; eauto). subst.
+      assert (ra = ra0) as <-
+          by (eapply return_address_offset_determinate; eauto).
+      destruct Mem.alloc. destruct Mem.alloc.
+      assert (m_res0 = m_res /\ dra = dra0 /\ dsp = dsp0) as [-> [-> ->]].
+      { destruct sp; try now intuition congruence.
+        destruct Mem.set_perm; intuition congruence. }
+      auto.
+    * split.
+      assert (i0 = i) by congruence. subst.
+      assert (args0 = args) by (eapply call_arguments_determ; eauto); subst.
+      assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto); subst.
+      constructor.
+      intros A. inv A.
+      assert (args0 = args) by (eapply call_arguments_determ; eauto). subst.
+      assert (ra = ra0) as <-
+          by (eapply return_address_offset_determinate; eauto).
+      destruct Mem.alloc. destruct Mem.alloc.
+      assert (m_res0 = m_res /\ dra = dra0 /\ dsp = dsp0) as [-> [-> ->]].
+      { destruct sp; try now intuition congruence.
+        destruct Mem.set_perm; intuition congruence. }
+      auto.
+  + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
+    exploit external_call_determ. eexact H2. eexact H14. intros [A B].
+    split. auto. intros. destruct B; auto. subst. auto.
+  + split. constructor.
+    intros _. subst sp sp0.
+    assert (m2 = m5) by congruence. subst.
+    assert (m3 = m6) by congruence. subst. auto.
+  + assert (args0 = args) as ->
+        by (eapply extcall_arguments_determ; eauto).
+    exploit external_call_determ. eexact H3. eexact H13. intros [A B].
+    split. auto. intros. destruct B; auto. subst. eauto.
+  + destruct sp; try contradiction.
+    inv EV; inv EV0; try congruence.
+    * split. constructor.
+      assert (m' = m'0).
+      { destruct cp_eq_dec; congruence. }
+      now subst.
+    * assert (res = res0) as <- by (eapply eventval_match_determ_2; eauto).
+      split. constructor. intros _.
+      assert (m' = m'0).
+      { destruct cp_eq_dec; congruence. }
+      now subst.
+- (* trace length *)
+  red; intros. inv H; simpl; try auto.
+  inv EV; auto.
+  eapply external_call_trace_length; eauto.
+  eapply external_call_trace_length; eauto.
+  inv EV; auto.
+- (* initial states *)
+  inv H; inv H0. subst ge ge0. f_equal. congruence. congruence.
+- (* final no step *)
+  inv H.
+  red; intros; red; intros.
+  inv H.
+- (* final states *)
+  inv H; inv H0. congruence.
+Qed.
+
+End DETERMINACY.
