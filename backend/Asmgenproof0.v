@@ -670,10 +670,12 @@ Qed.
 *)
 
 Definition return_address_offset (f: Mach.function) (c: Mach.code) (ofs: ptrofs) : Prop :=
-  forall tf tc,
+  (forall tf tc,
   transf_function f = OK tf ->
   transl_code f c false = OK tc ->
-  code_tail (Ptrofs.unsigned ofs) (fn_code tf) tc.
+  code_tail (Ptrofs.unsigned ofs) (fn_code tf) tc) /\
+  ((exists e, transf_function f = Error e) \/ (exists e, transl_code f c false = Error e) ->
+   ofs = Ptrofs.repr 0).
 
 (** We now show that such an offset always exists if the Mach code [c]
   is a suffix of [f.(fn_code)].  This holds because the translation
@@ -725,10 +727,11 @@ Opaque transl_instr.
     eapply transl_instr_tail; eauto. }
   exploit is_tail_code_tail. eexact TL3. intros [ofs CT].
   exists (Ptrofs.repr ofs). red; intros.
-  rewrite Ptrofs.unsigned_repr. congruence.
+  rewrite Ptrofs.unsigned_repr. split. congruence.
+  intros [[]|[]]; congruence.
   exploit code_tail_bounds_1; eauto.
   apply transf_function_len in TF. lia.
-+ exists Ptrofs.zero; red; intros. congruence.
++ exists Ptrofs.zero; red; intros. split. congruence. reflexivity.
 Qed.
 
 End RETADDR_EXISTS.
@@ -761,6 +764,13 @@ Proof.
   rewrite <- (Ptrofs.repr_unsigned ofs').
   congruence.
 Qed.
+
+(* Lemma return_address_offset_unique: *)
+(*   forall (f : Mach.function) (c : Mach.code) (ofs1 ofs2 : ptrofs), *)
+(*   return_address_offset f c ofs1 -> *)
+(*   return_address_offset f c ofs2 -> ofs1 = ofs2. *)
+(* Proof. *)
+(*   intros. unfold return_address_offset in *. *)
 
 (** The [find_label] function returns the code tail starting at the
   given label.  A connection with [code_tail] is then established. *)
@@ -1063,6 +1073,7 @@ Inductive match_stack: list Mach.stackframe -> Prop :=
       match_stack nil
   | match_stack_cons: forall fb sg sp ra c s f tf tc dra dsp bsp osp,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      forall (TAIL: is_tail c (Mach.fn_code f)),
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
       forall (COMP_SP: Mem.val_compartment m sp = comp_of f),

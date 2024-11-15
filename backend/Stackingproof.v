@@ -2467,6 +2467,7 @@ Proof.
     apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
     { inv EV.
       - eapply exec_Mcall_int; eauto.
+        eapply is_tail_cons_left; eauto.
         (* rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C). *)
         (* simpl in *; now destruct flowsto_dec. *)
         erewrite sig_preserved; eauto.
@@ -2511,6 +2512,7 @@ Proof.
     exploit (fun x2 x3 x4 x5 => transl_arguments _ x2 x3 x4 x5 _ _ AGREGS); eauto. simpl.
     apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
     { eapply exec_Mcall_cross; eauto.
+      + eapply is_tail_cons_left; eauto.
       + rewrite <- (comp_transl_partial _ TRANSL).
         apply (Genv.allowed_call_transf_partial TRANSF ALLOWED).
       (* + inv EV. *)

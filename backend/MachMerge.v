@@ -7,23 +7,59 @@ Require Import Op Locations Mach Conventions.
 Section PRESERVATION.
 Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
 
+Lemma instr_dec: forall (i i': instruction),
+    {i = i'} + {i <> i'}.
+Proof.
+  decide equality; subst; auto using mreg_eq, typ_eq, Ptrofs.eq_dec, eq_operation,
+    eq_addressing, chunk_eq, signature_eq, external_function_eq, eq_condition;
+    try now (decide equality; subst; auto using mreg_eq, ident_eq).
+  decide equality.
+  decide equality; subst;
+    auto using mreg_eq, Int.eq_dec, Int64.eq_dec,
+    Float.eq_dec, Float32.eq_dec, Ptrofs.eq_dec,
+    chunk_eq, ident_eq.
+Defined.
+
+Lemma code_dec: forall (c c': code),
+    {c = c'} + {c <> c'}.
+Proof.
+  decide equality; eauto using instr_dec.
+Qed.
+
+Lemma is_tail_dec: forall f c,
+    {is_tail c (fn_code f)} + {~ is_tail c (fn_code f)}.
+Proof.
+  intros f c.
+  generalize (fn_code f) as code. clear f.
+  induction code.
+  - destruct c.
+    + left; econstructor.
+    + right; intros A; inv A.
+  - destruct IHcode.
+    + left. constructor. assumption.
+    + destruct (code_dec c (a :: code)).
+      * subst; left; constructor.
+      * right. intros A. inv A; eauto.
+Defined.
+
 Hypothesis return_address_offset_exists:
   forall f sg ros c,
   is_tail (Mcall sg ros :: c) (fn_code f) ->
   exists ofs, return_address_offset f c ofs.
+
 Hypothesis return_address_offset_determinate:
   forall f c ofs1 ofs2,
+    is_tail c (fn_code f) ->
     return_address_offset f c ofs1 ->
     return_address_offset f c ofs2 ->
-    ofs1 = ofs2.
+    Ptrofs.unsigned ofs1 = Ptrofs.unsigned ofs2.
 
 Variable prog: program.
 Let ge := Genv.globalenv prog.
 
 Remark extcall_arguments_determ:
   forall rs sp m sg args1 args2,
-  extcall_arguments rs m sp sg args1 -> extcall_arguments rs m sp sg args2 -> args1 = args2.
-Proof.
+  extcall_arguments rs m sp sg args1 -> extcall_arguments rs m sp sg args2 -> args1 = args2. Proof.
   intros until m.
   assert (A: forall l v1 v2,
              extcall_arg rs m sp l v1 -> extcall_arg rs m sp l v2 -> v1 = v2).
@@ -92,12 +128,25 @@ intros; constructor; simpl; intros.
   + split. constructor. auto.
   + split. constructor. auto.
   + split. constructor.
-    assert (ra0 = ra) by (eapply return_address_offset_determinate; eauto). subst.
+
+    assert (ra0 = ra) as ->.
+    { exploit return_address_offset_determinate. eauto. exact H15. exact H3.
+      intros ?.
+      assert (Ptrofs.repr (Ptrofs.unsigned ra0) = Ptrofs.repr (Ptrofs.unsigned ra)).
+      { rewrite H; auto. }
+      do 2 rewrite Ptrofs.repr_unsigned in H0. auto. }
+
     (* assert (args0 = args) by (eapply call_arguments_determ; eauto). subst. *)
     auto.
   + congruence.
   + congruence.
-  + assert (ra0 = ra) by (eapply return_address_offset_determinate; eauto). subst.
+  +
+    assert (ra0 = ra) as ->.
+    { exploit return_address_offset_determinate. eauto. exact H15. exact H3.
+      intros ?.
+      assert (Ptrofs.repr (Ptrofs.unsigned ra0) = Ptrofs.repr (Ptrofs.unsigned ra)).
+      { rewrite H; auto. }
+      do 2 rewrite Ptrofs.repr_unsigned in H0. auto. }
     assert (args0 = args) by (eapply call_arguments_determ; eauto). subst.
     destruct Mem.alloc; destruct Mem.alloc; destruct sp.
     * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
@@ -180,41 +229,6 @@ intros; constructor; simpl; intros.
 - (* final states *)
   inv H; inv H0. congruence.
 Qed.
-
-Lemma instr_dec: forall (i i': instruction),
-    {i = i'} + {i <> i'}.
-Proof.
-  decide equality; subst; auto using mreg_eq, typ_eq, Ptrofs.eq_dec, eq_operation,
-    eq_addressing, chunk_eq, signature_eq, external_function_eq, eq_condition;
-    try now (decide equality; subst; auto using mreg_eq, ident_eq).
-  decide equality.
-  decide equality; subst;
-    auto using mreg_eq, Int.eq_dec, Int64.eq_dec,
-    Float.eq_dec, Float32.eq_dec, Ptrofs.eq_dec,
-    chunk_eq, ident_eq.
-Defined.
-
-Lemma code_dec: forall (c c': code),
-    {c = c'} + {c <> c'}.
-Proof.
-  decide equality; eauto using instr_dec.
-Qed.
-
-Lemma is_tail_dec: forall f c,
-    {is_tail c (fn_code f)} + {~ is_tail c (fn_code f)}.
-Proof.
-  intros f c.
-  generalize (fn_code f) as code. clear f.
-  induction code.
-  - destruct c.
-    + left; econstructor.
-    + right; intros A; inv A.
-  - destruct IHcode.
-    + left. constructor. assumption.
-    + destruct (code_dec c (a :: code)).
-      * subst; left; constructor.
-      * right. intros A. inv A; eauto.
-Defined.
 
 Variant mergeable: state -> Prop :=
   | mergeable_call_int:
@@ -317,10 +331,14 @@ Proof.
   intros s ?. inv H.
   - exploit (return_address_offset_exists f (ef_sig ef) ros c); eauto.
     intros [? ?].
-    eexists; split; [eapply exec_Mcall_int; eauto|]. intros A; inv A.
+    eexists; split; [eapply exec_Mcall_int; eauto|].
+    eapply is_tail_cons_left; eauto.
+    intros A; inv A.
   - exploit (return_address_offset_exists f (ef_sig ef) ros c); eauto.
     intros [? ?].
-    eexists; split; [eapply exec_Mcall_cross; eauto|]. intros A; inv A.
+    eexists; split; [eapply exec_Mcall_cross; eauto|].
+    eapply is_tail_cons_left; eauto.
+    intros A; inv A.
 Qed.
 
 Lemma mergeable_step_not_final: forall s s' t,
@@ -331,8 +349,10 @@ Proof.
   intros. intros A; inv A; inv H; inv H0.
 Qed.
 
+Definition merged_semantics := mergedL (semantics return_address_offset prog) mergeable.
+
 Theorem forward_simulation_merged:
-  forward_simulation (semantics return_address_offset prog) (mergedL (semantics return_address_offset prog) mergeable).
+  forward_simulation (semantics return_address_offset prog) merged_semantics.
 Proof.
   apply forward_simulation_merged; eauto.
   eapply semantics_determinate.

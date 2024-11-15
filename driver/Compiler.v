@@ -69,6 +69,7 @@ Require Linearizeproof.
 Require CleanupLabelsproof.
 Require Debugvarproof.
 Require Stackingproof.
+Require MachMerge.
 Require Asmgenproof.
 (** Command-line flags. *)
 Require Import Compopts.
@@ -494,6 +495,10 @@ Ltac DestructM :=
     eapply Stackingproof.transf_program_correct with (return_address_offset := Asmgenproof0.return_address_offset).
     now eapply Asmgenproof.return_address_exists.
     eassumption.
+  eapply compose_forward_simulations.
+    eapply MachMerge.forward_simulation_merged.
+    now eapply Asmgenproof.return_address_exists.
+    eapply Asmgenproof.return_address_determinate.
   eapply Asmgenproof.transf_program_correct; eassumption.
   }
   split. auto.
