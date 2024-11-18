@@ -2564,7 +2564,7 @@ Proof.
     { eapply Mem.unchanged_on_trans.
       eapply Mem.alloc_unchanged_on; eauto.
       eapply Mem.alloc_unchanged_on; eauto. }
-    clear -R. admit.
+    clear -R Z. admit.
 
 - (* Ltailcall *)
   rewrite (sep_swap (stack_contents j s cs')) in SEP.
