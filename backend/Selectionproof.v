@@ -1502,6 +1502,8 @@ Proof.
   rewrite <- CPT; eauto.
   eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  { destruct fd; try congruence.
+    inv F. destruct H4. simpl in H5. monadInv H5. congruence. }
   rewrite <- SIG. monadInv TF. reflexivity.
   rewrite <- CPT; eauto.
   (* rewrite CPT in ALLOWED'; eauto. *)
@@ -1512,6 +1514,8 @@ Proof.
   rewrite <- CPT; eauto.
   eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  { destruct fd; try congruence.
+    inv F. destruct H2. simpl in H4. monadInv H4. congruence. }
   rewrite <- SIG. monadInv TF. reflexivity.
   rewrite <- CPT; trivial.
   (* rewrite CPT in ALLOWED'; eauto. *)
@@ -1522,6 +1526,7 @@ Proof.
   rewrite <- CPT; eauto.
   eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  { destruct fd; try congruence. }
   rewrite <- SIG. monadInv TF. reflexivity.
   rewrite <- CPT; trivial.
   (* rewrite CPT in ALLOWED'; eauto. *)

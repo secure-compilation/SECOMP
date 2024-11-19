@@ -2500,6 +2500,10 @@ Proof.
       destruct plt; try contradiction. eauto. }
     clear X. specialize (Y n).
     destruct Y as (? & ? & ?). subst.
+
+    set (mres := match tf' with | Internal _ => x | External _ => m' end).
+    set (dra_res := match tf' with | Internal _ => Some dra' | External _ => None end).
+    set (dsp_res := match tf' with | Internal _ => Some dsp' | External _ => None end).
     eexists; split.
     apply plus_one.
     assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs_ext rs (Linear.funsig f')))
@@ -2511,40 +2515,75 @@ Proof.
     apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
     exploit (fun x2 x3 x4 x5 => transl_arguments _ x2 x3 x4 x5 _ _ AGREGS); eauto. simpl.
     apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
-    { eapply exec_Mcall_cross; eauto.
-      + eapply is_tail_cons_left; eauto.
-      + rewrite <- (comp_transl_partial _ TRANSL).
-        apply (Genv.allowed_call_transf_partial TRANSF ALLOWED).
-      (* + inv EV. *)
-      (*   rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C). eauto. *)
-      + (* intros G. specialize (NO_CROSS_PTR G). *)
-        rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C).
-        intros G. specialize (NO_CROSS_PTR G).
-        eapply Val.inject_list_not_ptr; eauto.
-        (* clear -NO_CROSS_PTR EV. inv EV. *)
-        unfold loc_parameters in NO_CROSS_PTR.
-        (* eapply NO_CROSS_PTR. *)
-        rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR.
+    { destruct tf'.
+      - eapply exec_Mcall_cross with (m_res := mres) (dra := dra_res) (dsp := dsp_res); eauto.
+        + eapply is_tail_cons_left; eauto.
+        + rewrite <- (comp_transl_partial _ TRANSL).
+          apply (Genv.allowed_call_transf_partial TRANSF ALLOWED).
+        (* + inv EV. *)
+        (*   rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C). eauto. *)
+        + (* intros G. specialize (NO_CROSS_PTR G). *)
+          rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C).
+          intros G. specialize (NO_CROSS_PTR G).
+          eapply Val.inject_list_not_ptr; eauto.
+          (* clear -NO_CROSS_PTR EV. inv EV. *)
+          unfold loc_parameters in NO_CROSS_PTR.
+          (* eapply NO_CROSS_PTR. *)
+          rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR.
         (* unfold loc_parameters in NO_CROSS_PTR. *)
         (* rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR. eauto. *)
-      + erewrite sig_preserved; eauto.
-      + rewrite <- comp_transf_function; eauto. rewrite <- (comp_transf_partial_fundef _ C).
-        eapply call_trace_inj with (ge := ge); eauto using symbols_preserved.
-        clear -H0 A NO_CROSS_PTR AGREGS'.
-        unfold loc_parameters in NO_CROSS_PTR.
-        rewrite map_map in NO_CROSS_PTR.
-        unfold Linear.find_function_ptr in H0; unfold find_function_ptr in A.
-        destruct ros; [inv H0 |].
-        destruct (rs0 m) eqn:eq_rs0; inv A.
-        destruct (Ptrofs.eq i Ptrofs.zero) eqn:i0; inv H0.
-        specialize (AGREGS' m). apply Ptrofs.same_if_eq in i0; subst.
-        rewrite eq_rs0 in AGREGS'. inv AGREGS'.
-        assert (ofs1 = Ptrofs.zero) by congruence. subst ofs1.
-        auto.
-        congruence.
-        auto.
-        unfold loc_parameters in EV. rewrite map_map in EV. auto.
-      + rewrite alloc1, alloc2. rewrite Z. eauto. }
+        + erewrite sig_preserved; eauto.
+        + rewrite <- comp_transf_function; eauto. rewrite <- (comp_transf_partial_fundef _ C).
+          eapply call_trace_inj with (ge := ge); eauto using symbols_preserved.
+          clear -H0 A NO_CROSS_PTR AGREGS'.
+          unfold loc_parameters in NO_CROSS_PTR.
+          rewrite map_map in NO_CROSS_PTR.
+          unfold Linear.find_function_ptr in H0; unfold find_function_ptr in A.
+          destruct ros; [inv H0 |].
+          destruct (rs0 m) eqn:eq_rs0; inv A.
+          destruct (Ptrofs.eq i Ptrofs.zero) eqn:i0; inv H0.
+          specialize (AGREGS' m). apply Ptrofs.same_if_eq in i0; subst.
+          rewrite eq_rs0 in AGREGS'. inv AGREGS'.
+          assert (ofs1 = Ptrofs.zero) by congruence. subst ofs1.
+          auto.
+          congruence.
+          auto.
+          unfold loc_parameters in EV. rewrite map_map in EV. auto.
+        + rewrite alloc1, alloc2. rewrite Z. eauto.
+      - eapply exec_Mcall_cross with (m_res := mres) (dra := dra_res) (dsp := dsp_res); eauto.
+        + eapply is_tail_cons_left; eauto.
+        + rewrite <- (comp_transl_partial _ TRANSL).
+          apply (Genv.allowed_call_transf_partial TRANSF ALLOWED).
+        (* + inv EV. *)
+        (*   rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C). eauto. *)
+        + (* intros G. specialize (NO_CROSS_PTR G). *)
+          rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C).
+          intros G. specialize (NO_CROSS_PTR G).
+          eapply Val.inject_list_not_ptr; eauto.
+          (* clear -NO_CROSS_PTR EV. inv EV. *)
+          unfold loc_parameters in NO_CROSS_PTR.
+          (* eapply NO_CROSS_PTR. *)
+          rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR.
+        (* unfold loc_parameters in NO_CROSS_PTR. *)
+        (* rewrite map_map in NO_CROSS_PTR. eapply NO_CROSS_PTR. eauto. *)
+        + erewrite sig_preserved; eauto.
+        + rewrite <- comp_transf_function; eauto. rewrite <- (comp_transf_partial_fundef _ C).
+          eapply call_trace_inj with (ge := ge); eauto using symbols_preserved.
+          clear -H0 A NO_CROSS_PTR AGREGS'.
+          unfold loc_parameters in NO_CROSS_PTR.
+          rewrite map_map in NO_CROSS_PTR.
+          unfold Linear.find_function_ptr in H0; unfold find_function_ptr in A.
+          destruct ros; [inv H0 |].
+          destruct (rs0 m) eqn:eq_rs0; inv A.
+          destruct (Ptrofs.eq i Ptrofs.zero) eqn:i0; inv H0.
+          specialize (AGREGS' m). apply Ptrofs.same_if_eq in i0; subst.
+          rewrite eq_rs0 in AGREGS'. inv AGREGS'.
+          assert (ofs1 = Ptrofs.zero) by congruence. subst ofs1.
+          auto.
+          congruence.
+          auto.
+          unfold loc_parameters in EV. rewrite map_map in EV. auto.
+        + simpl; eauto. }
     { apply Val.Vptr_has_type. }
     { intros; red.
       apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.

@@ -493,6 +493,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = comp_of f),
+      forall (NOTEXT: forall ef, fd <> External ef),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
@@ -883,6 +884,7 @@ with exec_stmt:
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
+      forall (NOTEXT: forall ef, fd <> External ef),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
       (* forall (ALLOWED: needs_calling_comp (comp_of f) = false), *)
       (* forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf), *)
@@ -967,6 +969,7 @@ with execinf_stmt:
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
+      forall (NOTEXT: forall ef, fd <> External ef),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->

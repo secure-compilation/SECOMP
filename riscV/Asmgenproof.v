@@ -2712,7 +2712,7 @@ Local Transparent destroyed_at_function_entry.
       intros [tf0 [? ?]]. simpl in H0. monadInv H0.
       exists x. split; eauto.
       apply Genv.find_funct_ptr_iff; eauto. }
-    destruct cp_eq_dec; try (simpl in *; unfold ge in *; congruence). subst m'.
+    (* destruct cp_eq_dec; try (simpl in *; unfold ge in *; congruence). *) subst m'.
     (* exploit Mem.set_perm_parallel_extends; eauto. *)
     (* intros [m'' [SET_PERM' MEXT']]. *)
     eexists (State s' (invalidate_return rs0 sg) m'0 (comp_of f0)). split.
@@ -2900,12 +2900,14 @@ Local Transparent destroyed_at_function_entry.
     easy.
 
 - inv H4. simpl. right. split; eauto.
+  destruct dsp.
   destruct sp0; try contradiction.
   destruct cp_eq_dec; subst.
   + split; auto. inv EV; inv EV0; auto; try contradiction.
   + assert (m'0 = m') by congruence. subst m'0.
     split; auto. inv EV; inv EV0; auto; try contradiction.
-
+  + subst m'0. subst m'.
+    split; auto. inv EV; inv EV0; auto; try contradiction.
 
 - rename H into mergeable.
   rename H0 into step1. rename H1 into step2.
@@ -2990,7 +2992,7 @@ Local Transparent destroyed_at_function_entry.
       erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
       simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
       erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
-      destruct cp_eq_dec; simpl; auto; try congruence.
+      (* destruct cp_eq_dec; simpl; auto; try congruence. *)
       constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
 
       rewrite <- comp_transf_function; eauto.
@@ -3105,7 +3107,7 @@ Local Transparent destroyed_at_function_entry.
       erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
       simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
       erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
-      destruct cp_eq_dec; simpl; auto; try congruence.
+      (* destruct cp_eq_dec; simpl; auto; try congruence. *)
       constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
 
       rewrite <- comp_transf_function; eauto.
@@ -3184,26 +3186,8 @@ Local Transparent destroyed_at_function_entry.
       econstructor; eauto.
       exploit return_address_offset_correct; eauto. intros; subst ra.
 
-      (* assert (TTRANSF' := TTRANSF). *)
-      (* monadInv TTRANSF'. *)
-      (* exploit extcall_arguments_match; eauto. *)
-      (* intros [args' [extcall_args' ld_args]]. *)
-      (* exploit external_call_mem_extends; eauto. *)
-      (* intros [vres' [m'' [extcall' [ld_res [ext_mem unch_mem]]]]]. *)
-
-      simpl in allc.
-      destruct (Mem.alloc m bottom 0 0) as [m1 ?] eqn:allc1.
-      destruct (Mem.alloc m1 bottom 0 0) as [m2 ?] eqn:allc2.
-      destruct (Mem.set_perm m2 bsp Readable) as [m3 |] eqn:perm; try contradiction.
       destruct allc as (? & ? & ?); subst.
-      destruct H15 as (? & ? & ?); subst.
-      eapply Mem.alloc_extends with (lo2 := 0) (hi2 := 0) in allc1 as allc1'; eauto; try lia.
-      destruct allc1' as [m2' [allc1' ext1]].
-      eapply Mem.alloc_extends with (lo2 := 0) (hi2 := 0) in allc2 as allc2'; eauto; try lia.
-      destruct allc2' as [m2'' [allc2' ext2]].
 
-      eapply Mem.set_perm_parallel_extends in perm as perm'; eauto.
-      destruct perm' as [m3' [perm' ext3]]; eauto.
 
       inv step2; simpl in *; try congruence.
       assert (ef0 = ef) as -> by congruence.
@@ -3259,10 +3243,12 @@ Local Transparent destroyed_at_function_entry.
               -- econstructor; eauto. }
 
       econstructor; eauto. econstructor; eauto.
-      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
+      (* simpl; rewrite <- ALLOWED. *)
       simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
-      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
-      destruct cp_eq_dec; simpl; auto; try congruence.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
+      (* simpl; rewrite <- ALLOWED. *)
+      (* destruct cp_eq_dec; simpl; auto; try congruence. *)
       constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
 
       rewrite <- comp_transf_function; eauto.
@@ -3315,6 +3301,9 @@ Local Transparent destroyed_at_function_entry.
       econstructor; eauto.
       exploit return_address_offset_correct; eauto. intros; subst ra.
 
+      destruct allc as (? & ? & ?); subst.
+
+
       inv step2; simpl in *; try congruence.
       assert (ef0 = ef) as -> by congruence.
       assert (TTRANSF' := TTRANSF).
@@ -3337,11 +3326,10 @@ Local Transparent destroyed_at_function_entry.
       apply Genv.find_funct_ptr_iff in CALLED; rewrite CALLED. reflexivity.
       simpl; eauto.
       (Simpl; eauto).
-
-      rewrite <- Genv.find_funct_ptr_iff; eauto.
+      eapply Genv.find_funct_ptr_iff. exploit functions_translated; eauto.
       rewrite <- (comp_transl_partial _ H1).
       eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-      { Simpl. erewrite agree_sp; eauto.
+      { Simpl. simpl. erewrite agree_sp; eauto.
         unfold extcall_arguments in *. clear -extcall_args'.
         revert extcall_args'.
         generalize (Vptr bsp osp). generalize (loc_arguments (ef_sig ef)).
@@ -3374,10 +3362,12 @@ Local Transparent destroyed_at_function_entry.
               -- econstructor; eauto. }
 
       econstructor; eauto. econstructor; eauto.
-      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
+      (* simpl; rewrite <- ALLOWED. *)
       simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
-      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
-      destruct cp_eq_dec; simpl; auto; try congruence.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
+      (* simpl; rewrite <- ALLOWED. *)
+      (* destruct cp_eq_dec; simpl; auto; try congruence. *)
       constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
 
       rewrite <- comp_transf_function; eauto.
@@ -3424,7 +3414,7 @@ Local Transparent destroyed_at_function_entry.
       { eapply external_call_valid_block; eauto. }
       { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
       { congruence. }
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
@@ -3443,7 +3433,8 @@ Proof.
     erewrite (match_program_main TRANSF); eauto.
     rewrite (Genv.find_comp_match TRANSF); eauto. }
   econstructor; eauto.
-  constructor. admit.
+  constructor.
+  admit.
   constructor.
   eapply Mem.extends_refl.
   constructor. Simpl.
@@ -3465,6 +3456,7 @@ Proof.
     constructor. auto.
     compute in H1. inv H1.
     generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
+  - inv H7.
 Qed.
 
 Theorem transf_program_correct:

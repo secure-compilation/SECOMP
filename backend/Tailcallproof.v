@@ -676,6 +676,23 @@ Proof.
   eapply exec_Itailcall; eauto.
   { apply sig_preserved. }
   { now rewrite comp_transl, comp_transl. }
+  { destruct fd; try (simpl in *; congruence).
+    unfold intra_compartment_call in INTRA; simpl in INTRA.
+    destruct ros; try congruence.
+    destruct (ce ! i) eqn:ce_i; try congruence.
+    apply COMPAT in ce_i as [? [? ?]]; subst.
+    apply Genv.find_def_symbol in H1 as [? [? ?]].
+    unfold find_function in H0. simpl in *.
+    (* TODO: ???? *)
+    Set Printing Implicit.
+    unfold ge, fundef in FUNPTR.
+    rewrite H1 in FUNPTR.
+    unfold ge, fundef in H0.
+    rewrite H1 in H0.
+    Unset Printing Implicit.
+    simpl in *.
+    destruct Ptrofs.eq_dec; try congruence.
+    apply Genv.find_funct_ptr_iff in H0. congruence. }
   { now rewrite <- E. }
   (* eapply find_function_ptr_translated; eauto. *)
   (* rewrite comp_transl. eapply allowed_call_translated; eauto. *)
@@ -739,6 +756,7 @@ Proof.
   rewrite Ef.
   eapply exec_Itailcall; eauto. apply sig_preserved.
     now rewrite comp_transl, COMP.
+    { destruct fd; try (simpl in *; congruence). }
   rewrite stacksize_preserved; auto.
   rewrite comp_transl; eauto.
   constructor.

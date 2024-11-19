@@ -1560,6 +1560,7 @@ Proof.
   eapply exec_Itailcall; eauto. unfold find_function. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
+    { destruct fd; try congruence. monadInv Q. congruence. }
   rewrite H, <- COMP'; eauto.
   traceEq.
   rewrite COMP'.
@@ -1577,6 +1578,7 @@ Proof.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
+    { destruct fd; try congruence. monadInv Q. congruence. }
   rewrite H, <- COMP'; eauto.
   traceEq.
   rewrite COMP'.
