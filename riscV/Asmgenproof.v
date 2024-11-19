@@ -655,7 +655,13 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
           LTL.in_mreg r (regs_of_rpair (loc_result (Mach.parent_signature s))) = false ->
           ms r = Vundef),
       match_states (Mach.Returnstate s ms m cp)
-                   (Asm.ReturnState s' rs m' cp).
+                   (Asm.ReturnState s' rs m' cp)
+  | match_states_return_external:
+      forall s s' s'' fb sp c ms ms' rs m m' m'' cp cp',
+      Mach.step return_address_offset ge (Mach.Returnstate s ms m cp) E0 (Mach.State s' fb sp c ms' m') ->
+      match_states (Mach.State s' fb sp c ms' m') (Asm.State s'' rs m'' cp') ->
+      match_states (Mach.Returnstate s ms m cp)
+                   (Asm.State s'' rs m'' cp').
 
 Lemma exec_straight_steps:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp bsp osp ms2,
@@ -2893,6 +2899,14 @@ Local Transparent destroyed_at_function_entry.
     erewrite <- Mem.set_preserves_comp; eauto.
     easy.
 
+- inv H4. simpl. right. split; eauto.
+  destruct sp0; try contradiction.
+  destruct cp_eq_dec; subst.
+  + split; auto. inv EV; inv EV0; auto; try contradiction.
+  + assert (m'0 = m') by congruence. subst m'0.
+    split; auto. inv EV; inv EV0; auto; try contradiction.
+
+
 - rename H into mergeable.
   rename H0 into step1. rename H1 into step2.
   intros S1' MS.
@@ -2940,65 +2954,204 @@ Local Transparent destroyed_at_function_entry.
       eapply Genv.find_funct_ptr_iff. exploit functions_translated; eauto.
       rewrite <- (comp_transl_partial _ H1).
       eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-      admit.
-      simpl.
-    (* instantiate (1 := (rs0 # PC <- (Genv.symbol_address tge fid Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)). *)
-    (* simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl. *)
-    (* intros [args' [ARGS' LDARGS]]. *)
-  (* econstructor; eauto. *)
-  (* { eapply match_stack_external_call; eauto. } *)
-  (* erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto. *)
-  (* { Simpl. rewrite ATLR. *)
-  (*   eapply agree_set_other; eauto. *)
-  (*   eapply agree_set_pair; eauto. *)
-  (*   unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl. *)
-  (*   constructor. *)
-  (*   - simpl. eapply agree_sp; eauto. *)
-  (*   - eapply agree_sp_def; eauto. *)
-  (*   - intros. constructor. } *)
-  (* { unfold Mach.set_pair. *)
-  (*   rewrite SIG0. *)
-  (*   generalize (loc_result (ef_sig ef)). *)
-  (*   unfold Mach.undef_caller_save_regs; simpl. *)
-  (*   clear. intros. destruct r. *)
-  (*   - simpl in *. rewrite Regmap.gso; auto. destruct mreg_eq; try now simpl in *. *)
-  (*   - simpl in *. rewrite !Regmap.gso; auto. *)
-  (*     destruct mreg_eq; try now simpl in *. *)
-  (*     destruct mreg_eq, mreg_eq; try now simpl in *. } *)
-    (* rewrite <- (comp_transl_partial _ H1). *)
-    eapply allowed_call_translated; eauto.
-    { left. simpl. erewrite Genv.find_funct_ptr_find_comp_of_block, ALLOWED; auto with comps. }
-    unfold tge. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    unfold update_stack_call. Simpl.
-    rewrite H7; simpl.
-    unfold tge.
-    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    { erewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF); eauto.
-      destruct cp_eq_dec. reflexivity. contradiction. }
-    Simpl; erewrite agree_sp; eauto.
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    { rewrite <- comp_transf_function; eauto. }
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      econstructor.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    rewrite <- H2. reflexivity.
-    assumption.
-    rewrite comp_transf_function; eauto.
+      { Simpl. rewrite H4. simpl. erewrite agree_sp; eauto.
+        unfold extcall_arguments in *. clear -extcall_args'.
+        revert extcall_args'.
+        generalize (Vptr bsp osp). generalize (loc_arguments (ef_sig ef)).
+        intros l; revert args'.
+        induction l.
+        - intros. inv extcall_args'. constructor.
+        - intros. inv extcall_args'.
+          specialize (IHl _ _ H3).
+          constructor; eauto.
+          inv H1.
+          + constructor; eauto.
+            inv H.
+            * replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+              constructor; eauto.
+              Simpl.
+            * econstructor; eauto.
+          + constructor; eauto.
+            * inv H.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto.
+            * inv H0.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto. }
 
+      econstructor; eauto. econstructor; eauto.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      destruct cp_eq_dec; simpl; auto; try congruence.
+      constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
 
-      monad
+      rewrite <- comp_transf_function; eauto.
+      eapply match_states_intro; eauto.
+      { eapply match_stack_external_call; eauto. }
+      { Simpl; rewrite <- H; eauto. }
+      { assert (AG': agree
+                       (Mach.set_pair (loc_result (ef_sig ef)) res
+                          (Mach.undef_caller_save_regs ms))
+                       (Vptr bsp osp)
+                       (set_pair (loc_external_result (ef_sig ef)) vres'
+                          (rs # PC <- (rs x0)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one))).
+        { eapply agree_set_pair; eauto. eapply agree_set_other; eauto.
+          eapply agree_set_other; eauto.
 
+          unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl.
+          constructor.
+          - simpl. eapply agree_sp; eauto.
+          - eapply agree_sp_def; eauto.
+          - intros. constructor. }
+        clear AG. rename AG' into AG.
+        unfold invalidate_cross_return, invalidate_return.
+        econstructor; eauto.
+        - Simpl; simpl. eapply agree_sp; eauto.
+        - congruence.
+        - intros r. Simpl.
+          destruct (preg_eq (preg_of r) PC); (try now destruct r).
+          rewrite orb_false_l.
+          destruct (preg_eq (preg_of r) X2); try now destruct r.
+          rewrite orb_false_l.
+          destruct in_dec.
+          + simpl. eapply agree_mregs in AG; eauto.
+          + simpl. unfold Mach.set_pair, Mach.undef_caller_save_regs, is_callee_save.
+            destruct loc_result.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In r0 all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. now left.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rlo all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now right; left.
+            destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rhi all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now left. }
+      { eapply external_call_valid_block; eauto. }
+      { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
+      { congruence. }
+    * (* direct call *)
+      generalize (code_tail_next_int _ _ _ _ NOOV H3). intro CT1.
+      assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c0 false tf x).
+      econstructor; eauto.
+      exploit return_address_offset_correct; eauto. intros; subst ra.
 
+      inv step2; simpl in *; try congruence.
+      assert (ef0 = ef) as -> by congruence.
+      assert (TTRANSF' := TTRANSF).
+      monadInv TTRANSF'.
+      exploit extcall_arguments_match; eauto.
+      intros [args' [extcall_args' ld_args]].
+      exploit external_call_mem_extends; eauto.
+      intros [vres' [m'' [extcall' [ld_res [ext_mem unch_mem]]]]].
+
+      left; econstructor; split.
+      apply plus_one.
+      rewrite comp_transf_function; eauto.
+      eapply exec_step_external_call; eauto.
+      eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
+      eapply find_instr_tail; eauto.
+      simpl; eauto.
+      rewrite allowed_addrof_preserved.
+      unfold Genv.allowed_addrof_b.
+      unfold Genv.symbol_address. rewrite symbols_preserved. unfold ge; rewrite H5.
+      apply Genv.find_funct_ptr_iff in CALLED; rewrite CALLED. reflexivity.
+      simpl; eauto.
+      (Simpl; eauto).
+
+      rewrite <- Genv.find_funct_ptr_iff; eauto.
+      rewrite <- (comp_transl_partial _ H1).
+      eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+      { Simpl. erewrite agree_sp; eauto.
+        unfold extcall_arguments in *. clear -extcall_args'.
+        revert extcall_args'.
+        generalize (Vptr bsp osp). generalize (loc_arguments (ef_sig ef)).
+        intros l; revert args'.
+        induction l.
+        - intros. inv extcall_args'. constructor.
+        - intros. inv extcall_args'.
+          specialize (IHl _ _ H3).
+          constructor; eauto.
+          inv H1.
+          + constructor; eauto.
+            inv H.
+            * replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+              constructor; eauto.
+              Simpl.
+            * econstructor; eauto.
+          + constructor; eauto.
+            * inv H.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto.
+            * inv H0.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto. }
+
+      econstructor; eauto. econstructor; eauto.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      destruct cp_eq_dec; simpl; auto; try congruence.
+      constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
+
+      rewrite <- comp_transf_function; eauto.
+      eapply match_states_intro; eauto.
+      { eapply match_stack_external_call; eauto. }
+      { Simpl; rewrite <- H; eauto. }
+      { assert (AG': agree
+                       (Mach.set_pair (loc_result (ef_sig ef)) res
+                          (Mach.undef_caller_save_regs ms))
+                       (Vptr bsp osp)
+                       (set_pair (loc_external_result (ef_sig ef)) vres'
+                          (rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one))).
+        { eapply agree_set_pair; eauto. eapply agree_set_other; eauto.
+          eapply agree_set_other; eauto.
+
+          unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl.
+          constructor.
+          - simpl. eapply agree_sp; eauto.
+          - eapply agree_sp_def; eauto.
+          - intros. constructor. }
+        clear AG. rename AG' into AG.
+        unfold invalidate_cross_return, invalidate_return.
+        econstructor; eauto.
+        - Simpl; simpl. eapply agree_sp; eauto.
+        - congruence.
+        - intros r. Simpl.
+          destruct (preg_eq (preg_of r) PC); (try now destruct r).
+          rewrite orb_false_l.
+          destruct (preg_eq (preg_of r) X2); try now destruct r.
+          rewrite orb_false_l.
+          destruct in_dec.
+          + simpl. eapply agree_mregs in AG; eauto.
+          + simpl. unfold Mach.set_pair, Mach.undef_caller_save_regs, is_callee_save.
+            destruct loc_result.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In r0 all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. now left.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rlo all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now right; left.
+            destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rhi all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now left. }
+      { eapply external_call_valid_block; eauto. }
+      { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
+      { congruence. }
   + simpl in *.
     assert (f'0 = f') as -> by congruence.
     assert (fd = External ef) as -> by congruence.
@@ -3013,231 +3166,264 @@ Local Transparent destroyed_at_function_entry.
     assert (f'0 = f') as -> by congruence.
     assert (fd = External ef) as -> by congruence.
     assert (f0 = f1) as <- by congruence.
-  +
-  +
-
-  unfold ge in FIND; simpl in *.
-  assert (f0 = f) by congruence.  subst f0.
-  inv AT.
-  assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
+    unfold ge in FIND; simpl in *.
+    assert (f0 = f) by congruence. subst f0.
+    inv AT.
+    assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
-  pose proof Genv.find_funct_ptr_match TRANSF _ CALLED as [_ [tf' [TFIND [TTRANSF _]]]].
-  destruct fd as [fdi | fde].
-+ (* Internal function *)
-  destruct ros as [rf|fid]; simpl in H; monadInv H5.
-* (* Indirect call *)
-  assert (rs rf = Vptr f' Ptrofs.zero).
-    destruct (rs rf); try discriminate.
-    revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
-  assert (rs0 x0 = Vptr f' Ptrofs.zero).
-    exploit ireg_val; eauto. rewrite H5; intros LD; inv LD; auto.
-  generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
-  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
-    econstructor; eauto.
-  exploit return_address_offset_correct; eauto. intros; subst ra.
-  (* exploit (call_arguments_match (Mach.undef_regs destroyed_at_function_entry rs)); eauto. *)
-  (* instantiate (1 := (rs0 # PC <- (rs0 x0)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)). *)
-  (* simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl. *)
-  (* intros [args' [ARGS' LDARGS]]. *)
-    assert (TTRANSF' := TTRANSF).
-    monadInv TTRANSF'.
-    left; econstructor; split.
-    apply plus_one.
-    rewrite comp_transf_function.
-    eapply exec_step_internal_call with
-      (args := nil)
-      (rs''' := invalidate_call (rs0 # PC <- (Vptr f' Ptrofs.zero))
-                  # X1 <- (Val.offset_ptr (Vptr fb ofs) Ptrofs.one) _).
-    rewrite <- H2; simpl; eauto.
-    eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
-    eapply find_instr_tail; eauto.
-    simpl; eauto.
-    simpl; eauto.
-    Simpl; eauto.
-    eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
-    rewrite <- (comp_transl_partial _ H4).
-    eapply allowed_call_translated; eauto.
-    { left. simpl. erewrite Genv.find_funct_ptr_find_comp_of_block, ALLOWED; auto with comps. }
-    unfold tge. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    unfold update_stack_call. Simpl.
-    rewrite H7; simpl.
-    unfold tge.
-    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    { erewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF); eauto.
-      destruct cp_eq_dec. reflexivity. contradiction. }
-    Simpl; erewrite agree_sp; eauto.
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    { rewrite <- comp_transf_function; eauto. }
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      econstructor.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    rewrite <- H2. reflexivity.
-    assumption.
-    rewrite comp_transf_function; eauto.
-    (* destruct fd as [fi | ef]. *)
-    eapply match_states_call; eauto.
-    { econstructor; eauto.
-      eapply agree_sp_def; eauto. }
-    { unfold ge; congruence. }
-    { econstructor. eauto. simpl.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. reflexivity. }
-    simpl.
-    { constructor.
-      - unfold invalidate_call. simpl; Simpl.
-        eapply agree_sp; eauto.
-      - eapply agree_sp_def; eauto.
-      - intros. unfold invalidate_call, undef_caller_save_regs_ext.
-        destruct preg_eq. now exploit preg_of_not_PC; eauto.
-        destruct preg_eq. destruct r; simpl in e; congruence.
-        destruct preg_eq. destruct r; simpl in e; congruence.
-        destruct (LTL.in_mreg) eqn:I; try now constructor.
-        eapply existsb_exists in I as [r' [I I']]. simpl in I'.
-        assert (r = r') as <- by now destruct mreg_eq.
-        eapply in_map with (f := preg_of) in I. (* ok *)
-        destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto.
-        exfalso. apply n2.
-        eapply in_all_mregs_filter; eauto. }
-    (* * eapply match_states_call_external; eauto. *)
-    (*   { econstructor; eauto. *)
-    (*     eapply agree_sp_def; eauto. } *)
-    (*   { econstructor. eauto. simpl. *)
-    (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto. *)
-    (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. auto. } *)
-    (*   { simpl. *)
-    (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND). *)
-    (*     rewrite <- comp_transf_function; simpl; eauto. } *)
-    (*   simpl. *)
-    (*   { constructor. *)
-    (*     - unfold invalidate_call. simpl; Simpl. *)
-    (*       eapply agree_sp; eauto. *)
-    (*     - eapply agree_sp_def; eauto. *)
-    (*     - intros. unfold invalidate_call, undef_caller_save_regs_ext. Simpl. *)
-    (*       destruct preg_eq. now exploit preg_of_not_PC; eauto. *)
-    (*       destruct preg_eq. destruct r; simpl in e; congruence. *)
-    (*       destruct preg_eq. destruct r; simpl in e; congruence. *)
-    (*       destruct (LTL.in_mreg) eqn:I; try now constructor. *)
-    (*       eapply existsb_exists in I as [r' [I I']]. simpl in I'. *)
-    (*       assert (r = r') as <- by now destruct mreg_eq. *)
-    (*       eapply in_map with (f := preg_of) in I. (* ok *) *)
-    (*       destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto. *)
-    (*       exfalso. apply n2. *)
-    (*       eapply in_all_mregs_filter; eauto. } *)
+    pose proof Genv.find_funct_ptr_match TRANSF _ CALLED as [_ [tf' [TFIND [TTRANSF _]]]].
+    destruct ros as [rf|fid]; simpl in *; monadInv H2.
+    * (* Indirect call *)
+      assert (ms rf = Vptr f' Ptrofs.zero).
+      destruct (ms rf); try discriminate.
+      revert H5; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
+      assert (rs x0 = Vptr f' Ptrofs.zero).
+      exploit ireg_val; eauto. rewrite H2; intros LD; inv LD; auto.
+      generalize (code_tail_next_int _ _ _ _ NOOV H3). intro CT1.
+      assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c0 false tf x).
+      econstructor; eauto.
+      exploit return_address_offset_correct; eauto. intros; subst ra.
 
-  * (* Direct call *)
-    generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
-    assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
-    econstructor; eauto.
-    exploit return_address_offset_correct; eauto. intros; subst ra.
-    (* exploit (call_arguments_match (Mach.undef_regs destroyed_at_function_entry rs)); eauto. *)
-    (* instantiate (1 := (rs0 # PC <- (Genv.symbol_address tge fid Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)). *)
-    (* simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl. *)
-    (* intros [args' [ARGS' LDARGS]]. *)
-    assert (TTRANSF' := TTRANSF).
-    monadInv TTRANSF'.
+      (* assert (TTRANSF' := TTRANSF). *)
+      (* monadInv TTRANSF'. *)
+      (* exploit extcall_arguments_match; eauto. *)
+      (* intros [args' [extcall_args' ld_args]]. *)
+      (* exploit external_call_mem_extends; eauto. *)
+      (* intros [vres' [m'' [extcall' [ld_res [ext_mem unch_mem]]]]]. *)
 
-    left; econstructor; split.
-    rewrite comp_transf_function; eauto.
-    apply plus_one. eapply exec_step_internal_call with (args := nil).
-    rewrite <- H2; simpl; eauto. eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
-    eapply find_instr_tail; eauto.
-    simpl. unfold Genv.allowed_addrof_b.
-    rewrite symbols_preserved. unfold ge; rewrite H.
-    apply Genv.find_funct_ptr_iff in TFIND. unfold tge; rewrite TFIND. fold tge.
-    simpl; eauto.
-    simpl; eauto.
-    Simpl; eauto.
-    unfold Genv.symbol_address. rewrite symbols_preserved. unfold ge; rewrite H. eauto.
-    eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
-    rewrite <- (comp_transl_partial _ H4).
-    eapply allowed_call_translated; eauto.
-    { left. simpl; erewrite Genv.find_funct_ptr_find_comp_of_block, ALLOWED; auto with comps. }
-    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    unfold update_stack_call. Simpl.
-    unfold Genv.symbol_address. rewrite symbols_preserved. unfold ge; rewrite H.
-    rewrite <- (comp_transl_partial _ H4). simpl.
-    erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
-    rewrite <- (comp_transl_partial _ TTRANSF); eauto. destruct cp_eq_dec.
-    reflexivity. contradiction.
-    Simpl; erewrite agree_sp; eauto.
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    { rewrite <- comp_transf_function; eauto. }
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      econstructor.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
-    rewrite <- H2. reflexivity.
-    rewrite comp_transf_function; eauto.
-    econstructor; eauto.
-    { econstructor; eauto.
-      eapply agree_sp_def; eauto. }
-    { unfold ge; congruence. }
-    { econstructor. eauto. simpl.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. reflexivity. }
-    simpl.
-    { constructor.
-      - unfold invalidate_call. simpl; Simpl.
-        eapply agree_sp; eauto.
-      - eapply agree_sp_def; eauto.
-      - intros. unfold invalidate_call, undef_caller_save_regs_ext.
-        destruct preg_eq. now exploit preg_of_not_PC; eauto.
-        destruct preg_eq. destruct r; simpl in e; congruence.
-        destruct preg_eq. destruct r; simpl in e; congruence.
-        destruct (LTL.in_mreg) eqn:I; try now constructor.
-        eapply existsb_exists in I as [r' [I I']]. simpl in I'.
-        assert (r = r') as <- by now destruct mreg_eq.
-        eapply in_map with (f := preg_of) in I. (* ok *)
-        destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto.
-        exfalso. apply n2.
-        eapply in_all_mregs_filter; eauto. }
-    (* * eapply match_states_call_external; eauto. *)
-    (*   { econstructor; eauto. *)
-    (*     eapply agree_sp_def; eauto. } *)
-    (*   { econstructor. eauto. simpl. *)
-    (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto. auto. *)
-    (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED), ALLOWED. reflexivity. } *)
-    (*   { simpl. *)
-    (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND). *)
-    (*     rewrite <- comp_transf_function; simpl; eauto. } *)
-    (*   simpl. *)
-    (*   { constructor. *)
-    (*     - unfold invalidate_call. simpl; Simpl. *)
-    (*       eapply agree_sp; eauto. *)
-    (*     - eapply agree_sp_def; eauto. *)
-    (*     - intros. unfold invalidate_call, undef_caller_save_regs_ext. *)
-    (*       destruct preg_eq. now exploit preg_of_not_PC; eauto. *)
-    (*       destruct preg_eq. destruct r; simpl in e0; congruence. *)
-    (*       destruct preg_eq. destruct r; simpl in e0; congruence. *)
-    (*       destruct (LTL.in_mreg) eqn:I; try now constructor. *)
-    (*       eapply existsb_exists in I as [r' [I I']]. simpl in I'. *)
-    (*       assert (r = r') as <- by now destruct mreg_eq. *)
-    (*       eapply in_map with (f := preg_of) in I. (* ok *) *)
-    (*       destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto. *)
-    (*       exfalso. apply n2. *)
-    (*       eapply in_all_mregs_filter; eauto. } *)
-  + exfalso. apply not_mergeable. econstructor; eauto. simpl; reflexivity.
+      simpl in allc.
+      destruct (Mem.alloc m bottom 0 0) as [m1 ?] eqn:allc1.
+      destruct (Mem.alloc m1 bottom 0 0) as [m2 ?] eqn:allc2.
+      destruct (Mem.set_perm m2 bsp Readable) as [m3 |] eqn:perm; try contradiction.
+      destruct allc as (? & ? & ?); subst.
+      destruct H15 as (? & ? & ?); subst.
+      eapply Mem.alloc_extends with (lo2 := 0) (hi2 := 0) in allc1 as allc1'; eauto; try lia.
+      destruct allc1' as [m2' [allc1' ext1]].
+      eapply Mem.alloc_extends with (lo2 := 0) (hi2 := 0) in allc2 as allc2'; eauto; try lia.
+      destruct allc2' as [m2'' [allc2' ext2]].
 
+      eapply Mem.set_perm_parallel_extends in perm as perm'; eauto.
+      destruct perm' as [m3' [perm' ext3]]; eauto.
 
-  +
+      inv step2; simpl in *; try congruence.
+      assert (ef0 = ef) as -> by congruence.
+      assert (TTRANSF' := TTRANSF).
+      monadInv TTRANSF'.
+      exploit extcall_arguments_match; eauto.
+      intros [args' [extcall_args' ld_args]].
+      exploit external_call_mem_extends; eauto.
+      intros [vres' [m'' [extcall' [ld_res [ext_mem unch_mem]]]]].
+
+      left; econstructor; split.
+      apply plus_one.
+      rewrite comp_transf_function; eauto.
+      eapply exec_step_external_call; eauto.
+      eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
+      eapply find_instr_tail; eauto.
+      simpl; eauto.
+      simpl; eauto.
+      (Simpl; eauto).
+      eapply Genv.find_funct_ptr_iff. exploit functions_translated; eauto.
+      rewrite <- (comp_transl_partial _ H1).
+      eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+      { Simpl. rewrite H4. simpl. erewrite agree_sp; eauto.
+        unfold extcall_arguments in *. clear -extcall_args'.
+        revert extcall_args'.
+        generalize (Vptr bsp osp). generalize (loc_arguments (ef_sig ef)).
+        intros l; revert args'.
+        induction l.
+        - intros. inv extcall_args'. constructor.
+        - intros. inv extcall_args'.
+          specialize (IHl _ _ H3).
+          constructor; eauto.
+          inv H1.
+          + constructor; eauto.
+            inv H.
+            * replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+              constructor; eauto.
+              Simpl.
+            * econstructor; eauto.
+          + constructor; eauto.
+            * inv H.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto.
+            * inv H0.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto. }
+
+      econstructor; eauto. econstructor; eauto.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      destruct cp_eq_dec; simpl; auto; try congruence.
+      constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
+
+      rewrite <- comp_transf_function; eauto.
+      eapply match_states_intro; eauto.
+      { eapply match_stack_external_call; eauto. }
+      { Simpl; rewrite <- H; eauto. }
+      { assert (AG': agree
+                       (Mach.set_pair (loc_result (ef_sig ef)) res
+                          (Mach.undef_caller_save_regs ms))
+                       (Vptr bsp osp)
+                       (set_pair (loc_external_result (ef_sig ef)) vres'
+                          (rs # PC <- (rs x0)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one))).
+        { eapply agree_set_pair; eauto. eapply agree_set_other; eauto.
+          eapply agree_set_other; eauto.
+
+          unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl.
+          constructor.
+          - simpl. eapply agree_sp; eauto.
+          - eapply agree_sp_def; eauto.
+          - intros. constructor. }
+        clear AG. rename AG' into AG.
+        unfold invalidate_cross_return, invalidate_return.
+        econstructor; eauto.
+        - Simpl; simpl. eapply agree_sp; eauto.
+        - congruence.
+        - intros r. Simpl.
+          destruct (preg_eq (preg_of r) PC); (try now destruct r).
+          rewrite orb_false_l.
+          destruct (preg_eq (preg_of r) X2); try now destruct r.
+          rewrite orb_false_l.
+          destruct in_dec.
+          + simpl. eapply agree_mregs in AG; eauto.
+          + simpl. unfold Mach.set_pair, Mach.undef_caller_save_regs, is_callee_save.
+            destruct loc_result.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In r0 all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. now left.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rlo all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now right; left.
+            destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rhi all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now left. }
+      { eapply external_call_valid_block; eauto. }
+      { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
+      { congruence. }
+    * (* direct call *)
+      generalize (code_tail_next_int _ _ _ _ NOOV H3). intro CT1.
+      assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c0 false tf x).
+      econstructor; eauto.
+      exploit return_address_offset_correct; eauto. intros; subst ra.
+
+      inv step2; simpl in *; try congruence.
+      assert (ef0 = ef) as -> by congruence.
+      assert (TTRANSF' := TTRANSF).
+      monadInv TTRANSF'.
+      exploit extcall_arguments_match; eauto.
+      intros [args' [extcall_args' ld_args]].
+      exploit external_call_mem_extends; eauto.
+      intros [vres' [m'' [extcall' [ld_res [ext_mem unch_mem]]]]].
+
+      left; econstructor; split.
+      apply plus_one.
+      rewrite comp_transf_function; eauto.
+      eapply exec_step_external_call; eauto.
+      eapply Genv.find_funct_ptr_iff. eapply functions_transl; eauto.
+      eapply find_instr_tail; eauto.
+      simpl; eauto.
+      rewrite allowed_addrof_preserved.
+      unfold Genv.allowed_addrof_b.
+      unfold Genv.symbol_address. rewrite symbols_preserved. unfold ge; rewrite H5.
+      apply Genv.find_funct_ptr_iff in CALLED; rewrite CALLED. reflexivity.
+      simpl; eauto.
+      (Simpl; eauto).
+
+      rewrite <- Genv.find_funct_ptr_iff; eauto.
+      rewrite <- (comp_transl_partial _ H1).
+      eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+      { Simpl. erewrite agree_sp; eauto.
+        unfold extcall_arguments in *. clear -extcall_args'.
+        revert extcall_args'.
+        generalize (Vptr bsp osp). generalize (loc_arguments (ef_sig ef)).
+        intros l; revert args'.
+        induction l.
+        - intros. inv extcall_args'. constructor.
+        - intros. inv extcall_args'.
+          specialize (IHl _ _ H3).
+          constructor; eauto.
+          inv H1.
+          + constructor; eauto.
+            inv H.
+            * replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+              constructor; eauto.
+              Simpl.
+            * econstructor; eauto.
+          + constructor; eauto.
+            * inv H.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto.
+            * inv H0.
+              -- replace (rs (preg_of r)) with
+                ((rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one) (preg_of r)).
+                 constructor; eauto.
+                 Simpl.
+              -- econstructor; eauto. }
+
+      econstructor; eauto. econstructor; eauto.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
+      erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl; rewrite <- ALLOWED.
+      destruct cp_eq_dec; simpl; auto; try congruence.
+      constructor; simpl; destruct flowsto_dec; [congruence |]; exfalso; apply n; auto with comps.
+
+      rewrite <- comp_transf_function; eauto.
+      eapply match_states_intro; eauto.
+      { eapply match_stack_external_call; eauto. }
+      { Simpl; rewrite <- H; eauto. }
+      { assert (AG': agree
+                       (Mach.set_pair (loc_result (ef_sig ef)) res
+                          (Mach.undef_caller_save_regs ms))
+                       (Vptr bsp osp)
+                       (set_pair (loc_external_result (ef_sig ef)) vres'
+                          (rs # PC <- (Vptr f' Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs PC) Ptrofs.one))).
+        { eapply agree_set_pair; eauto. eapply agree_set_other; eauto.
+          eapply agree_set_other; eauto.
+
+          unfold Mach.undef_caller_save_regs, undef_caller_save_regs; simpl.
+          constructor.
+          - simpl. eapply agree_sp; eauto.
+          - eapply agree_sp_def; eauto.
+          - intros. constructor. }
+        clear AG. rename AG' into AG.
+        unfold invalidate_cross_return, invalidate_return.
+        econstructor; eauto.
+        - Simpl; simpl. eapply agree_sp; eauto.
+        - congruence.
+        - intros r. Simpl.
+          destruct (preg_eq (preg_of r) PC); (try now destruct r).
+          rewrite orb_false_l.
+          destruct (preg_eq (preg_of r) X2); try now destruct r.
+          rewrite orb_false_l.
+          destruct in_dec.
+          + simpl. eapply agree_mregs in AG; eauto.
+          + simpl. unfold Mach.set_pair, Mach.undef_caller_save_regs, is_callee_save.
+            destruct loc_result.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In r0 all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. now left.
+            unfold Regmap.set. destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rlo all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now right; left.
+            destruct RegEq.eq; subst; auto.
+            exfalso. apply n1. assert (G: In rhi all_mregs) by now eapply all_mregs_complete.
+            apply in_all_mregs_filter; auto. simpl. now left. }
+      { eapply external_call_valid_block; eauto. }
+      { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
+      { congruence. }
 Qed.
 
 Lemma transf_initial_states:
