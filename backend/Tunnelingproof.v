@@ -755,6 +755,7 @@ Proof.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
   apply sig_preserved.
   unfold tunnel_fundef. now rewrite comp_tunnel_fundef, comp_transl.
+  destruct fd; simpl in *; try congruence.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
@@ -801,6 +802,7 @@ Proof.
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
   left; simpl; econstructor; split.
   eapply exec_Lreturn; eauto.
+  simpl.
   assert (SIG : parent_signature s = parent_signature ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
   rewrite SIG.

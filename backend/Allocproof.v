@@ -3202,6 +3202,8 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- comp_transf_fundef; eauto. rewrite <- comp_transf_function; eauto.
+  destruct fd; simpl in *; try congruence.
+  monadInv F; congruence.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   rewrite <- comp_transf_function; eauto.
   destruct (transf_function_inv _ _ FUN); auto.

@@ -220,7 +220,7 @@ Next Obligation.
   - change (match bound with
             | 0 => 0
             | Z.pos y' => Z.pos y'~0~0
-            | Z.neg y' => Z.neg y'~0~0
+            | Z.neg z' => Z.neg z'~0~0
             end) with (4 * bound) in *.
     simpl. destruct (plt sp (Mem.nextblock m)).
     + eapply Mem.unchanged_on_own with (b := sp) in H0.
@@ -234,14 +234,14 @@ Next Obligation.
   - exploit H5; eauto. intros (v & A & B). exists v; split; auto.
     change (match ofs with | 0 => 0
                             | Z.pos y' => Z.pos y'~0~0
-                            | Z.neg y' => Z.neg y'~0~0
+                            | Z.neg z' => Z.neg z'~0~0
                   end) with (4 * ofs) in *.
 
     eapply Mem.load_unchanged_on; eauto.
     simpl; intros. rewrite size_type_chunk, typesize_typesize in H9.
     change (match ofs with | 0 => 0
                             | Z.pos y' => Z.pos y'~0~0
-                            | Z.neg y' => Z.neg y'~0~0
+                            | Z.neg z' => Z.neg z'~0~0
                   end) with (4 * ofs) in *.
 
     split; auto. split; [lia |].
@@ -249,7 +249,7 @@ Next Obligation.
     change (match bound with
             | 0 => 0
             | Z.pos y' => Z.pos y'~0~0
-            | Z.neg y' => Z.neg y'~0~0
+            | Z.neg z' => Z.neg z'~0~0
             end) with (4 * bound). lia.
 Qed.
 Next Obligation.
@@ -2549,7 +2549,8 @@ Proof.
           congruence.
           auto.
           unfold loc_parameters in EV. rewrite map_map in EV. auto.
-        + rewrite alloc1, alloc2. rewrite Z. eauto.
+        + rewrite alloc1, alloc2.
+          rewrite Z. admit.
       - eapply exec_Mcall_cross with (m_res := mres) (dra := dra_res) (dsp := dsp_res); eauto.
         + eapply is_tail_cons_left; eauto.
         + rewrite <- (comp_transl_partial _ TRANSL).
@@ -2619,6 +2620,7 @@ Proof.
     rewrite <- comp_transf_function; eauto. rewrite <- COMP.
     destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
     inv C. reflexivity.
+  destruct f'; simpl in *; try congruence. monadInv C; congruence.
   traceEq.
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.

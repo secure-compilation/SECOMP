@@ -282,6 +282,7 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
+    destruct fd; simpl in *; try congruence.
   constructor. auto.
 (* builtin *)
   econstructor; split.

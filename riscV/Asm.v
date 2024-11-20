@@ -1608,7 +1608,9 @@ Definition comp_of_main (p: program) :=
   Genv.find_comp_of_ident ge (prog_main p).
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall m0,
+  | initial_state_intro: forall m0 b fi,
+      Genv.find_symbol (Genv.globalenv p) p.(prog_main) = Some b ->
+      Genv.find_funct_ptr (Genv.globalenv p) b = Some (Internal fi) ->
       let ge := Genv.globalenv p in
       let rs0 :=
         (Pregmap.init Vundef)

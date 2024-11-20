@@ -587,6 +587,7 @@ Proof.
     rewrite comp_transl, COMP. symmetry. now apply (comp_transl f).
   (* rewrite comp_transf_function. *)
   (* eapply allowed_call_translated; eauto. *)
+    destruct fd; simpl in *; try congruence.
   constructor; auto.
   apply regs_lessdef_regs; auto.
 

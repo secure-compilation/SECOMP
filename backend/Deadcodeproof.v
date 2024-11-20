@@ -1062,6 +1062,8 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
+  destruct fd; simpl in *; try congruence.
+  monadInv B; congruence.
   erewrite stacksize_translated by eauto.
   rewrite <- comp_transf_function; eauto.
   erewrite comp_transf_function; eauto.

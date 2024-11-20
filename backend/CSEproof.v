@@ -1243,6 +1243,8 @@ Proof.
   eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ TRANSF'), COMP.
   (* eapply allowed_call_translated; eauto. *)
+  destruct fd; simpl in *; try congruence.
+  monadInv TRANSF'; congruence.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
 

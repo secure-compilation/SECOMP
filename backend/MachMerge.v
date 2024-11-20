@@ -180,7 +180,9 @@ intros; constructor; simpl; intros.
         constructor. Equalities.
         assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
         eapply match_traces_call.
-      * destruct Mem.set_perm; try contradiction.
+      * destruct Genv.find_def; try contradiction.
+        destruct Mem.perm_dec; try contradiction.
+        destruct Mem.set_perm; try contradiction.
         destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
         split; auto.
         inv EV; inv EV0; try congruence.

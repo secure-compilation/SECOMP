@@ -1257,6 +1257,8 @@ Proof.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
+    destruct fd; simpl in *; try congruence.
+    destruct transf_function; simpl in *; inv B; congruence.
   rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').

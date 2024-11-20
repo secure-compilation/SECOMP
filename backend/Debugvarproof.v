@@ -556,6 +556,7 @@ Proof.
   econstructor. eauto. rewrite PLS. eexact A.
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B).
+  destruct f'; simpl in *; try congruence. monadInv B; congruence.
   eauto.
   rewrite PLS.
   replace (comp_of tf) with (comp_of f) by now inv TRF.
