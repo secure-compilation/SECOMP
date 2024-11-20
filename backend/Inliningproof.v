@@ -1599,11 +1599,16 @@ Proof.
   { unfold comp_of_main.
     erewrite <- (match_program_main); eauto.
     rewrite <- (Genv.find_comp_match TRANSF); eauto. }
+  destruct tf; try congruence.
   econstructor; eauto.
     eapply (Genv.init_mem_match TRANSF); eauto.
     rewrite symbols_preserved. replace (prog_main tprog) with (prog_main prog). auto.
     symmetry; eapply match_program_main; eauto.
-    rewrite <- H3. eapply sig_function_translated; eauto.
+    rewrite <- H3. simpl in *.
+    destruct transf_function eqn:A; simpl in *; try congruence.
+    inv TR. unfold transf_function in A. destruct expand_function, zlt; inv A; auto.
+    simpl in *.
+    destruct transf_function eqn:A; simpl in *; try congruence.
   econstructor; eauto.
   instantiate (1 := Mem.flat_inj (Mem.nextblock m0)).
   apply match_stacks_nil with (Mem.nextblock m0).

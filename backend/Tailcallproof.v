@@ -898,7 +898,7 @@ Proof.
   intros. inv H.
   exploit funct_ptr_translated; eauto.
   intros (cu & tf & FIND & Etf & ORDER). subst tf.
-  exists (Callstate nil (transf_fundef (compenv_program cu) f) nil m0 (comp_of_main prog)); split.
+  exists (Callstate nil (transf_fundef (compenv_program cu) (Internal f)) nil m0 (comp_of_main prog)); split.
   assert (comp_of_main prog = comp_of_main tprog) as ->.
   { unfold comp_of_main.
     erewrite <- (match_program_main); eauto.
@@ -908,7 +908,7 @@ Proof.
   replace (prog_main tprog) with (prog_main prog).
   rewrite symbols_preserved. eauto.
   symmetry; eapply match_program_main; eauto.
-  rewrite <- H3. apply sig_preserved.
+  rewrite <- H3. unfold transf_function; destruct zeq; auto.
   constructor. constructor.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   easy.

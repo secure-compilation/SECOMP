@@ -2500,6 +2500,7 @@ Lemma initial_states_simulation:
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
+  destruct tf as [tfi |].
   econstructor; split.
   econstructor.
   eapply (Genv.init_mem_transf_partial (proj1 TRANSF)). eauto.
@@ -2520,6 +2521,7 @@ Proof.
   extlia. extlia.
   eapply Genv.initmem_inject; eauto.
   constructor.
+  monadInv B.
 Qed.
 
 Lemma final_states_simulation:

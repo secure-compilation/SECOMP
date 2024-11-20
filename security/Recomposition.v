@@ -9890,16 +9890,31 @@ Section Simulation.
         - inv ini1.
           rewrite (match_prog_def _ _ _ _ match_W1_W3) in P; auto.
           exploit Genv.init_mem_inversion; eauto. apply in_prog_defmap; eauto. intros [AL FV].
-          split; auto. intros. exploit FV; eauto. intros (b & FS).
+          split; auto. intros. exploit FV; eauto. intros (b' & FS).
           eapply (transform_find_symbol_1 _ _ _ _ match_W1_W3); eauto.
           unfold kept_prog. unfold kept_genv. eapply found_in_W3_kept1; eauto.
         - inv ini2.
           rewrite (match_prog_def _ _ _ _ match_W2_W3) in P; auto.
           exploit Genv.init_mem_inversion; eauto. apply in_prog_defmap; eauto. intros [AL FV].
-          split; auto. intros. exploit FV; eauto. intros (b & FS).
+          split; auto. intros. exploit FV; eauto. intros (b' & FS).
           eapply (transform_find_symbol_1 _ _ _ _ match_W2_W3); eauto.
           eapply found_in_W3_kept2; eauto.
       }
+      assert (exists b, Genv.find_symbol ge3 (prog_main W3) = Some b) as [bmain find_main3].
+      { inv ini2. erewrite match_prog_main; eauto.
+        eapply transform_find_symbol_1; eauto. }
+      assert (exists main_def, Genv.find_funct_ptr ge3 bmain = Some (Internal main_def))
+        as [main_def3 find_main_def3].
+      { inv ini2.
+        eapply Genv.find_funct_ptr_iff in H1.
+        exploit find_def_preserved; eauto using init_meminj_preserves_globals.
+        unfold init_meminj. apply Genv.find_invert_symbol in H0 as H0'. rewrite H0'.
+        unfold kept_genv.  rewrite H0. fold (Genv.find_def ge2 b).
+        (* Set Printing Implicit. unfold fundef.  *)
+        setoid_rewrite H1. erewrite <- match_prog_main; eauto. rewrite find_main3.
+        reflexivity.
+        intros [? [? [MATCH ?]]]. inv MATCH. inv H6.
+        eexists; eapply Genv.find_funct_ptr_iff; eauto. }
       eexists; eexists (init_meminj s Left W1 W3, init_meminj s Right W2 W3). split.
       + econstructor; eauto.
       + inv ini1; inv ini2. subst ge. subst ge0.
@@ -9928,7 +9943,7 @@ Section Simulation.
                      now eapply init_meminj_preserves_globals.
                      clear -Heqo ini_side main_not_bottom.
                      unfold kept_genv. rewrite Heqo.
-                     fold (Genv.find_def ge1 b). unfold cp in *.
+                     fold (Genv.find_def ge1 b1). unfold cp in *.
                      unfold Genv.symbol_address in *.
                      rewrite Heqo in *. simpl in *. unfold Genv.find_comp_of_block in *.
                      destruct Genv.find_def; try contradiction. destruct g; auto. simpl in *.
@@ -9977,7 +9992,7 @@ Section Simulation.
                      now eapply init_meminj_preserves_globals.
                      clear -Heqo ini_side main_not_bottom same_cp_main1. subst cp.
                      unfold kept_genv. rewrite Heqo.
-                     fold (Genv.find_def ge2 b).
+                     fold (Genv.find_def ge2 b1).
                      unfold Genv.symbol_address in *.
                      rewrite Heqo in *. simpl in *. unfold Genv.find_comp_of_block in *.
                      destruct Genv.find_def; try contradiction. destruct g; auto. simpl in *.

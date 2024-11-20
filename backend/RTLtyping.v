@@ -992,10 +992,10 @@ Qed.
 Lemma wt_initial_state:
   forall S, initial_state p S -> wt_state S.
 Proof.
-  intros. inv H. constructor. constructor. rewrite H3; auto.
-  pattern f. apply Genv.find_funct_ptr_prop with unit _ p b.
+  intros. inv H. constructor. constructor. simpl; rewrite H3; auto.
+  pattern (Internal f). apply Genv.find_funct_ptr_prop with unit _ p b.
   exact wt_p. exact H2.
-  rewrite H3. constructor.
+  simpl; rewrite H3. constructor.
 Qed.
 
 Lemma wt_instr_inv:

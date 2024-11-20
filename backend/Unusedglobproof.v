@@ -1475,7 +1475,7 @@ Proof.
   exploit defs_inject. eauto. eexact Q. exact H2.
   intros (R & S & T).
   rewrite <- Genv.find_funct_ptr_iff in R.
-  exists (Callstate nil f nil tm (comp_of_main tp)); split.
+  exists (Callstate nil (Internal f) nil tm (comp_of_main tp)); split.
   econstructor; eauto.
   fold tge. erewrite match_prog_main by eauto. auto.
   unfold comp_of_main.

@@ -698,8 +698,8 @@ Lemma wt_initial_state:
   forall S, initial_state p S -> wt_state S.
 Proof.
   intros. inv H. constructor. eapply Genv.find_funct_ptr_prop; eauto.
-  rewrite H3; constructor.
-  rewrite H3; constructor.
+  simpl. rewrite H3; constructor.
+  simpl. rewrite H3; constructor.
 Qed.
 
 End SUBJECT_REDUCTION.

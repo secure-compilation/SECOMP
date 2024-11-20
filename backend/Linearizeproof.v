@@ -834,16 +834,21 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 (comp_of_main tprog)); split.
+  destruct tf as [tfi |].
+  exists (Callstate nil (Internal tfi) signature_main (Locmap.init Vundef) m0 (comp_of_main tprog)); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
-  rewrite <- H3. apply sig_preserved. auto.
+  replace (fn_sig tfi) with (funsig (Internal tfi)) by reflexivity.
+  rewrite <- H3.
+  replace (LTL.fn_sig f) with (LTL.funsig (Internal f)) by reflexivity.
+  apply sig_preserved; auto.
   assert (LTL.comp_of_main prog = comp_of_main tprog) as ->.
   { unfold LTL.comp_of_main, comp_of_main.
     rewrite (match_program_main TRANSF).
     rewrite <- (Genv.find_comp_match TRANSF); eauto. }
   constructor. constructor. auto.
+  monadInv B.
 Qed.
 
 Lemma transf_final_states:

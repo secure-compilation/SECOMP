@@ -2828,18 +2828,24 @@ Lemma transf_initial_states:
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
+  destruct tf as [tfi |].
   econstructor; split.
   econstructor.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
-  rewrite symbols_preserved. eauto.
+  rewrite symbols_preserved. eauto. eauto.
   set (j := Mem.flat_inj (Mem.nextblock m0)).
   assert (Linear.comp_of_main prog = comp_of_main tprog) as ->.
   { unfold comp_of_main.
     erewrite (match_program_main TRANSF); eauto.
     rewrite (Genv.find_comp_match TRANSF); eauto. }
   eapply match_states_call with (j := j); eauto.
-  constructor. red; intros. rewrite H3, loc_arguments_main in H. contradiction.
+  constructor. red; intros.
+  replace (fn_sig tfi) with (funsig (Internal tfi)) by reflexivity.
+  simpl in H.
+  (* replace (fn_sig f) with (funsig (Internal f)) by reflexivity. *)
+  (* apply sig_preserved. auto. *)
+  rewrite H3, loc_arguments_main in H. contradiction.
   red; simpl; auto.
   simpl. rewrite sep_pure. split; auto. split;[|split].
   eapply Genv.initmem_inject; eauto.
@@ -2851,6 +2857,7 @@ Proof.
     change (Mem.valid_block m0 b0). eapply Genv.find_funct_ptr_not_fresh; eauto.
     change (Mem.valid_block m0 b0). eapply Genv.find_var_info_not_fresh; eauto.
   red; simpl; tauto.
+  monadInv TR.
 Qed.
 
 Lemma transf_final_states:

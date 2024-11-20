@@ -3395,23 +3395,25 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf signature_main (Locmap.init Vundef) m0 (LTL.comp_of_main tprog)); split.
+  destruct tf as [tfi |].
+  exists (LTL.Callstate nil (Internal tfi) signature_main (Locmap.init Vundef) m0 (LTL.comp_of_main tprog)); split.
   econstructor; eauto.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite symbols_preserved.
   rewrite (match_program_main TRANSF).  auto.
-  congruence.
-  rewrite <- H3, <- SIG.
+  simpl in SIG. congruence.
+  simpl in SIG. rewrite <- H3, <- SIG.
   assert (RTL.comp_of_main prog = LTL.comp_of_main tprog) as ->.
   { unfold comp_of_main.
     erewrite (match_program_main TRANSF); eauto.
     rewrite (Genv.find_comp_match TRANSF); eauto. }
   constructor; auto.
-  constructor. rewrite SIG; rewrite H3; auto.
-  rewrite SIG, H3, loc_arguments_main. auto.
+  constructor. simpl. rewrite SIG; rewrite H3; auto.
+  simpl; rewrite SIG, H3, loc_arguments_main. auto.
   red; auto.
   apply Mem.extends_refl.
-  rewrite SIG, H3. constructor.
+  simpl; rewrite SIG, H3. constructor.
+  simpl in TR. monadInv TR.
 Qed.
 
 Lemma final_states_simulation:

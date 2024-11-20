@@ -2374,6 +2374,7 @@ Lemma transl_initial_states:
 Proof.
   induction 1.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
+  destruct tf as [tfi |].
   econstructor; split.
   econstructor.
   apply (Genv.init_mem_transf_partial TRANSL). eauto.
@@ -2382,7 +2383,10 @@ Proof.
   symmetry. unfold transl_program in TRANSL.
   eapply match_program_main; eauto. 
   eexact FIND.
-  rewrite <- H2. apply sig_preserved; auto.
+  rewrite <- H2.
+  replace (fn_sig tfi) with (funsig (Internal tfi)) by reflexivity.
+  replace (Csharpminor.fn_sig f) with (Csharpminor.funsig (Internal f)) by reflexivity.
+  apply sig_preserved; auto.
   replace (comp_of_main tprog) with (Csharpminor.call_comp cp_main Csharpminor.Kstop).
   eapply match_callstate with
     (f := Mem.flat_inj (Mem.nextblock m0))
@@ -2396,6 +2400,8 @@ Proof.
   unfold comp_of_main, cp_main, Csharpminor.comp_of_main, Csharpminor.call_comp; simpl.
   rewrite (match_program_main TRANSL).
   rewrite (Genv.find_comp_match TRANSL); auto.
+
+  monadInv TR.
 Qed.
 
 Lemma transl_final_states:

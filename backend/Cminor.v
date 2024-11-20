@@ -589,9 +589,9 @@ Inductive initial_state (p: program): state -> Prop :=
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0 (comp_of_main p)).
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      fn_sig f = signature_main ->
+      initial_state p (Callstate (Internal f) nil Kstop m0 (comp_of_main p)).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -987,9 +987,9 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
-      eval_funcall ge (comp_of_main p) m0 f nil t m (Vint r) ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      fn_sig f = signature_main ->
+      eval_funcall ge (comp_of_main p) m0 (Internal f) nil t m (Vint r) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -998,9 +998,9 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
-      evalinf_funcall ge (comp_of_main p) m0 f nil t ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      fn_sig f = signature_main ->
+      evalinf_funcall ge (comp_of_main p) m0 (Internal f) nil t ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=

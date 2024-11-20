@@ -1666,17 +1666,20 @@ Lemma sel_initial_states:
 Proof.
   destruct 1.
   exploit function_ptr_translated; eauto. intros (cu & f' & A & B & C).
+  inv B. destruct H3. simpl in H4. monadInv H4.
   econstructor; split.
   econstructor.
   eapply (Genv.init_mem_match TRANSF); eauto.
   rewrite (match_program_main TRANSF). fold tge. rewrite symbols_preserved. eauto.
   eexact A.
-  rewrite <- H2. eapply sig_function_translated; eauto.
+  rewrite <- H2. unfold sel_function in EQ. monadInv EQ. reflexivity.
   assert (Cminor.comp_of_main prog = comp_of_main tprog) as ->.
   { unfold Cminor.comp_of_main, comp_of_main.
     rewrite (match_program_main TRANSF).
     rewrite <- (Genv.find_comp_match TRANSF); eauto. }
-  econstructor; eauto. constructor. apply Mem.extends_refl.
+  econstructor; eauto.
+  econstructor; split; eauto. simpl.  rewrite EQ. auto.
+  constructor. apply Mem.extends_refl.
 Qed.
 
 Lemma sel_final_states:

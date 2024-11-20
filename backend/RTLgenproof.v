@@ -1750,12 +1750,15 @@ Lemma transl_initial_states:
 Proof.
   induction 1.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
+  assert (B' := B).
+  monadInv B.
   econstructor; split.
   econstructor. apply (Genv.init_mem_transf_partial TRANSL); eauto.
   replace (prog_main tprog) with (prog_main prog). rewrite symbols_preserved; eauto.
   symmetry; eapply match_program_main; eauto.
   eexact A.
-  rewrite <- H2. apply sig_transl_function; auto.
+  rewrite <- H2.
+  apply sig_transl_function in B'; auto.
   assert (CminorSel.comp_of_main prog = comp_of_main tprog) as ->.
   { unfold CminorSel.comp_of_main, comp_of_main.
     erewrite <- (match_program_main); eauto.

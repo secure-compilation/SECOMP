@@ -328,12 +328,14 @@ Lemma transf_initial_states:
   forall S1, RTL.initial_state prog S1 ->
   exists S2, RTL.initial_state tprog S2 /\ match_states S1 S2.
 Proof.
-  intros. inv H. econstructor; split.
+  intros. inv H.
+    exploit function_ptr_translated; eauto. intros ?.
+  econstructor; split.
   econstructor.
     eapply (Genv.init_mem_transf TRANSL); eauto.
     rewrite symbols_preserved. rewrite (match_program_main TRANSL). eauto.
-    eapply function_ptr_translated; eauto.
-    rewrite <- H3; apply sig_preserved.
+    eauto.
+    rewrite <- H3; unfold transf_function; auto.
 
   assert (comp_of_main prog = comp_of_main tprog) as ->.
   { unfold comp_of_main.

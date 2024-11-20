@@ -3080,9 +3080,9 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
-      type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      eval_funcall ge (comp_of_main p) m0 f nil t m1 (Vint r) ty ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      eval_funcall ge (comp_of_main p) m0 (Internal f) nil t m1 (Vint r) ty ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -3090,9 +3090,9 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
-      type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      evalinf_funcall ge m0 f nil t ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      evalinf_funcall ge m0 (Internal f) nil t ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=

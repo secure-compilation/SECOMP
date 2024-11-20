@@ -3271,8 +3271,15 @@ Proof.
   intros. inversion H. unfold ge0 in *.
   destruct (Genv.find_symbol_find_def_inversion _ _ H1)
     as [main_def find_main].
+  exploit functions_translated; eauto. intros [tf [A B]].
+  simpl in B. monadInv B.
+  exploit functions_transl; eauto. intros ?.
   econstructor; split.
   econstructor.
+
+  rewrite symbols_preserved. erewrite (match_program_main TRANSF); eauto.
+  eauto.
+
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   replace (Genv.symbol_address (Genv.globalenv tprog) (prog_main tprog) Ptrofs.zero)
      with (Vptr fb Ptrofs.zero).
@@ -3282,7 +3289,7 @@ Proof.
     rewrite (Genv.find_comp_match TRANSF); eauto. }
   econstructor; eauto.
   constructor.
-  admit.
+  unfold ge; congruence.
   constructor.
   eapply Mem.extends_refl.
   constructor. Simpl.
@@ -3293,7 +3300,7 @@ Proof.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
   unfold ge; rewrite H1. auto.
-Admitted.
+Qed.
 
 Lemma transf_final_states:
   forall st1 st2 r,

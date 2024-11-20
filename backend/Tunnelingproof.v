@@ -853,7 +853,8 @@ Lemma transf_initial_states:
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0 (comp_of_main prog)); split.
+  exploit function_ptr_translated; eauto. intros ?.
+  exists (Callstate nil (tunnel_fundef (Internal f)) signature_main (Locmap.init Vundef) m0 (comp_of_main prog)); split.
   assert (comp_of_main prog = comp_of_main tprog) as ->.
   { unfold comp_of_main.
     erewrite (match_program_main TRANSL); eauto.
@@ -862,8 +863,7 @@ Proof.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).
   rewrite symbols_preserved. eauto.
-  apply function_ptr_translated; eauto.
-  rewrite <- H3. apply sig_preserved.
+  rewrite <- H3.
   constructor. constructor. red; simpl; auto. apply Mem.extends_refl.
 Qed.
 

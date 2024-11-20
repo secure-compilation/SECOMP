@@ -694,10 +694,11 @@ Definition comp_of_main (p: program) :=
   Genv.find_comp_of_ident ge (prog_main p).
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall fb m0,
+  | initial_state_intro: forall fb fi m0,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some fb ->
+      Genv.find_funct_ptr ge fb = Some (Internal fi) ->
       initial_state p (Callstate nil fb signature_main (Regmap.init Vundef) m0 (comp_of_main p)).
 
 Inductive final_state: state -> int -> Prop :=

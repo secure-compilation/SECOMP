@@ -710,7 +710,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & FIND & LINK).
-  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0 (comp_of_main prog)); split.
+  exists O; exists (Callstate nil (transf_fundef (romem_for cu) (Internal f)) nil m0 (comp_of_main prog)); split.
   assert (comp_of_main prog = comp_of_main tprog) as ->.
   { unfold comp_of_main.
     erewrite <- (match_program_main); eauto.
@@ -720,7 +720,6 @@ Proof.
   replace (prog_main tprog) with (prog_main prog).
   rewrite symbols_preserved. eauto.
   symmetry; eapply match_program_main; eauto.
-  rewrite <- H3. apply sig_function_translated.
   constructor. auto. constructor. constructor. apply Mem.extends_refl.
 Qed.
 

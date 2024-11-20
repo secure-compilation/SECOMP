@@ -2581,6 +2581,7 @@ Lemma transl_initial_states:
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & FIND & TR & L).
+  destruct tf as [tfi |].
   econstructor; split.
   econstructor.
   eapply (Genv.init_mem_match (proj1 TRANSL)); eauto.
@@ -2590,6 +2591,7 @@ Proof.
   eexact FIND.
   rewrite <- H3. eapply type_of_fundef_preserved; eauto.
   econstructor; eauto. intros; constructor.
+  inv TR.
 Qed.
 
 Lemma transl_final_states:

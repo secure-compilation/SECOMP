@@ -2084,13 +2084,16 @@ Lemma transl_initial_states:
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
+  destruct tf as [tfi |] eqn:?.
   assert (D: Genv.find_symbol tge (AST.prog_main tprog) = Some b).
   { destruct TRANSL as (P & Q & R). rewrite Q. rewrite symbols_preserved. auto. }
   assert (E: funsig tf = signature_of_type Tnil type_int32s cc_default).
-  { eapply transl_fundef_sig2; eauto. }
+  { subst tf. eapply transl_fundef_sig2; eauto. }
   econstructor; split.
   econstructor; eauto. apply (Genv.init_mem_match TRANSL). eauto.
+  subst tf; simpl in E; eauto.
   econstructor; eauto. instantiate (1 := prog_comp_env cu). constructor; auto. exact I.
+  inv B.
 Qed.
 
 Lemma transl_final_states:

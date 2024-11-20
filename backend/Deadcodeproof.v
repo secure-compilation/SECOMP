@@ -1333,7 +1333,8 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil tf nil m0 (comp_of_main prog)); split.
+  destruct tf as [tfi |].
+  exists (Callstate nil (Internal tfi) nil m0 (comp_of_main prog)); split.
   assert (comp_of_main prog = comp_of_main tprog) as ->.
   { unfold comp_of_main.
     erewrite <- (match_program_main); eauto.
@@ -1343,8 +1344,12 @@ Proof.
   replace (prog_main tprog) with (prog_main prog).
   rewrite symbols_preserved. eauto.
   symmetry; eapply match_program_main; eauto.
-  rewrite <- H3. eapply sig_function_translated; eauto.
+  rewrite <- H3.
+  replace (fn_sig tfi) with (funsig (Internal tfi)) by reflexivity.
+  replace (fn_sig f) with (funsig (Internal f)) by reflexivity.
+  eapply sig_function_translated; eauto.
   econstructor; eauto. constructor. apply Mem.extends_refl.
+  monadInv B.
 Qed.
 
 Lemma transf_final_states:
