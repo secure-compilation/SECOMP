@@ -1309,7 +1309,7 @@ Definition initial_stack: stack := nil.
 
   Inductive state: Type :=
   | State: stack -> regset -> mem -> compartment -> state
-  | ReturnState: stack -> regset -> mem -> compartment -> state.
+  | ReturnState: stack -> regset -> mem -> signature -> compartment -> state.
 
 Definition sig_call i :=
   match i with
@@ -1518,17 +1518,17 @@ Inductive step: state -> trace -> state -> Prop :=
       exec_instr f i rs m (comp_of f) = Next rs' m' ->
       is_return i = true ->
       (* We attempt a return, so we go to a ReturnState*)
-      step (State st rs m cp) E0 (ReturnState st rs' m' (comp_of f))
+      step (State st rs m cp) E0 (ReturnState st rs' m' (fn_sig f) (comp_of f))
   | exec_step_return:
-      forall st rs rs' m rec_cp cp b ofs fd,
+      forall st rs rs' m rec_cp cp b ofs fd sg,
         rs PC <> Vnullptr ->
         rs PC <> Vundef ->
         forall (ATPC: rs PC = Vptr b ofs),
         forall (FD: Genv.find_def ge b = Some (Gfun (Internal fd))),
         forall (NEXTCOMP: Genv.find_comp_in_genv ge (rs PC) = cp),
         forall (INTERNAL_RET: rec_cp = cp),
-        forall (INVALIDATE: invalidate_return rs (fn_sig fd) = rs'),
-          step (ReturnState st rs m rec_cp) E0 (State st rs' m cp)
+        forall (INVALIDATE: invalidate_return rs sg = rs'),
+          step (ReturnState st rs m sg rec_cp) E0 (State st rs' m cp)
   | exec_step_return_cross:
       forall st st' rs rs' rs'' m m' sg t rec_cp cp',
         rs PC <> Vnullptr ->
@@ -1541,7 +1541,7 @@ Inductive step: state -> trace -> state -> Prop :=
         (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
         forall (STUPD: update_stack_return st = Some st'),
-        forall (SIG_STACK: sig_of_call st = sg),
+        forall (SIG_STACK: sig_res (sig_of_call st) = sig_res sg),
         (* We do not return a pointer *)
         forall (NO_CROSS_PTR: Genv.type_of_call cp' rec_cp = Genv.CrossCompartmentCall ->
                          not_ptr (return_value rs sg)),
@@ -1554,7 +1554,7 @@ Inductive step: state -> trace -> state -> Prop :=
                              | Vptr bsp _ => Mem.set_perm m bsp Freeable
                              | _ => None
                              end),
-          step (ReturnState st rs m rec_cp) t (State st' rs'' m' cp')
+          step (ReturnState st rs m sg rec_cp) t (State st' rs'' m' cp')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
@@ -1621,10 +1621,10 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (State nil rs0 m0 (comp_of_main p)).
 
 Inductive final_state (p: program): state -> int -> Prop :=
-  | final_state_intro: forall rs m r cp,
+  | final_state_intro: forall rs m r sg cp,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state p (ReturnState nil rs m cp) r
+      final_state p (ReturnState nil rs m sg cp) r
 .
 
 Definition semantics (p: program) :=

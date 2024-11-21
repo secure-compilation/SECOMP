@@ -584,10 +584,12 @@ Inductive step: state -> trace -> state -> Prop :=
         t (Callstate (Stackframe fb sig sp ra c dra dsp :: s)
                        f' sig rs m_res (comp_of f))
   | exec_Mtailcall:
-      forall s fb stk soff sig ros c rs m f f' m',
+      forall s fb stk soff sig ros c rs m f f' m' fi,
       forall (NEXTCOMP: Genv.find_comp_of_block ge f' = comp_of f),
       find_function_ptr ge ros rs = Some f' ->
-      forall (NOTEXT: forall ef, Genv.find_funct_ptr ge f' <> Some (External ef)),
+      forall (INT: Genv.find_funct_ptr ge f' = Some (Internal fi)),
+      forall (SIG_RES: sig_res sig = sig_res (fn_sig fi)),
+      forall (SIG_RES': sig_res sig = sig_res (parent_signature s)),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (comp_of f)
       = Some (dummy_parent_sp s) ->
@@ -699,6 +701,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some fb ->
       Genv.find_funct_ptr ge fb = Some (Internal fi) ->
+      fn_sig fi = signature_main ->
       initial_state p (Callstate nil fb signature_main (Regmap.init Vundef) m0 (comp_of_main p)).
 
 Inductive final_state: state -> int -> Prop :=

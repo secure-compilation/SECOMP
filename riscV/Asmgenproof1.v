@@ -1507,13 +1507,13 @@ Qed.
 (** Function epilogues *)
 
 Lemma make_epilogue_correct:
-  forall ge0 f m stk soff cs m' ms rs k tm,
+  forall sg ge0 f m stk soff cs m' ms rs k tm,
   load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (comp_of f) = Some (dummy_parent_sp cs) ->
   load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (comp_of f) = Some (dummy_parent_ra cs) ->
   Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
   agree ms (Vptr stk soff) rs ->
   Mem.extends m tm ->
-  match_stack ge0 m cs ->
+  match_stack ge0 m sg cs ->
   comp_of f = comp_of fn ->
   exists rs', exists tm',
      exec_straight ge fn (make_epilogue f k) rs tm k rs' tm'

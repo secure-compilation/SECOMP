@@ -2607,6 +2607,7 @@ Proof.
     clear -R Z. admit.
 
 - (* Ltailcall *)
+  destruct f'; simpl in *; try congruence.
   rewrite (sep_swap (stack_contents j s cs')) in SEP.
   exploit function_epilogue_correct; eauto.
   clear SEP. intros (rs1 & m1' & P & Q & R & S & T & U & SEP).
@@ -2614,18 +2615,21 @@ Proof.
   exploit find_function_translated'; eauto.
     eapply sep_proj2. eapply sep_proj2. eexact SEP.
   intros [bf [tf' [A [B C]]]].
+  monadInv C.
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ B); unfold comp_of; simpl.
-    rewrite <- comp_transf_function; eauto. rewrite <- COMP.
-    destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
-    inv C. reflexivity.
-  destruct f'; simpl in *; try congruence. monadInv C; congruence.
+    rewrite <- comp_transf_function; eauto. rewrite <- comp_transf_function; eauto.
+    (* destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto. *)
+    (* inv C. reflexivity. *)
+  (* destruct f'; simpl in *; try congruence. monadInv C; congruence. *)
+    admit. admit.
   traceEq.
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
   apply match_stacks_change_sig with (Linear.fn_sig f); auto.
   apply zero_size_arguments_tailcall_possible. eapply wt_state_tailcall; eauto.
+  simpl; eauto. rewrite EQ; auto.
 
 - (* Lbuiltin *)
   destruct BOUND as [BND1 BND2].
@@ -2834,6 +2838,7 @@ Proof.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto. eauto.
+  exploit sig_preserved; eauto. simpl. intros ->. eauto.
   set (j := Mem.flat_inj (Mem.nextblock m0)).
   assert (Linear.comp_of_main prog = comp_of_main tprog) as ->.
   { unfold comp_of_main.
