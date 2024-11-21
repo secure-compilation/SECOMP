@@ -718,9 +718,9 @@ meminj_preserves_globals which will allow us to prove preservation of events.
     (*     comp = Genv.find_comp_in_genv ge (rs X1) -> *)
     (*     cp = comp -> *)
     (*     comp_of_state ge (State st rs m cp) comp *)
-    | comp_of_returnstate_internal: forall st rs m rec_cp,
+    | comp_of_returnstate_internal: forall st rs m sg rec_cp,
         rec_cp <> bottom ->
-        comp_of_state ge (ReturnState st rs m rec_cp) rec_cp
+        comp_of_state ge (ReturnState st rs m sg rec_cp) rec_cp
     (* | comp_of_returnstate_external: forall st rs m comp, *)
     (*     comp = Genv.find_comp_in_genv ge (rs PC) -> *)
     (*     comp_of_state ge (ReturnState st rs m bottom) comp *)
@@ -749,15 +749,16 @@ meminj_preserves_globals which will allow us to prove preservation of events.
       regset_rel j rs rs' ->
       mem_rel ge ge' j δ m m' ->
       strong_equivalence ge ge' j δ (State st rs m cp') (State st' rs' m' cp')
-  | strong_equivalence_ReturnState: forall st st' (rs rs': regset) m m' cp rec_cp,
+  | strong_equivalence_ReturnState: forall st st' (rs rs': regset) m m' cp sg rec_cp,
     (* careful, the current comp in a returnstate is given by [rec_cp] *)
-    forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
-      (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp) cp)
+    forall (COMP1: comp_of_state ge (ReturnState st rs m sg rec_cp) cp)
+      (COMP2: comp_of_state ge' (ReturnState st' rs' m' sg rec_cp) cp)
       (SIDE: s cp = δ),
     forall (ST_RS: callee_comp cp_main st' = cp),
+    forall (SIG: cp <> rec_cp -> sg = sig_of_call st),
       regset_rel j rs rs' ->
       mem_rel ge ge' j δ m m' ->
-      strong_equivalence ge ge' j δ (ReturnState st rs m rec_cp) (ReturnState st' rs' m' rec_cp)
+      strong_equivalence ge ge' j δ (ReturnState st rs m sg rec_cp) (ReturnState st' rs' m' sg rec_cp)
   .
 
 
@@ -774,27 +775,28 @@ meminj_preserves_globals which will allow us to prove preservation of events.
       (NOBOTTOM'': cp'' <> bottom),
       mem_rel ge ge' j δ m m' ->
       weak_equivalence ge ge' j δ (State st rs m cp') (State st' rs' m' cp'')
-  | weak_equivalence_ReturnState: forall st st' rs rs' m m' cp rec_cp rec_cp',
+  | weak_equivalence_ReturnState: forall st st' rs rs' m m' cp sg sg' rec_cp rec_cp',
     (* careful, the current comp in a returnstate is given by [callee_comp] *)
-    forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
-      (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp') cp)
+    forall (COMP1: comp_of_state ge (ReturnState st rs m sg rec_cp) cp)
+      (COMP2: comp_of_state ge' (ReturnState st' rs' m' sg' rec_cp') cp)
       (SIDE: s cp = opposite δ),
+    (* forall (SAME_RES: sig_res sg = sig_res sg'), *)
     forall (NOTOP: cp <> top)
       (NOBOTTOM: cp <> bottom),
       mem_rel ge ge' j δ m m' ->
-      weak_equivalence ge ge' j δ (ReturnState st rs m rec_cp) (ReturnState st' rs' m' rec_cp')
-  | weak_equivalence_State_ReturnState: forall st st' rs rs' m m' cp cp' rec_cp',
+      weak_equivalence ge ge' j δ (ReturnState st rs m sg rec_cp) (ReturnState st' rs' m' sg' rec_cp')
+  | weak_equivalence_State_ReturnState: forall st st' rs rs' m m' cp cp' sg rec_cp',
     forall (COMP1: comp_of_state ge (State st rs m cp') cp)
-      (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp') cp)
+      (COMP2: comp_of_state ge' (ReturnState st' rs' m' sg rec_cp') cp)
       (SIDE: s cp = opposite δ),
     forall (NOTOP: cp <> top)
       (NOBOTTOM: cp <> bottom),
     forall (NOTOP': cp' <> top)
       (NOBOTTOM': cp' <> bottom),
       mem_rel ge ge' j δ m m' ->
-      weak_equivalence ge ge' j δ (State st rs m cp') (ReturnState st' rs' m' rec_cp')
-  | weak_equivalence_ReturnState_State: forall st st' rs rs' m m' cp cp' rec_cp,
-    forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
+      weak_equivalence ge ge' j δ (State st rs m cp') (ReturnState st' rs' m' sg rec_cp')
+  | weak_equivalence_ReturnState_State: forall st st' rs rs' m m' cp cp' sg rec_cp,
+    forall (COMP1: comp_of_state ge (ReturnState st rs m sg rec_cp) cp)
       (COMP2: comp_of_state ge' (State st' rs' m' cp') cp)
       (SIDE: s cp = opposite δ),
     forall (NOTOP: cp <> top)
@@ -802,7 +804,7 @@ meminj_preserves_globals which will allow us to prove preservation of events.
     forall (NOTOP': cp' <> top)
       (NOBOTTOM': cp' <> bottom),
       mem_rel ge ge' j δ m m' ->
-      weak_equivalence ge ge' j δ (ReturnState st rs m rec_cp) (State st' rs' m' cp')
+      weak_equivalence ge ge' j δ (ReturnState st rs m sg rec_cp) (State st' rs' m' cp')
   .
 
   Lemma weak_equivalence_inv1 (ge ge': genv) (j: meminj) (δ: side) (s1 s3: state) :
@@ -810,11 +812,11 @@ meminj_preserves_globals which will allow us to prove preservation of events.
     exists st1 rs1 m1,
       match s3 with
       | State st3 rs3 m3 _
-      | ReturnState st3 rs3 m3 _ => mem_rel ge ge' j δ m1 m3
+      | ReturnState st3 rs3 m3 _ _ => mem_rel ge ge' j δ m1 m3
       end /\
         s1 = match s1 with
              | State _ _ _ cp => State st1 rs1 m1 cp
-             | ReturnState _ _ _ cp => ReturnState st1 rs1 m1 cp
+             | ReturnState _ _ _ sg cp => ReturnState st1 rs1 m1 sg cp
              end.
   Proof.
     intros weak_s1_s3.
@@ -827,11 +829,11 @@ meminj_preserves_globals which will allow us to prove preservation of events.
       mem_rel ge ge' j δ m1 m3 /\
         s1 = match s1 with
              | State _ _ _ cp => State st1 rs1 m1 cp
-             | ReturnState _ _ _ cp => ReturnState st1 rs1 m1 cp
+             | ReturnState _ _ _ sg cp => ReturnState st1 rs1 m1 sg cp
              end /\
         s3 = match s3 with
              | State _ _ _ cp => State st3 rs3 m3 cp
-             | ReturnState _ _ _ cp => ReturnState st3 rs3 m3 cp
+             | ReturnState _ _ _ sg cp => ReturnState st3 rs3 m3 sg cp
              end.
   Proof.
     intros weak_s1_s3.
@@ -5195,10 +5197,10 @@ Section Theorems.
   Qed.
 
   Lemma strong_equiv_returnstate_inv:
-    forall j__δ st1 rs1 m1 s3 rec_cp,
-      strong_equivalence s cp_main ge1 ge3 j__δ δ (ReturnState st1 rs1 m1 rec_cp) s3 ->
+    forall j__δ st1 rs1 m1 s3 sg rec_cp,
+      strong_equivalence s cp_main ge1 ge3 j__δ δ (ReturnState st1 rs1 m1 sg rec_cp) s3 ->
       exists st3 rs3 m3,
-        s3 = ReturnState st3 rs3 m3 rec_cp /\
+        s3 = ReturnState st3 rs3 m3 sg rec_cp /\
           mem_rel s ge1 ge3 j__δ δ m1 m3 /\
           regset_rel j__δ rs1 rs3.
   Proof.
@@ -5931,11 +5933,11 @@ Section Theorems.
 
   Definition stack_of_state (s: state) :=
     match s with
-    | State st _ _ _ | ReturnState st _ _ _ => st
+    | State st _ _ _ | ReturnState st _ _ _ _ => st
     end.
   Definition mem_of_state (s: state) :=
     match s with
-    | State st _ m _ | ReturnState st _ m _ => m
+    | State st _ m _ | ReturnState st _ m _ _ => m
     end.
 
 
@@ -6523,7 +6525,7 @@ Section Theorems.
 
 
 
-      exists (ReturnState st3 rs3' m3' (comp_of f)), j__δ'; split; [| split; [| split; [| split; [| split]]]].
+      exists (ReturnState st3 rs3' m3' (fn_sig f) (comp_of f)), j__δ'; split; [| split; [| split; [| split; [| split]]]].
       + econstructor; [| now eapply star_refl | now traceEq].
         eapply exec_step_internal_return; eauto.
       + eauto.
@@ -6536,6 +6538,7 @@ Section Theorems.
         * inv strong_s1_s3; eauto. inv COMP1.
           rewrite H0 in H10; simpl in H10; unfold Genv.find_comp_of_block in H10;
             rewrite H1 in H10. auto.
+        * congruence.
       + inv weak_s2_s3; inv A; econstructor; eauto.
         * inv COMP2.
           -- rewrite eq_pc'; simpl; unfold Genv.find_comp_of_block; rewrite find_funct.
@@ -6569,7 +6572,7 @@ Section Theorems.
       intros [? [? [R ?]]].
       inv R; eauto. inv H7; eauto.
 
-      exists (State st3 (invalidate_return rs3 sig) m3
+      exists (State st3 (invalidate_return rs3 sg) m3
            (Genv.find_comp_in_genv ge1 (rs PC))), j__δ;
         split; [| split; [| split; [| split; [| split]]]].
       + econstructor; [| now eapply star_refl | now traceEq].
@@ -8266,20 +8269,28 @@ Section Theorems.
           specialize (rs_rs3 SP). rewrite RESTORE_SP in rs_rs3.
           inv rs_rs3; inv H7. congruence. }
 
-      assert (inj_res: Val.inject j__δ (return_value rs (sig_of_call (frame3 :: st3')))
-                         (return_value rs3 (sig_of_call (frame3 :: st3')))). {
+      (* assert (inj_res: Val.inject j__δ (return_value rs (sig_of_call (frame3 :: st3'))) *)
+      (*                    (return_value rs3 (sig_of_call (frame3 :: st3')))). { *)
+      (*   unfold return_value. *)
+      (*   destruct (loc_result (sig_of_call (frame3 :: st3'))). *)
+      (*   - specialize (rs_rs3 (preg_of r)); eauto. *)
+      (*   - pose proof (rs_rs3 (preg_of rhi)) as X; *)
+      (*       pose proof (rs_rs3 (preg_of rlo)) as Y. *)
+      (*     now eapply Val.longofwords_inject. } *)
+      assert (inj_res: Val.inject j__δ (return_value rs sg)
+                         (return_value rs3 sg)). {
         unfold return_value.
-        destruct (loc_result (sig_of_call (frame3 :: st3'))).
+        destruct (loc_result sg).
         - specialize (rs_rs3 (preg_of r)); eauto.
         - pose proof (rs_rs3 (preg_of rhi)) as X;
             pose proof (rs_rs3 (preg_of rlo)) as Y.
           now eapply Val.longofwords_inject. }
       assert (NO_CROSS_PTR':
-               not_ptr (return_value rs3 (sig_of_call (frame3 :: st3')))).
+               not_ptr (return_value rs3 sg)).
       {(* exploit NO_CROSS_PTR; eauto. *)
-        assert (A: sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')).
-        { inv frame_rel; auto. }
-        rewrite A in NO_CROSS_PTR.
+        (* assert (A: sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')). *)
+        (* { inv frame_rel; auto. } *)
+        (* rewrite A in NO_CROSS_PTR. *)
         clear -inj_res diff_comp1 NO_CROSS_PTR. simpl in *.
         destruct flowsto_dec; try congruence. specialize (NO_CROSS_PTR eq_refl).
         inv inj_res; eauto; try intuition congruence.
@@ -8287,15 +8298,32 @@ Section Theorems.
         contradiction.
         rewrite <- H0 in NO_CROSS_PTR.
         contradiction. }
+      (* assert (NO_CROSS_PTR': *)
+      (*          not_ptr (return_value rs3 (sig_of_call (frame3 :: st3')))). *)
+      (* {(* exploit NO_CROSS_PTR; eauto. *) *)
+      (*   assert (A: sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')). *)
+      (*   { inv frame_rel; auto. } *)
+      (*   rewrite A in NO_CROSS_PTR. *)
+      (*   clear -inj_res diff_comp1 NO_CROSS_PTR. simpl in *. *)
+      (*   destruct flowsto_dec; try congruence. specialize (NO_CROSS_PTR eq_refl). *)
+      (*   inv inj_res; eauto; try intuition congruence. *)
+      (*   rewrite <- H in NO_CROSS_PTR. *)
+      (*   contradiction. *)
+      (*   rewrite <- H0 in NO_CROSS_PTR. *)
+      (*   contradiction. } *)
       assert (EV3: return_trace ge3 cp' rec_cp
-                     (return_value rs3 (sig_of_call (frame3 :: st3'))) (sig_res (sig_of_call (frame3 :: st3')))
+                     (return_value rs3 sg) (sig_res sg)
                      (e :: nil)).
-      {
-        eapply return_trace_inj; eauto.
-        assert (sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')) as <-.
-        { inv frame_rel; auto. } eauto.
-        assert (sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')) as <-.
-        { inv frame_rel; auto. } eauto. }
+      { eapply return_trace_inj; eauto. }
+      (* assert (EV3: return_trace ge3 cp' rec_cp *)
+      (*                (return_value rs3 (sig_of_call (frame3 :: st3'))) (sig_res (sig_of_call (frame3 :: st3'))) *)
+      (*                (e :: nil)). *)
+      (* { *)
+      (*   eapply return_trace_inj; eauto. *)
+      (*   assert (sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')) as <-. *)
+      (*   { inv frame_rel; auto. } eauto. *)
+      (*   assert (sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')) as <-. *)
+      (*   { inv frame_rel; auto. } eauto. } *)
 
       (* assert (Genv.find_comp ge3 (rs3 PC) = Some cp'). *)
       (* { erewrite <- (find_comp_preserved s W1 W3 _ _ (rs PC)); eauto using delta_zero. } *)
@@ -8334,11 +8362,15 @@ Section Theorems.
           now destruct δ. split; eauto. eapply stack_rel_comm in H16; eauto. now destruct δ.
           now destruct δ. }
 
-      eexists (State st3' (invalidate_cross_return (invalidate_return rs3 (sig_of_call (frame3 :: st3'))) (frame3 :: st3'))
+      eexists (State st3' (invalidate_cross_return
+                             (invalidate_return rs3 sg) (frame3 :: st3'))
                  m3' _);
         exists j__δ, j__oppδ; split; [| split; [| split; [| split]]].
       + econstructor; [| now eapply star_refl | now traceEq].
         econstructor; eauto.
+       assert (X: sig_of_call (frame1 :: st') = sig_of_call (frame3 :: st3')).
+        { inv frame_rel; auto. }
+        rewrite <- X. auto.
       + eauto.
       + eauto.
       + simpl. destruct A as [? [? ?]]; eauto.
@@ -8501,6 +8533,8 @@ Section Theorems.
                 rewrite !orb_false_l.
                 inv frame_rel. simpl in CP3; congruence.
                 ** Local Opaque all_mregs.
+                   unfold return_value in *.
+                   replace (loc_result sg0) with (loc_result sg) in *.
                    destruct in_dec; simpl in *.
                    --- unfold return_value in inj_res, NO_CROSS_PTR, NO_CROSS_PTR0, EV0, EV.
                        destruct (loc_result sg) eqn:?; simpl in i.
@@ -8800,6 +8834,8 @@ Section Theorems.
                              rewrite <- H in *. contradiction.
                              rewrite <- H0 in *. contradiction.
                    --- econstructor.
+                   --- simpl in *. unfold loc_result, proj_sig_res.
+                       rewrite <- SIG_STACK0, <- SIG_STACK. auto.
              ++ destruct A as [? [? ?]]; eauto.
 
     - (* Builtin *)
