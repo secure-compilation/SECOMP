@@ -489,6 +489,7 @@ Proof.
 - (* getstack *)
   econstructor; split.
   eapply plus_left. constructor; auto.
+  inv STACKS; eauto. inv H0. eapply H.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* setstack *)

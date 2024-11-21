@@ -31,9 +31,14 @@ Local Open Scope sep_scope.
 The stack pointer is kept 16-aligned.
 *)
 
-Definition fe_ofs_arg := 0.
 (* Originally in Stacking.v *)
-Definition offset_arg (x: Z) := fe_ofs_arg + 4 * x.
+#[global] Definition fe_ofs_arg := Linear.fe_ofs_arg.
+#[global] Hint Unfold fe_ofs_arg.
+#[global] Hint Unfold Linear.fe_ofs_arg.
+#[global] Definition is_valid_param_loc := Linear.is_valid_param_loc.
+#[global] Hint Unfold is_valid_param_loc.
+#[global] Definition offset_arg := Linear.offset_arg.
+#[global] Hint Unfold offset_arg.
 
 Definition make_env (b: bounds) : frame_env :=
   let w := if Archi.ptr64 then 8 else 4 in
@@ -92,11 +97,11 @@ Local Opaque Z.add Z.mul sepconj range.
   rewrite sep_swap45.
 (* Apply range_split and range_split2 repeatedly *)
   unfold fe_ofs_arg.
-  apply range_split_2. fold olink; lia. lia.
-  apply range_split. lia.
-  apply range_split. lia.
-  apply range_split_2. fold ol. lia. lia.
-  apply range_drop_right with ostkdata. lia.
+  apply range_split_2. unfold Linear.fe_ofs_arg. fold olink; lia. lia.
+  apply range_split. unfold Linear.fe_ofs_arg. lia.
+  apply range_split. unfold Linear.fe_ofs_arg. lia.
+  apply range_split_2. fold ol. unfold Linear.fe_ofs_arg. lia. lia.
+  apply range_drop_right with ostkdata. unfold Linear.fe_ofs_arg. lia.
   eapply sep_drop2. eexact H.
 Qed.
 
@@ -149,16 +154,3 @@ Proof.
   apply Z.divide_add_r. apply align_divides; lia. apply Z.divide_refl.
 Qed.
 
-Variant is_valid_param_loc (sg: signature): Z -> typ -> Prop :=
-  | valid_param_one: forall ofs ofs_arg ty,
-      ofs = fe_ofs_arg + 4 * ofs_arg ->
-      In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
-      is_valid_param_loc sg ofs ty
-  | valid_param_two_hi: forall ofs ofs_arg ty lo,
-      ofs = fe_ofs_arg + 4 * ofs_arg ->
-      In (Twolong (S Incoming ofs_arg ty) lo) (loc_parameters sg) ->
-      is_valid_param_loc sg ofs ty
-  | valid_param_two_lo: forall ofs ofs_arg ty hi,
-      ofs = fe_ofs_arg + 4 * ofs_arg ->
-      In (Twolong hi (S Incoming ofs_arg ty)) (loc_parameters sg) ->
-      is_valid_param_loc sg ofs ty.

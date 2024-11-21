@@ -6179,6 +6179,9 @@ Section Theorems.
             { inv st_rel;
                 [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
               inv H13; simpl in *; eauto. }
+            { inv st_rel;
+                [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
+              inv H13; simpl in *; eauto. }
             intros ? G; inv G. reflexivity.
             intros ? G; inv G.
           + eauto.
@@ -6206,6 +6209,9 @@ Section Theorems.
             { inv st_rel; eauto.
               - simpl in *. congruence.
               - inv H13; inv H; eauto. }
+            { inv st_rel;
+                [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
+              inv H13; simpl in *; eauto. }
             { inv st_rel;
                 [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
               inv H13; simpl in *; eauto. }

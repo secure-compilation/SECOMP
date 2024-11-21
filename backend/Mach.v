@@ -506,6 +506,7 @@ Inductive step: state -> trace -> state -> Prop :=
       load_stack m sp Tptr f.(fn_link_ofs) cp = Some (dummy_parent_sp s) ->
       load_stack m (parent_sp s) ty ofs top = Some v -> (* /!\ Privileged!! *)
       forall (VALID_PARAM: Stacklayout.is_valid_param_loc (parent_signature s) (Ptrofs.unsigned ofs) ty),
+      (* forall (SIG: (fn_sig f) = parent_signature s), *)
       rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
       step (State s fb sp (Mgetparam ofs ty dst :: c) rs m)
         E0 (State s fb sp c rs' m)

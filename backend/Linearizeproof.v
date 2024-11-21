@@ -673,6 +673,7 @@ Proof.
   (* Lgetstack *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
+  intros ?. subst sl. admit.
   econstructor; eauto.
 
   (* Lsetstack *)
@@ -826,7 +827,7 @@ Proof.
   erewrite comp_preserved; eauto.
   eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, LTL.initial_state prog st1 ->

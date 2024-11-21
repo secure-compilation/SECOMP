@@ -1609,6 +1609,7 @@ Inductive match_stacks (j: meminj):
            In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
            slot_within_bounds (function_bounds f) Outgoing ofs ty)
         (STK: match_stacks j cs cs' (Linear.fn_sig f)),
+      forall (WFSP: Genv.find_def ge sp = None),
       match_stacks j
                    (Linear.Stackframe f sg' (Vptr sp Ptrofs.zero) ls c :: cs)
                    (Stackframe fb sg' (Vptr sp' Ptrofs.zero) ra c' dra dsp :: cs')
@@ -2229,6 +2230,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
                  ** stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
+      forall (WFSP: Genv.find_def ge sp = None),
       match_states (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
                    (Mach.State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
@@ -2281,7 +2283,7 @@ Proof.
   unfold slot_valid in SV. InvBooleans.
   exploit incoming_slot_in_parameters; eauto. intros IN_ARGS.
   inversion STACKS; clear STACKS.
-  elim (H1 _ IN_ARGS).
+  elim (H2 _ IN_ARGS).
   subst s cs'.
   exploit frame_get_outgoing.
   apply sep_proj2 in SEP. simpl in SEP. rewrite sep_assoc in SEP. eexact SEP.
@@ -2297,10 +2299,6 @@ Proof.
   unfold load_stack in *.
   simpl. simpl in A.
   eapply Mem.load_Some_None. eauto.
-  { unfold transf_function in TRANSL.
-    destruct negb; try congruence; destruct zlt; try congruence. inv TRANSL; simpl.
-    clear -H. revert H. unfold offset_arg.
-    admit. }
   econstructor; eauto with coqlib. econstructor; eauto.
   apply agree_regs_set_reg. apply agree_regs_set_reg. auto. auto.
   erewrite agree_incoming by eauto. exact B.
@@ -2347,7 +2345,7 @@ Proof.
   econstructor. eauto. eauto. eauto.
   apply agree_regs_set_slot. apply agree_regs_undef_regs. auto.
   apply agree_locs_set_slot. apply agree_locs_undef_locs. auto. apply destroyed_by_setstack_caller_save. auto.
-  eauto. eauto with coqlib. eauto.
+  eauto. eauto with coqlib. eauto. eauto.
 
 - (* Lop *)
   assert (exists v',
@@ -2422,7 +2420,7 @@ Proof.
   rewrite transl_destroyed_by_store. apply agree_regs_undef_regs; auto.
   apply agree_locs_undef_locs. auto. apply destroyed_by_store_caller_save.
   auto. eauto with coqlib.
-  eapply frame_undef_regs; eauto.
+  eapply frame_undef_regs; eauto. eauto.
 
 - (* Lcall *)
   exploit find_function_translated; eauto.
@@ -2550,7 +2548,9 @@ Proof.
           auto.
           unfold loc_parameters in EV. rewrite map_map in EV. auto.
         + rewrite alloc1, alloc2.
-          rewrite Z. admit.
+          rewrite Z.
+          assert (Genv.find_def tge sp' = None) as -> by admit.
+          admit.
       - eapply exec_Mcall_cross with (m_res := mres) (dra := dra_res) (dsp := dsp_res); eauto.
         + eapply is_tail_cons_left; eauto.
         + rewrite <- (comp_transl_partial _ TRANSL).
@@ -2687,7 +2687,7 @@ Proof.
   apply agree_locs_undef_locs. auto. apply destroyed_by_cond_caller_save.
   auto.
   eapply find_label_tail; eauto.
-  apply frame_undef_regs; auto.
+  apply frame_undef_regs; auto. eauto.
 
 - (* Lcond, false *)
   econstructor; split.
@@ -2697,7 +2697,7 @@ Proof.
   apply agree_regs_undef_regs; auto.
   apply agree_locs_undef_locs. auto. apply destroyed_by_cond_caller_save.
   auto. eauto with coqlib.
-  apply frame_undef_regs; auto.
+  apply frame_undef_regs; auto. eauto.
 
 - (* Ljumptable *)
   assert (rs0 arg = Vint n).
@@ -2709,7 +2709,7 @@ Proof.
   apply agree_regs_undef_regs; auto.
   apply agree_locs_undef_locs. auto. apply destroyed_by_jumptable_caller_save.
   auto. eapply find_label_tail; eauto.
-  apply frame_undef_regs; auto.
+  apply frame_undef_regs; auto. eauto.
 
 - (* Lreturn *)
   rewrite (sep_swap (stack_contents j s cs')) in SEP.
@@ -2755,7 +2755,7 @@ Proof.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
-  rewrite comp_transf_function; eauto.
+  rewrite comp_transf_function; eauto. admit.
   }
 
 - (* external function *)

@@ -1455,6 +1455,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (* gets replaced with actual stack pointer *)
       asm_parent_sp st = sp ->
 
+      (* forall (SIG: parent_signature st = fn_sig f), *)
       Stacklayout.is_valid_param_loc (parent_signature st)
         (Ptrofs.unsigned (Ptrofs.add o' (eval_offset o))) ty ->
 

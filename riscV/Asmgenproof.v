@@ -1230,6 +1230,7 @@ Lemma loadarg_cross_correct:
   forall (VALID_PARAM : Stacklayout.is_valid_param_loc (parent_signature st) (Ptrofs.unsigned ofs) ty),
   forall (LOAD: Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (asm_parent_sp st) ofs) top = Some v),
   forall (ATDUM: asm_parent_dummy_sp st = Vptr dsp Ptrofs.zero),
+  (* forall (SIG: parent_signature st = fn_sig tf), *)
   forall (IN_X30: rs X30 = Vptr dsp Ptrofs.zero),
   (* forall (COMP_X30: Mem.val_compartment m (rs X30) ⊆ comp_of f), *)
   exists (rs' : regset),
@@ -1576,9 +1577,15 @@ Opaque loadind.
       exploit loadarg_cross_correct; eauto.
       simpl in VALID_PARAM.
       instantiate (1 := (f' :: s'0)); subst; eauto.
+      (* { simpl in *; subst sg. inv AT. *)
+      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
+      (*   monadInv EQ. eauto. } *)
       subst; simpl; eauto.
       subst; simpl; eauto.
       (* subst; simpl; eauto. *)
+      (* { simpl in *; subst sg. inv AT. *)
+      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
+      (*   monadInv EQ. eauto. } *)
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply PLUS.
@@ -1630,11 +1637,18 @@ Opaque loadind.
         intros. rewrite rs''_others; auto using preg_of_not_X30; try congruence.
       }
     * inv H6. remember (Stackframe b sg cp v0 ofs0 db1 db2) as f'.
+      (* simpl in H5. simpl in H4. subst f'. simpl in H2. *)
       exploit loadarg_cross_correct; eauto.
       simpl in VALID_PARAM.
       instantiate (1 := (f' :: s'0)); subst; eauto.
+      (* { simpl in *; subst sg. inv AT. *)
+      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
+      (*   monadInv EQ. eauto. } *)
       subst; simpl; eauto.
       subst; simpl; eauto.
+      (* { simpl in *; subst sg. inv AT. *)
+      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
+      (*   monadInv EQ. eauto. } *)
       (* instantiate (2 := (f' :: s'0)); subst; eauto. *)
       (* subst; simpl; eauto. *)
       intros [rs'' [PLUS [rs''_dst [rs''_others [tc'' [code_transl code_at_pc_transl]]]]]].

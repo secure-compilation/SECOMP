@@ -301,6 +301,7 @@ Proof.
 (* Lgetstack *)
   left; econstructor; split.
   econstructor; eauto.
+  inv STACKS; eauto. inv H0. eapply H.
   econstructor; eauto with coqlib.
 (* Lsetstack *)
   left; econstructor; split.

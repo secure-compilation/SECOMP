@@ -20,6 +20,23 @@ Require Import Coqlib.
 Require Import AST Integers Values Memory Events Globalenvs Smallstep.
 Require Import Op Locations LTL Conventions.
 
+#[global] Definition fe_ofs_arg := 0.
+Variant is_valid_param_loc (sg: signature): Z -> typ -> Prop :=
+  | valid_param_one: forall ofs ofs_arg ty,
+      ofs = fe_ofs_arg + 4 * ofs_arg ->
+      In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+      is_valid_param_loc sg ofs ty
+  | valid_param_two_hi: forall ofs ofs_arg ty lo,
+      ofs = fe_ofs_arg + 4 * ofs_arg ->
+      In (Twolong (S Incoming ofs_arg ty) lo) (loc_parameters sg) ->
+      is_valid_param_loc sg ofs ty
+  | valid_param_two_lo: forall ofs ofs_arg ty hi,
+      ofs = fe_ofs_arg + 4 * ofs_arg ->
+      In (Twolong hi (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+      is_valid_param_loc sg ofs ty.
+
+#[global] Definition offset_arg (x: Z) := fe_ofs_arg + 4 * x.
+
 (** * Abstract syntax *)
 
 Definition label := positive.
@@ -170,6 +187,7 @@ Definition parent_signature (stack: list stackframe) : signature :=
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Lgetstack:
       forall s f sp sl ofs ty dst b rs m rs',
+      (sl = Incoming -> is_valid_param_loc (parent_signature s) (Ptrofs.unsigned (Ptrofs.repr (offset_arg ofs))) ty) ->
       rs' = Locmap.set (R dst) (rs (S sl ofs ty)) (undef_regs (destroyed_by_getstack sl) rs) ->
       step (State s f sp (Lgetstack sl ofs ty dst :: b) rs m)
         E0 (State s f sp b rs' m)
