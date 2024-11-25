@@ -2401,6 +2401,7 @@ Proof.
   unfold check_function in Heqr.
   destruct (analyze f env (pair_codes f tf)) as [an|] eqn:?; try discriminate.
   destruct cp_eq_dec as [e|]; try discriminate.
+  destruct (signature_eq (RTL.fn_sig f) (fn_sig tf)); try discriminate.
   monadInv Heqr.
   destruct (check_entrypoints_aux f tf env x) as [y|] eqn:?; try discriminate.
   unfold check_entrypoints_aux, pair_entrypoints in Heqo0. MonadInv.
@@ -3204,6 +3205,21 @@ Proof.
   rewrite <- comp_transf_fundef; eauto. rewrite <- comp_transf_function; eauto.
   destruct fd; simpl in *; try congruence.
   monadInv F; congruence.
+
+  rewrite e0. inv STACKS.
+  { unfold transf_function in FUN.
+    destruct type_function; inv FUN.
+    destruct regalloc eqn:X; inv H4. monadInv H5.
+    unfold check_function in EQ0. destruct (analyze f r (pair_codes f tf)); inv EQ0.
+    destruct cp_eq_dec; inv H4.
+    destruct signature_eq; inv H5. simpl. congruence. }
+  simpl. rewrite SIG.
+  unfold transf_function in FUN.
+  destruct type_function; inv FUN.
+  destruct regalloc eqn:X; inv H3. monadInv H4.
+  unfold check_function in EQ1. destruct (analyze f r (pair_codes f tf)); inv EQ1.
+  destruct cp_eq_dec; inv H3.
+  destruct signature_eq; inv H4. congruence.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   rewrite <- comp_transf_function; eauto.
   destruct (transf_function_inv _ _ FUN); auto.

@@ -352,6 +352,7 @@ Proof.
   symmetry; apply sig_function_translated.
   now rewrite ! comp_transl.
   destruct f'; simpl in *; try congruence.
+  inv STACKS; eauto. inv H; eauto.
   eauto.
   econstructor; eauto.
 (* Lbuiltin *)

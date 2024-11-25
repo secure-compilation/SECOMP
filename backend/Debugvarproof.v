@@ -558,6 +558,7 @@ Proof.
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B).
   destruct f'; simpl in *; try congruence. monadInv B; congruence.
+  inv STACKS; eauto. inv H1; eauto.
   eauto.
   rewrite PLS.
   replace (comp_of tf) with (comp_of f) by now inv TRF.

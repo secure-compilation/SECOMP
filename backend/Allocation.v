@@ -1366,7 +1366,9 @@ Definition check_function (rtl: RTL.function) (ltl: LTL.function) (env: regenv):
   | None => Error (msg "allocation analysis diverges")
   | Some a =>
     if cp_eq_dec rtl.(RTL.fn_comp) ltl.(LTL.fn_comp) then
-      check_entrypoints rtl ltl env bsh a
+      if signature_eq rtl.(RTL.fn_sig) ltl.(LTL.fn_sig) then
+        check_entrypoints rtl ltl env bsh a
+      else Error (msg "register allocation changed the function signature")
     else Error (msg "register allocation changed the function compartment")
   end.
 

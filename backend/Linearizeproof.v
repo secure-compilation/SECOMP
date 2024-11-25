@@ -722,6 +722,7 @@ Proof.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
   destruct fd; simpl in *; try congruence.
   monadInv B; congruence.
+  inv STACKS; eauto. inv H; eauto.
   rewrite <- comp_transf_fundef; eauto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).

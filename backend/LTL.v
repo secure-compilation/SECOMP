@@ -348,6 +348,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (NOTEXT: forall ef, fd <> External ef),
+      forall (SIG_RES: sig_res sig = sig_res (parent_signature s)),
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd sig rs' m' (comp_of f))

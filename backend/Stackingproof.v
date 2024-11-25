@@ -2550,8 +2550,16 @@ Proof.
         + rewrite alloc1, alloc2.
           rewrite Z.
           assert (Genv.find_def tge sp' = None) as ->.
-          { destruct (Genv.find_def tge sp') eqn:find_sp'; eauto.
-            exfalso.
+          { destruct SEP as [_ [[_ [[_ [X _]] _]] _]].
+            exploit globalenv_inject_preserves_globals; eauto.
+            intros G.
+            destruct (Genv.find_def tge sp') eqn:find_sp'; eauto.
+            exploit Genv.find_def_inversion; eauto.
+            intros [id ?].
+            exploit Genv.find_symbol_exists; eauto. intros [b' ?].
+            rewrite symbols_preserved in H3.
+            exploit Genv.find_symbol_find_def_inversion; eauto.
+            intros [g0 H4].
             admit.
           }
           { assert (H2: Mem.perm m' sp' 0 Max Freeable).
@@ -2668,7 +2676,9 @@ Proof.
     { eapply Mem.unchanged_on_trans.
       eapply Mem.alloc_unchanged_on; eauto.
       eapply Mem.alloc_unchanged_on; eauto. }
-    clear -R Z. admit.
+    destruct tf'; auto.
+    clear -R Z. subst mres.
+    admit.
 
 - (* Ltailcall *)
   destruct f'; simpl in *; try congruence.
@@ -2687,7 +2697,9 @@ Proof.
     (* destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto. *)
     (* inv C. reflexivity. *)
   (* destruct f'; simpl in *; try congruence. monadInv C; congruence. *)
-    admit. admit.
+    unfold transf_function in EQ. destruct negb; inv EQ.
+    destruct zlt; inv H1. auto.
+    { inv STACKS; eauto. }
   traceEq.
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
@@ -2880,14 +2892,12 @@ Proof.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
-  intros; rewrite (OUTU ty ofs); auto.
+  intros; rewrite (OUTU ty ofs); auto. eauto.
   (* TODO: fix this unshelving *)
   Unshelve.
   all: try exact None.
-  admit.
   exact (Linear.funsig f').
   exact (Linear.funsig f').
-  admit.
 Admitted.
 
 Lemma transf_initial_states:
