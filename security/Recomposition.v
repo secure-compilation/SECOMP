@@ -6179,9 +6179,9 @@ Section Theorems.
             { inv st_rel;
                 [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
               inv H13; simpl in *; eauto. }
-            { inv st_rel;
-                [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
-              inv H13; simpl in *; eauto. }
+            (* { inv st_rel; *)
+            (*     [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|]. *)
+            (*   inv H13; simpl in *; eauto. } *)
             intros ? G; inv G. reflexivity.
             intros ? G; inv G.
           + eauto.
@@ -6209,9 +6209,6 @@ Section Theorems.
             { inv st_rel; eauto.
               - simpl in *. congruence.
               - inv H13; inv H; eauto. }
-            { inv st_rel;
-                [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
-              inv H13; simpl in *; eauto. }
             { inv st_rel;
                 [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
               inv H13; simpl in *; eauto. }
@@ -7267,7 +7264,11 @@ Section Theorems.
           inversion Q as [| ? ? ? ? ? ? load_stack]; subst.
           assert (arg = v) as ->.
           { eapply Mem.load_Some_None in load_stack.
-            simpl in *; congruence. }
+            simpl in *.
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
           eapply Forall_forall; eauto.
         - unfold call_arguments in call_args1.
           exploit list_forall2_in_left; eauto.
@@ -7276,7 +7277,10 @@ Section Theorems.
           inversion Qhi as [| ? ? ? ? ? ? load_stack]; subst.
           assert (vhi = v) as ->.
           { eapply Mem.load_Some_None in load_stack.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
 
           rewrite Forall_forall in no_cross; eauto. eapply no_cross in IN.
           destruct v; simpl in *; auto.
@@ -7287,7 +7291,10 @@ Section Theorems.
           inversion Qlo as [| ? ? ? ? ? ? load_stack]; subst.
           assert (vlo = v) as ->.
           { eapply Mem.load_Some_None in load_stack.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
 
           rewrite Forall_forall in no_cross; eauto. eapply no_cross in IN.
           destruct v, vhi; simpl in *; auto. }
@@ -7335,7 +7342,10 @@ Section Theorems.
           inversion Q2 as [| ? ? ? ? ? ? load_stack2]; subst.
           assert (arg = v) as ->.
           { eapply Mem.load_Some_None in load_stack2.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
           eapply Mem.load_Some_None in load_stack1. eauto.
         - unfold call_arguments in call_args1, call_args2.
 
@@ -7351,7 +7361,10 @@ Section Theorems.
           intros [-> ->].
           assert (vhi1 = v) as ->.
           { eapply Mem.load_Some_None in load_stack2.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
           eapply Mem.load_Some_None in load_stack1. eauto.
         - unfold call_arguments in call_args1, call_args2.
 
@@ -7367,7 +7380,10 @@ Section Theorems.
           intros [-> ->].
           assert (vlo1 = v) as ->.
           { eapply Mem.load_Some_None in load_stack2.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
           eapply Mem.load_Some_None in load_stack1. eauto. }
       clear call_args1.
       assert (v_not_ptr: not_ptr v).
@@ -7379,7 +7395,10 @@ Section Theorems.
           inversion Q as [| ? ? ? ? ? ? load_stack]; subst.
           assert (arg = v) as ->.
           { eapply Mem.load_Some_None in load_stack.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
           eapply Forall_forall; eauto.
         - unfold call_arguments in call_args2.
           exploit list_forall2_in_left; eauto.
@@ -7388,7 +7407,10 @@ Section Theorems.
           inversion Qhi as [| ? ? ? ? ? ? load_stack]; subst.
           assert (vhi = v) as ->.
           { eapply Mem.load_Some_None in load_stack.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
 
           rewrite Forall_forall in no_cross; eauto. eapply no_cross in IN.
           destruct v; simpl in *; auto.
@@ -7399,7 +7421,10 @@ Section Theorems.
           inversion Qlo as [| ? ? ? ? ? ? load_stack]; subst.
           assert (vlo = v) as ->.
           { eapply Mem.load_Some_None in load_stack.
-            simpl in *; congruence. }
+            Local Transparent Stacklayout.fe_ofs_arg.
+            unfold Stacklayout.fe_ofs_arg in *.
+            simpl in *; congruence.
+            Local Opaque Stacklayout.fe_ofs_arg. }
 
           rewrite Forall_forall in no_cross; eauto. eapply no_cross in IN.
           destruct v, vhi; simpl in *; auto. }

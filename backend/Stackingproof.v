@@ -2549,8 +2549,72 @@ Proof.
           unfold loc_parameters in EV. rewrite map_map in EV. auto.
         + rewrite alloc1, alloc2.
           rewrite Z.
-          assert (Genv.find_def tge sp' = None) as -> by admit.
-          admit.
+          assert (Genv.find_def tge sp' = None) as ->.
+          { destruct (Genv.find_def tge sp') eqn:find_sp'; eauto.
+            exfalso.
+            admit.
+          }
+          { assert (H2: Mem.perm m' sp' 0 Max Freeable).
+            { clear -SEP.
+              destruct SEP as (A & _ & _).
+              destruct A as (A1 & A2).
+              Local Opaque Z.mul. simpl in *.
+              (* destruct Archi.ptr64; auto. *)
+              destruct A2 as [X1 _]. eapply X1.
+              split; eauto. lia.
+              assert (gt_8_0: 8 > 0) by lia.
+              (* eapply Z.lt_le_trans with (m := (if Archi.ptr64 then 8 else 4)). *)
+              (* { destruct Archi.ptr64; lia. } *)
+              pose proof (align_le (align
+                                      (size_callee_save_area (function_bounds f)
+                                         (align
+                                            (4 * Z.max (max_over_instrs f outgoing_space) (max_over_slots_of_funct f outgoing_slot))
+                                            (if Archi.ptr64 then 8 else 4) + (if Archi.ptr64 then 8 else 4) +
+                                            (if Archi.ptr64 then 8 else 4))) 8 + 4 * max_over_slots_of_funct f local_slot) 8
+                                   gt_8_0)
+                         as R.
+              eapply Z.lt_le_trans; eauto.
+              clear R.
+              pose proof (align_le (size_callee_save_area (function_bounds f)
+                                      (align
+                                         (4 * Z.max (max_over_instrs f outgoing_space) (max_over_slots_of_funct f outgoing_slot))
+                                         (if Archi.ptr64 then 8 else 4) + (if Archi.ptr64 then 8 else 4) +
+                                         (if Archi.ptr64 then 8 else 4))) 8
+                gt_8_0) as R.
+              assert (R': size_callee_save_area (function_bounds f)
+                            (align
+                               (4 * Z.max (max_over_instrs f outgoing_space) (max_over_slots_of_funct f outgoing_slot))
+                               (if Archi.ptr64 then 8 else 4) + (if Archi.ptr64 then 8 else 4) +
+                               (if Archi.ptr64 then 8 else 4)) <=
+                            align
+                              (size_callee_save_area (function_bounds f)
+                                 (align
+                                    (4 * Z.max (max_over_instrs f outgoing_space) (max_over_slots_of_funct f outgoing_slot))
+                                    (if Archi.ptr64 then 8 else 4) + (if Archi.ptr64 then 8 else 4) +
+                                    (if Archi.ptr64 then 8 else 4))) 8 + 4 * max_over_slots_of_funct f local_slot).
+              { pose proof (Bounds.function_bounds_obligation_1 f) as R'; eauto. lia. }
+              clear R.
+              eapply Z.lt_le_trans; eauto. clear R'.
+              pose proof (size_callee_save_area_incr (function_bounds f)
+                            (align
+                               (4 * Z.max (max_over_instrs f outgoing_space) (max_over_slots_of_funct f outgoing_slot))
+                               (if Archi.ptr64 then 8 else 4) + (if Archi.ptr64 then 8 else 4) +
+                               (if Archi.ptr64 then 8 else 4))) as R.
+              eapply Z.lt_le_trans; eauto. clear R.
+              pose proof (Bounds.function_bounds_obligation_2 f) as R.
+              assert (ptr64_gt_0: (if Archi.ptr64 then 8 else 4) > 0) by (destruct Archi.ptr64; lia).
+              assert (R': 4 * Z.max (max_over_instrs f outgoing_space) (max_over_slots_of_funct f outgoing_slot) >= 0) by lia.
+              clear R.
+              pose proof (align_le
+                            (4 * Z.max (max_over_instrs f outgoing_space)
+                                   (max_over_slots_of_funct f outgoing_slot))
+                            (if Archi.ptr64 then 8 else 4)
+                            ptr64_gt_0) as R.
+              destruct Archi.ptr64; lia.
+            }
+            eapply Mem.perm_alloc_1 in H2; eauto.
+            eapply Mem.perm_alloc_1 in H2; eauto.
+            destruct Mem.perm_dec; eauto. }
       - eapply exec_Mcall_cross with (m_res := mres) (dra := dra_res) (dsp := dsp_res); eauto.
         + eapply is_tail_cons_left; eauto.
         + rewrite <- (comp_transl_partial _ TRANSL).
