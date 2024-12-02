@@ -604,6 +604,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
 
@@ -687,7 +688,8 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
-      external_call ef ge (call_comp cp_main k) vargs m t vres m' ->
+      external_call ef ge (call_comp k) vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (call_comp k) ef),
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m' (rettype_of_type tres) bottom)
 
@@ -1165,13 +1167,5 @@ Definition clight_in_side (s: split) (lr: side) (p: Clight.program) :=
 
 Definition clight_compatible (s: split) (p p': Clight.program) :=
   s |= p ∈ Left /\ s |= p' ∈ Right.
-
-Lemma link_compatible: forall s p p',
-    clight_compatible s p p' ->
-    Ctypes.prog_pol p = Ctypes.prog_pol p' ->
-    exists W, link p p' = Some W.
-Proof.
-  admit.
-Admitted.
 
 End SECURITY.

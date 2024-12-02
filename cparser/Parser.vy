@@ -32,7 +32,7 @@ Require Cabs.
 %token<Cabs.loc> MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN SUB_ASSIGN
   LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
 
-%token<Cabs.loc> LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE SECTION IMPORTS EXPORTS DOT COMMA
+%token<Cabs.loc> LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE SECTION IMPORTS EXPORTS IMPORTS_SYSCALL DOT COMMA
   SEMICOLON ELLIPSIS TYPEDEF EXTERN STATIC RESTRICT AUTO REGISTER INLINE
   NORETURN CHAR SHORT INT LONG SIGNED UNSIGNED FLOAT DOUBLE CONST VOLATILE VOID
   STRUCT UNION ENUM UNDERSCORE_BOOL PACKED ALIGNAS ATTRIBUTE ASM
@@ -96,7 +96,7 @@ Require Cabs.
 %type<list Cabs.statement (* Reverse order *)> block_item_list
 %type<Cabs.statement> block_item expression_statement selection_statement_dangerous
   selection_statement_safe jump_statement asm_statement
-%type<list Cabs.definition (* Reverse order *) * (list Cabs.import (* Reverse order *) * list Cabs.export (* Reverse order *))> translation_unit
+%type<list Cabs.definition (* Reverse order *) * Cabs.pol> translation_unit
 %type<Cabs.definition> external_declaration function_definition
 %type<list Cabs.definition> declaration_list
 %type<Cabs.attribute * Cabs.loc> attribute_specifier
@@ -115,8 +115,9 @@ Require Cabs.
 %type<Cabs.string * Cabs.loc> compartment
 %type<Cabs.import> import
 %type<Cabs.export> export
+%type<Cabs.syscall_import> syscall_import
 
-%start<list Cabs.definition * (list Cabs.import * list Cabs.export)> translation_unit_file
+%start<list Cabs.definition * Cabs.pol> translation_unit_file
 %%
 
 (* Actual grammar *)
@@ -980,25 +981,40 @@ asm_flags:
 (* 6.9 *)
 translation_unit_file:
 | lst = translation_unit EOF
-    { (rev' (fst lst), (rev' (fst (snd lst)), rev' (snd (snd lst)))) }
+    { (rev' (fst lst), snd lst) }
 (* Non-standard *)
 | EOF
-    { ([], ([], [])) }
+    { ([], {| Cabs.imports := nil;
+                Cabs.exports := nil;
+                Cabs.syscall_imports := nil |}) }
 
 translation_unit:
 | def = external_declaration
-    { ([def], ([], [])) }
+    { ([def], {| Cabs.imports := nil;
+                Cabs.exports := nil;
+                Cabs.syscall_imports := nil |})}
 | defq = translation_unit deft = external_declaration
     { (deft :: fst defq, snd defq) }
 | defq = translation_unit imp = import
-    { (fst defq, (imp :: fst (snd defq), snd (snd defq))) }
+    { (fst defq, {| Cabs.imports := imp :: Cabs.imports (snd defq);
+                    Cabs.exports := Cabs.exports (snd defq);
+                    Cabs.syscall_imports := Cabs.syscall_imports (snd defq) |}) }
+
 | defq = translation_unit exp = export
-    { (fst defq, (fst (snd defq), exp :: snd (snd defq))) }
+    { (fst defq, {| Cabs.imports := Cabs.imports (snd defq);
+                    Cabs.exports := exp :: Cabs.exports (snd defq);
+                    Cabs.syscall_imports := Cabs.syscall_imports (snd defq) |}) }
+| defq = translation_unit imp = syscall_import
+    { (fst defq, {| Cabs.imports := Cabs.imports (snd defq);
+                    Cabs.exports := Cabs.exports (snd defq);
+                    Cabs.syscall_imports := imp :: Cabs.syscall_imports (snd defq) |}) }
 (* Non-standard : empty declaration *)
 | tu = translation_unit SEMICOLON
     { tu }
 | SEMICOLON
-    { ([], ([], [])) }
+    { ([], {| Cabs.imports := nil;
+                Cabs.exports := nil;
+                Cabs.syscall_imports := nil |}) }
 
 external_declaration:
 | def = function_definition
@@ -1015,6 +1031,10 @@ import:
 export:
 | cp_exporting = compartment EXPORTS fname = VAR_NAME
     { Cabs.Export (fst cp_exporting) (fst fname) }
+
+syscall_import:
+| cp_importing = compartment IMPORTS_SYSCALL fname = VAR_NAME
+    { Cabs.ImportSyscall (fst cp_importing) (fst fname) }
 
 (* 6.9.1 *)
 function_definition:

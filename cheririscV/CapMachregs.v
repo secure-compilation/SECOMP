@@ -21,7 +21,7 @@ Require Import Decidableplus.
 Require Import Maps.
 Require Import AST CapAST.
 Require Import Integers.
-Require Import Op.
+Require Import CapOp.
 
 (** ** Machine registers *)
 
@@ -85,17 +85,17 @@ Instance Finite_mreg : Finite mreg := {
   Finite_elements_spec := all_mregs_complete
 }.
 
-Definition mreg_type (r: mreg): typ :=
+Definition mreg_type (r: mreg): captyp :=
   match r with
         | R5  | R6  | R7  | R8  | R9  | R10 | R11
   | R12 | R13 | R14 | R15 | R16 | R17 | R18 | R19
   | R20 | R21 | R22 | R23 | R24 | R25 | R26 | R27
-  | R28 | R29 | R30 => if Archi.ptr64 then Tany64 else Tany32
+  | R28 | R29 | R30 => if Archi.ptr64 then CTany64 else CTany32
 
   | F0  | F1  | F2  | F3  | F4  | F5  | F6  | F7
   | F8  | F9  | F10 | F11 | F12 | F13 | F14 | F15
   | F16 | F17 | F18 | F19 | F20 | F21 | F22 | F23
-  | F24 | F25 | F26 | F27 | F28 | F29 | F30 | F31 => Tany64
+  | F24 | F25 | F26 | F27 | F28 | F29 | F30 | F31 => CTany64
   end.
 
 Definition mreg_captype (r: mreg): captyp :=
@@ -137,6 +137,31 @@ Module IndexedMreg <: INDEXED_TYPE.
     end.
   Lemma index_inj:
     forall r1 r2, index r1 = index r2 -> r1 = r2.
+  Proof.
+    decide_goal.
+  Qed.
+  Definition left_inverse (p: positive): mreg :=
+    match p with
+                |  1 => R5  |  2 => R6  |  3 => R7
+    |  4 => R8  |  5 => R9  |  6 => R10 |  7 => R11
+    |  8 => R12 |  9 => R13 | 10 => R14 | 11 => R15
+    | 12 => R16 | 13 => R17 | 14 => R18 | 15 => R19
+    | 16 => R20 | 17 => R21 | 18 => R22 | 19 => R23
+    | 20 => R24 | 21 => R25 | 22 => R26 | 23 => R27
+    | 24 => R28 | 25 => R29 | 26 => R30
+
+    | 28 => F0  | 29 => F1  | 30 => F2  | 31 => F3
+    | 32 => F4  | 33 => F5  | 34 => F6  | 35 => F7
+    | 36 => F8  | 37 => F9  | 38 => F10 | 39 => F11
+    | 40 => F12 | 41 => F13 | 42 => F14 | 43 => F15
+    | 44 => F16 | 45 => F17 | 46 => F18 | 47 => F19
+    | 48 => F20 | 49 => F21 | 50 => F22 | 51 => F23
+    | 52 => F24 | 53 => F25 | 54 => F26 | 55 => F27
+    | 56 => F28 | 57 => F29 | 58 => F30 | 59 => F31
+    | _ => R5 (* default value *)
+    end.
+  Lemma left_inverse_inv:
+    forall x, left_inverse (index x) = x.
   Proof.
     decide_goal.
   Qed.

@@ -83,3 +83,6 @@
 .nra.cache
 .csdp.cache
 /runtime/*.s-e
+
+# Ignore capability assembly output
+*.cap_asm

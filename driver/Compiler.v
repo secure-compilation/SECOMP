@@ -80,6 +80,8 @@ Parameter print_Cminor: Cminor.program -> unit.
 Parameter print_RTL: Z -> RTL.program -> unit.
 Parameter print_LTL: LTL.program -> unit.
 Parameter print_Mach: Mach.program -> unit.
+Parameter print_CapAsm : Mach.program -> unit.
+(* Parameter print_Asm: Asm.program -> unit. *)
 
 Local Open Scope string_scope.
 
@@ -145,7 +147,9 @@ Definition transf_rtl_program (f: RTL.program) : res Asm.program :=
   @@@ partial_if Compopts.debug (time "Debugging info for local variables" Debugvar.transf_program)
   @@@ time "Mach generation" Stacking.transf_program
    @@ print print_Mach
+   @@ print print_CapAsm
   @@@ time "Asm generation" Asmgen.transf_program.
+   (* @@ print print_Asm. *)
 
 Definition transf_cminor_program (p: Cminor.program) : res Asm.program :=
    OK p
@@ -543,6 +547,8 @@ Proof.
   intros. apply c_semantic_preservation. apply transf_c_program_match; auto.
 Qed.
 
+(* Print Assumptions transf_c_program_correct. *)
+
 
 (** Here is the separate compilation case.  Consider a nonempty list [c_units]
   of C source files (compilation units), [C1 ,,, Cn].  Assume that every
@@ -572,3 +578,5 @@ Proof.
   destruct H2 as (asm_program & P & Q).
   exists asm_program; split; auto. apply c_semantic_preservation; auto.
 Qed.
+
+(* Print Assumptions separate_transf_c_program_correct. *)

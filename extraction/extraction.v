@@ -37,6 +37,8 @@ Require Parser.
 Require Initializers.
 (* Backtranslation *)
 Require Backtranslation.
+(* Capability backend *)
+Require CapAsmgen.
 
 (* Standard lib *)
 Require Import ExtrOcamlBasic.
@@ -124,6 +126,8 @@ Extract Constant Compiler.print_Cminor => "PrintCminor.print_if".
 Extract Constant Compiler.print_RTL => "PrintRTL.print_if".
 Extract Constant Compiler.print_LTL => "PrintLTL.print_if".
 Extract Constant Compiler.print_Mach => "PrintMach.print_if".
+(* Extract Constant Compiler.print_Asm => "PrintAsm.print_if". *)
+Extract Constant Compiler.print_CapAsm => "PrintCapAsm.print_if".
 Extract Constant Compiler.print => "fun (f: 'a -> unit) (x: 'a) -> f x; x".
 Extract Constant Compiler.time  => "Timing.time_coq".
 
@@ -142,6 +146,7 @@ Extract Constant Cabs.char_code => "int64".
 (* Processor-specific extraction directives *)
 
 Load extractionMachdep.
+Load CapextractionMachdep.
 
 (* Avoid name clashes *)
 Extraction Blacklist List String Int.
@@ -155,6 +160,7 @@ Cd "extraction".
 
 Separate Extraction
    Compiler.transf_c_program Compiler.transf_cminor_program
+   CapAsmgen.transf_program
    Cexec.do_initial_state Cexec.do_step Cexec.at_final_state
    Ctypes.merge_attributes Ctypes.remove_attributes 
    Ctypes.build_composite_env Ctypes.layout_struct
@@ -173,7 +179,7 @@ Separate Extraction
    Machregs.mregs_for_operation Machregs.mregs_for_builtin
    Machregs.two_address_op Machregs.is_stack_reg
    Machregs.destroyed_at_indirect_call
-   Asm.build_initial_state Asm.take_step
+   Asm.build_initial_state Asm.take_step Asm.at_final_state
    AST.Policy
    AST.signature_main
    Floats.Float32.from_parsed Floats.Float.from_parsed

@@ -59,6 +59,11 @@ This also allows one to inspect `out.c` which is the generated C code.
   if !trace_seed != 0 then num_traces := 1;
   if !asm_seed != 0 && !trace_seed != 0 && !root_seed != 0 then mode := "reproduction"
 
+let copy_file name new_name =
+  match Unix.system ("cp " ^ name ^ " " ^ new_name) with
+  | WEXITED 0 -> ()
+  | _ -> (Printf.printf "Fatal error: could not copy '%s' to '%s'" name new_name)
+
 let gen_config rand_state =
   let open QCheck in
   Gen_ctx.
@@ -73,6 +78,7 @@ let gen_config rand_state =
     global_var_max_size = Gen.int_range 4 100 rand_state;
     max_arg_count = 10;
     debug = !debug;
+    min_trace_len = 10;
     max_trace_len = 10;
   }
 
@@ -135,7 +141,7 @@ let test_mode _ =
       let rand_state = Random.get_state () in
       if 0 = QCheck_runner.run_tests ~out:discard_out ~rand:rand_state [ test_backtranslation asm_prog ctx ]
       then pass_counter := !pass_counter + 1
-      else (failure_seeds := (asm_seed, trace_seed) :: !failure_seeds; fail_counter := !fail_counter + 1);
+      else (failure_seeds := (asm_seed, trace_seed) :: !failure_seeds; fail_counter := !fail_counter + 1; copy_file "out.c" (Printf.sprintf "fail_%d.c" (!fail_counter - 1)); Stdlib.exit 9);
       Out_channel.flush out_channel
     done
   done;
@@ -149,7 +155,7 @@ let reproduction_mode _ =
   let () = assert (!root_seed != 0) in
   let () = assert (!trace_seed != 0) in
   let () = assert (!asm_seed != 0) in
-  let () = Printf.printf "Root seed = %d\nASM seed = %d\nTrace seed = %d\n" !root_seed !trace_seed !asm_seed in
+  let () = Printf.printf "Root seed = %d\nTrace seed = %d\nASM seed = %d\n" !root_seed !trace_seed !asm_seed in
   let () = Random.init !root_seed in
   let config = gen_config (Random.get_state ()) in
   let discard_out = Out_channel.open_text "/dev/null" in

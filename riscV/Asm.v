@@ -549,8 +549,9 @@ Variable cp_main: compartment.
 
 (* Parameter low_half: genv -> ident -> ptrofs -> ptrofs. *)
 (* Parameter high_half: genv -> ident -> ptrofs -> val. *)
-Program Definition low_half: genv -> ident -> ptrofs -> ptrofs :=
+Definition low_half: genv -> ident -> ptrofs -> ptrofs :=
   (fun _ _ _ => Ptrofs.zero).
+
 Definition high_half: genv -> ident -> ptrofs -> val :=
   (fun ge id ofs => match Genv.find_symbol ge id with
                     | Some b => Vptr b ofs
@@ -1147,13 +1148,6 @@ Definition get_extcall_arguments' (rs: regset) (sp: val) (m: mem) (sg: signature
 Definition get_extcall_arguments (rs: regset) (sp: val) (m: mem) (sg: signature) :=
   list_option_option_list (get_extcall_arguments' rs sp m sg).
 
-Lemma extcall_arguments_equiv:
-  forall rs sp m sg args,
-    extcall_arguments rs sp m sg args <-> get_extcall_arguments rs sp m sg = Some args.
-Proof.
-  admit.
-Admitted.
-
 (** Extract the values of the arguments to a call. *)
 (* Note the difference: [loc_parameters] vs [loc_arguments] *)
 Inductive call_arg (rs: regset) (sp: val) (m: mem): loc -> val -> Prop :=
@@ -1195,8 +1189,8 @@ Lemma call_arguments_equiv:
   forall rs sp m sg args,
     call_arguments rs sp m sg args <-> get_call_arguments rs sp m sg = Some args.
 Proof.
-  admit.
 Admitted.
+
 
 Definition loc_external_result (sg: signature) : rpair preg :=
   map_rpair preg_of (loc_result sg).
@@ -1569,6 +1563,7 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge (comp_of f) vargs m t vres m' ->
         (* this condition makes explicit the fact a builtin can't modify the PC directly *)
       forall (RES_NOT_PC: exists reg, res = map_builtin_res preg_of reg),
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
@@ -1583,6 +1578,7 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' Ptrofs.zero), (* Only allow to call to ofs zero *)
       forall (NEXT_EXT: Genv.find_def ge b' = Some (Gfun (External ef))),
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
 
 
       external_call ef ge (comp_of f) args m' t res m'' ->
@@ -1594,16 +1590,6 @@ Inductive step: state -> trace -> state -> Prop :=
 
       step (State st rs m (comp_of f)) t (State st rs'' m'' (comp_of f))
 .
-  (* | exec_step_external: *)
-  (*     forall b ef args res rs m t rs' m' st sp cp, *)
-  (*     rs PC = Vptr b Ptrofs.zero -> *)
-  (*     forall (SP0: cp = bottom -> sp = rs SP) *)
-  (*       (SP1: cp <> bottom -> sp = asm_parent_sp st), *)
-  (*     Genv.find_def ge b = Some (Gfun (External ef)) -> *)
-  (*     external_call ef ge cp args m t res m' -> *)
-  (*     extcall_arguments rs sp m (ef_sig ef) args -> *)
-  (*     rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) -> *)
-  (*     step (State st rs m cp) t (ReturnState st rs' m' bottom). *)
 
 End RELSEM.
 
@@ -1850,6 +1836,209 @@ Section ExecSem.
       possible_trace w t w' ->
       do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m').
 
+  Fixpoint get_builtin_arg (ge: genv) (rs: regset) (sp: val) (m: mem) (b: builtin_arg preg): option val :=
+    match b with
+    | BA x => Some (rs x)
+    | BA_int n => Some (Vint n)
+    | BA_long n => Some (Vlong n)
+    | BA_float n => Some (Vfloat n)
+    | BA_single n => Some (Vsingle n)
+    | BA_loadstack chunk ofs => Mem.loadv chunk m (Val.offset_ptr sp ofs) top
+    | BA_addrstack ofs => Some (Val.offset_ptr sp ofs)
+    | BA_loadglobal chunk id ofs => Mem.loadv chunk m (Genv.symbol_address ge id ofs) top
+    | BA_addrglobal id ofs => Some (Genv.symbol_address ge id ofs)
+    | BA_splitlong hi lo =>
+        match get_builtin_arg ge rs sp m hi, get_builtin_arg ge rs sp m lo with
+        | Some vhi, Some vlo => Some (Val.longofwords vhi vlo)
+        | _, _ => None
+        end
+    | BA_addptr a1 a2 =>
+        match get_builtin_arg ge rs sp m a1, get_builtin_arg ge rs sp m a2 with
+        | Some v1, Some v2 => Some (if Archi.ptr64 then Val.addl v1 v2 else Val.add v1 v2)
+        | _, _ => None
+        end
+    end.
+
+  Lemma get_eval_builtin_arg: forall ge rs sp m b v,
+      get_builtin_arg ge rs sp m b = Some v <-> eval_builtin_arg ge rs sp m b v.
+  Proof.
+    intros until b.
+    induction b; intros; simpl;
+      try now (split; [intros H; inv H; constructor | intros H; inv H; auto]).
+    - split; [intros H; econstructor; eauto | intros H; inv H].
+      destruct (Val.offset_ptr); try discriminate; simpl in *.
+      eapply Mem.load_Some_None; eauto.
+    - split; [intros H; econstructor; eauto | intros H; inv H].
+      unfold Genv.symbol_address, Senv.symbol_address in *; simpl in *.
+      destruct (Genv.find_symbol ge id); try discriminate; simpl in *.
+      eapply Mem.load_Some_None; eauto.
+    - split; [intros H | intros H; inv H].
+      + destruct (get_builtin_arg ge rs sp m b1); try discriminate.
+        destruct (get_builtin_arg ge rs sp m b2); try discriminate.
+        inv H. econstructor; [eapply IHb1 | eapply IHb2]; eauto.
+      + now eapply IHb1 in H2; eapply IHb2 in H4;
+          rewrite H2, H4.
+    - split; [intros H | intros H; inv H].
+      + destruct (get_builtin_arg ge rs sp m b1); try discriminate.
+        destruct (get_builtin_arg ge rs sp m b2); try discriminate.
+        inv H. econstructor; [eapply IHb1 | eapply IHb2]; eauto.
+      + now eapply IHb1 in H2; eapply IHb2 in H4;
+          rewrite H2, H4.
+  Qed.
+
+  Definition get_builtin_args' (ge: genv) (rs: regset) (v: val) (m: mem) (args: list (builtin_arg preg)): list (option val) :=
+    List.map (get_builtin_arg ge rs v m) args.
+
+  Definition get_builtin_args ge rs v m args := list_option_option_list (get_builtin_args' ge rs v m args).
+
+
+  Lemma get_eval_builtin_args: forall ge rs sp m bl vl,
+      get_builtin_args ge rs sp m bl = Some vl <-> eval_builtin_args ge rs sp m bl vl.
+  Proof.
+    intros until bl.
+    induction bl; intros.
+    - unfold get_builtin_args; simpl.
+      split; intros H; inv H; [constructor | reflexivity].
+    - unfold get_builtin_args; simpl.
+      split.
+      + intros H. destruct (get_builtin_arg ge rs sp m a) eqn:get_a.
+        * destruct (list_option_option_list (get_builtin_args' ge rs sp m bl)) eqn:get_rest; try discriminate.
+          inv H.
+          constructor; [eapply get_eval_builtin_arg; eauto | eapply IHbl; exact get_rest].
+        * destruct (list_option_option_list (get_builtin_args' ge rs sp m bl)); discriminate.
+      + intros H.
+        inv H.
+        eapply get_eval_builtin_arg in H2; rewrite H2.
+        specialize (IHbl bl0) as [IHbl1 IHbl2].
+        unfold get_builtin_args in IHbl2. rewrite IHbl2; auto.
+  Qed.
+
+
+  Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
+    let comp_of_main := comp_of_main p in
+    match s with
+    | State st rs m cp =>
+        do Vptr b ofs <- rs PC;
+        do fd <- Genv.find_funct_ptr ge b;
+        match fd with
+        | Internal f =>
+            do i <- find_instr (Ptrofs.unsigned ofs) (fn_code f);
+            match i with
+            | Pbuiltin ef args res =>
+                do vargs <- get_builtin_args ge rs (rs X2) m args;
+                do res_builtin <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m;
+                check (Genv.allowed_syscall_b ge (comp_of f) ef);
+                let '(w', t, vres, m') := res_builtin in
+                let rs' := nextinstr
+                          (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef)) (rs # X1 <- Vundef) # X31 <- Vundef)) in
+                Some (t, State st rs' m' (comp_of f))
+            | _ =>
+                match exec_instr ge f i rs m (comp_of f) with
+                | Next rs' m' =>
+                    match sig_call i, is_return i with
+                    | None, false => (* exec_step_internal *)
+                        do Vptr b' ofs' <- rs' PC;
+                        let cp' := Genv.find_comp_of_block ge b' in
+                        check (cp_eq_dec (comp_of f) cp');
+                        Some (E0, State st rs' m' (comp_of f))
+                    | Some sig, false => (* exec_step_internal_call *)
+                        do Vptr b' ofs' <- rs' PC;
+                        check (Genv.allowed_call_b ge (comp_of f) (Vptr b' Ptrofs.zero));
+                        do st' <- update_stack_call ge st sig (comp_of f) rs';
+                        do vargs <- get_call_arguments rs' m' sig;
+                        let cp' := Genv.find_comp_of_block ge b' in
+                        check (match Genv.type_of_call (comp_of f) cp' with
+                               | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
+                               | _ => true
+                               end);
+                        do t <- get_call_trace _ _ ge (comp_of f) cp' (Vptr b' ofs') vargs (sig_args sig);
+                        Some (t, State st' rs' m' (comp_of f))
+                    | None, true => (* exec_step_internal_return *)
+                        (* check (Genv.allowed_call_b ge (comp_of f) (rs' PC)); *)
+                        Some (E0, ReturnState st rs' m' (comp_of f))
+                    | Some _, true => None
+                    end
+                | Stuck => None
+                end
+            end
+        | External ef =>
+            check (Ptrofs.eq ofs Ptrofs.zero);
+            do vargs <- get_extcall_arguments rs m (ef_sig ef);
+            do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m;
+            check (Genv.allowed_syscall_b ge cp ef);
+            let '(w', t, res, m') := res_external in
+            let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
+            Some (t, ReturnState st rs' m' bottom)
+        end
+    | ReturnState st rs m rec_cp =>
+        check (negb (Val.eq (rs PC) Vnullptr));
+        let cp' := Genv.find_comp_in_genv ge (rs PC) in
+
+        (* let rec_cp' := call_comp ge st in *)
+        check (match flowsto_dec rec_cp cp' with
+               | left _ => true
+               | right _ => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))
+               end);
+        do st' <- update_stack_return ge st rec_cp rs;
+        let sg := sig_of_call st in
+        check (match Genv.type_of_call cp' rec_cp with
+               | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg)
+               | _ => true end);
+        do t <- get_return_trace _ _ ge cp' rec_cp (return_value rs sg) (sig_res sg);
+        Some (t, State st' rs m cp')
+    end.
+
+  Definition at_final_state (s: state): option int :=
+    match s with
+    | ReturnState nil rs m cp =>
+        match rs X10 with
+        | Vint r => if Val.eq (rs PC) Vnullptr then Some r else None
+        | _ => None
+        end
+    | _ => None
+    end.
+
+  Lemma take_step_correct: forall p w s t s',
+      let ge := Genv.globalenv p in
+      step ge s t s' ->
+      take_step p ge w s = Some (t, s').
+  Proof.
+    intros p w s t s' ge H.
+    inv H; simpl; eauto.
+    - rewrite H0, H1, H2, H3, H4, H5, NEXTPC, ALLOWED.
+      destruct cp_eq_dec; try congruence. destruct i; auto. inv H3.
+    - rewrite H0, H1, H2, H3, H4, NEXTPC.
+      destruct i; inv H4; simpl.
+      + apply Genv.allowed_call_reflect in ALLOWED; rewrite ALLOWED.
+        rewrite STUPD. eapply get_call_arguments_equiv in ARGS; eauto; rewrite ARGS.
+        simpl in NO_CROSS_PTR. destruct flowsto_dec; try auto.
+        * apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+        * exploit NO_CROSS_PTR; eauto; intros G.
+          rewrite Forall_forall in G.
+          pose proof forallb_forall as [X Y]. rewrite Y.
+          apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+          intros. exploit G; eauto. intros. eapply not_ptr_reflect; eauto.
+      + apply Genv.allowed_call_reflect in ALLOWED; rewrite ALLOWED.
+        rewrite STUPD. eapply get_call_arguments_equiv in ARGS; eauto; rewrite ARGS.
+        simpl in NO_CROSS_PTR. destruct flowsto_dec; try auto.
+        * apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+        * exploit NO_CROSS_PTR; eauto; intros G.
+          rewrite Forall_forall in G.
+          pose proof forallb_forall as [X Y]. rewrite Y.
+          apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+          intros. exploit G; eauto. intros. eapply not_ptr_reflect; eauto.
+    - rewrite H0, H1, H2, H3, H4.
+      destruct i; inv H4; simpl. reflexivity.
+    - destruct Val.eq; try congruence; simpl in *.
+      rewrite STUPD. apply get_return_trace_eq in EV. rewrite EV.
+      destruct flowsto_dec; simpl; auto.
+      rewrite RESTORE_SP, PC_RA; eauto.
+      do 2 destruct Val.eq; try contradiction. simpl.
+      exploit NO_CROSS_PTR; eauto; intros G.
+      apply not_ptr_reflect in G; rewrite G. reflexivity.
+    - admit.
+    - admit.
+  Admitted.
 
 Definition build_initial_state (p: program): option state :=
   let ge := Genv.globalenv p in

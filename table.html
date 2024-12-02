@@ -1,0 +1,677 @@
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/><title>Artifact</title><style>
+/* cspell:disable-file */
+/* webkit printing magic: print all background colors */
+html {
+	-webkit-print-color-adjust: exact;
+}
+* {
+	box-sizing: border-box;
+	-webkit-print-color-adjust: exact;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+}
+@media only screen {
+	body {
+		margin: 2em auto;
+		max-width: 900px;
+		color: rgb(55, 53, 47);
+	}
+}
+
+body {
+	line-height: 1.5;
+	white-space: pre-wrap;
+}
+
+a,
+a.visited {
+	color: inherit;
+	text-decoration: underline;
+}
+
+.pdf-relative-link-path {
+	font-size: 80%;
+	color: #444;
+}
+
+h1,
+h2,
+h3 {
+	letter-spacing: -0.01em;
+	line-height: 1.2;
+	font-weight: 600;
+	margin-bottom: 0;
+}
+
+.page-title {
+	font-size: 2.5rem;
+	font-weight: 700;
+	margin-top: 0;
+	margin-bottom: 0.75em;
+}
+
+h1 {
+	font-size: 1.875rem;
+	margin-top: 1.875rem;
+}
+
+h2 {
+	font-size: 1.5rem;
+	margin-top: 1.5rem;
+}
+
+h3 {
+	font-size: 1.25rem;
+	margin-top: 1.25rem;
+}
+
+.source {
+	border: 1px solid #ddd;
+	border-radius: 3px;
+	padding: 1.5em;
+	word-break: break-all;
+}
+
+.callout {
+	border-radius: 3px;
+	padding: 1rem;
+}
+
+figure {
+	margin: 1.25em 0;
+	page-break-inside: avoid;
+}
+
+figcaption {
+	opacity: 0.5;
+	font-size: 85%;
+	margin-top: 0.5em;
+}
+
+mark {
+	background-color: transparent;
+}
+
+.indented {
+	padding-left: 1.5em;
+}
+
+hr {
+	background: transparent;
+	display: block;
+	width: 100%;
+	height: 1px;
+	visibility: visible;
+	border: none;
+	border-bottom: 1px solid rgba(55, 53, 47, 0.09);
+}
+
+img {
+	max-width: 100%;
+}
+
+@media only print {
+	img {
+		max-height: 100vh;
+		object-fit: contain;
+	}
+}
+
+@page {
+	margin: 1in;
+}
+
+.collection-content {
+	font-size: 0.875rem;
+}
+
+.column-list {
+	display: flex;
+	justify-content: space-between;
+}
+
+.column {
+	padding: 0 1em;
+}
+
+.column:first-child {
+	padding-left: 0;
+}
+
+.column:last-child {
+	padding-right: 0;
+}
+
+.table_of_contents-item {
+	display: block;
+	font-size: 0.875rem;
+	line-height: 1.3;
+	padding: 0.125rem;
+}
+
+.table_of_contents-indent-1 {
+	margin-left: 1.5rem;
+}
+
+.table_of_contents-indent-2 {
+	margin-left: 3rem;
+}
+
+.table_of_contents-indent-3 {
+	margin-left: 4.5rem;
+}
+
+.table_of_contents-link {
+	text-decoration: none;
+	opacity: 0.7;
+	border-bottom: 1px solid rgba(55, 53, 47, 0.18);
+}
+
+table,
+th,
+td {
+	border: 1px solid rgba(55, 53, 47, 0.09);
+	border-collapse: collapse;
+}
+
+table {
+	border-left: none;
+	border-right: none;
+}
+
+th,
+td {
+	font-weight: normal;
+	padding: 0.25em 0.5em;
+	line-height: 1.5;
+	min-height: 1.5em;
+	text-align: left;
+}
+
+th {
+	color: rgba(55, 53, 47, 0.6);
+}
+
+ol,
+ul {
+	margin: 0;
+	margin-block-start: 0.6em;
+	margin-block-end: 0.6em;
+}
+
+li > ol:first-child,
+li > ul:first-child {
+	margin-block-start: 0.6em;
+}
+
+ul > li {
+	list-style: disc;
+}
+
+ul.to-do-list {
+	padding-inline-start: 0;
+}
+
+ul.to-do-list > li {
+	list-style: none;
+}
+
+.to-do-children-checked {
+	text-decoration: line-through;
+	opacity: 0.375;
+}
+
+ul.toggle > li {
+	list-style: none;
+}
+
+ul {
+	padding-inline-start: 1.7em;
+}
+
+ul > li {
+	padding-left: 0.1em;
+}
+
+ol {
+	padding-inline-start: 1.6em;
+}
+
+ol > li {
+	padding-left: 0.2em;
+}
+
+.mono ol {
+	padding-inline-start: 2em;
+}
+
+.mono ol > li {
+	text-indent: -0.4em;
+}
+
+.toggle {
+	padding-inline-start: 0em;
+	list-style-type: none;
+}
+
+/* Indent toggle children */
+.toggle > li > details {
+	padding-left: 1.7em;
+}
+
+.toggle > li > details > summary {
+	margin-left: -1.1em;
+}
+
+.selected-value {
+	display: inline-block;
+	padding: 0 0.5em;
+	background: rgba(206, 205, 202, 0.5);
+	border-radius: 3px;
+	margin-right: 0.5em;
+	margin-top: 0.3em;
+	margin-bottom: 0.3em;
+	white-space: nowrap;
+}
+
+.collection-title {
+	display: inline-block;
+	margin-right: 1em;
+}
+
+.page-description {
+    margin-bottom: 2em;
+}
+
+.simple-table {
+	margin-top: 1em;
+	font-size: 0.875rem;
+	empty-cells: show;
+}
+.simple-table td {
+	height: 29px;
+	min-width: 120px;
+}
+
+.simple-table th {
+	height: 29px;
+	min-width: 120px;
+}
+
+.simple-table-header-color {
+	background: rgb(247, 246, 243);
+	color: black;
+}
+.simple-table-header {
+	font-weight: 500;
+}
+
+time {
+	opacity: 0.5;
+}
+
+.icon {
+	display: inline-block;
+	max-width: 1.2em;
+	max-height: 1.2em;
+	text-decoration: none;
+	vertical-align: text-bottom;
+	margin-right: 0.5em;
+}
+
+img.icon {
+	border-radius: 3px;
+}
+
+.user-icon {
+	width: 1.5em;
+	height: 1.5em;
+	border-radius: 100%;
+	margin-right: 0.5rem;
+}
+
+.user-icon-inner {
+	font-size: 0.8em;
+}
+
+.text-icon {
+	border: 1px solid #000;
+	text-align: center;
+}
+
+.page-cover-image {
+	display: block;
+	object-fit: cover;
+	width: 100%;
+	max-height: 30vh;
+}
+
+.page-header-icon {
+	font-size: 3rem;
+	margin-bottom: 1rem;
+}
+
+.page-header-icon-with-cover {
+	margin-top: -0.72em;
+	margin-left: 0.07em;
+}
+
+.page-header-icon img {
+	border-radius: 3px;
+}
+
+.link-to-page {
+	margin: 1em 0;
+	padding: 0;
+	border: none;
+	font-weight: 500;
+}
+
+p > .user {
+	opacity: 0.5;
+}
+
+td > .user,
+td > time {
+	white-space: nowrap;
+}
+
+input[type="checkbox"] {
+	transform: scale(1.5);
+	margin-right: 0.6em;
+	vertical-align: middle;
+}
+
+p {
+	margin-top: 0.5em;
+	margin-bottom: 0.5em;
+}
+
+.image {
+	border: none;
+	margin: 1.5em 0;
+	padding: 0;
+	border-radius: 0;
+	text-align: center;
+}
+
+.code,
+code {
+	background: rgba(135, 131, 120, 0.15);
+	border-radius: 3px;
+	padding: 0.2em 0.4em;
+	border-radius: 3px;
+	font-size: 85%;
+	tab-size: 2;
+}
+
+code {
+	color: #eb5757;
+}
+
+.code {
+	padding: 1.5em 1em;
+}
+
+.code-wrap {
+	white-space: pre-wrap;
+	word-break: break-all;
+}
+
+.code > code {
+	background: none;
+	padding: 0;
+	font-size: 100%;
+	color: inherit;
+}
+
+blockquote {
+	font-size: 1.25em;
+	margin: 1em 0;
+	padding-left: 1em;
+	border-left: 3px solid rgb(55, 53, 47);
+}
+
+.bookmark {
+	text-decoration: none;
+	max-height: 8em;
+	padding: 0;
+	display: flex;
+	width: 100%;
+	align-items: stretch;
+}
+
+.bookmark-title {
+	font-size: 0.85em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	height: 1.75em;
+	white-space: nowrap;
+}
+
+.bookmark-text {
+	display: flex;
+	flex-direction: column;
+}
+
+.bookmark-info {
+	flex: 4 1 180px;
+	padding: 12px 14px 14px;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+}
+
+.bookmark-image {
+	width: 33%;
+	flex: 1 1 180px;
+	display: block;
+	position: relative;
+	object-fit: cover;
+	border-radius: 1px;
+}
+
+.bookmark-description {
+	color: rgba(55, 53, 47, 0.6);
+	font-size: 0.75em;
+	overflow: hidden;
+	max-height: 4.5em;
+	word-break: break-word;
+}
+
+.bookmark-href {
+	font-size: 0.75em;
+	margin-top: 0.25em;
+}
+
+.sans { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"; }
+.code { font-family: "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace; }
+.serif { font-family: Lyon-Text, Georgia, ui-serif, serif; }
+.mono { font-family: iawriter-mono, Nitti, Menlo, Courier, monospace; }
+.pdf .sans { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol", 'Twemoji', 'Noto Color Emoji', 'Noto Sans CJK JP'; }
+.pdf:lang(zh-CN) .sans { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol", 'Twemoji', 'Noto Color Emoji', 'Noto Sans CJK SC'; }
+.pdf:lang(zh-TW) .sans { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol", 'Twemoji', 'Noto Color Emoji', 'Noto Sans CJK TC'; }
+.pdf:lang(ko-KR) .sans { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol", 'Twemoji', 'Noto Color Emoji', 'Noto Sans CJK KR'; }
+.pdf .code { font-family: Source Code Pro, "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK JP'; }
+.pdf:lang(zh-CN) .code { font-family: Source Code Pro, "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK SC'; }
+.pdf:lang(zh-TW) .code { font-family: Source Code Pro, "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK TC'; }
+.pdf:lang(ko-KR) .code { font-family: Source Code Pro, "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK KR'; }
+.pdf .serif { font-family: PT Serif, Lyon-Text, Georgia, ui-serif, serif, 'Twemoji', 'Noto Color Emoji', 'Noto Serif CJK JP'; }
+.pdf:lang(zh-CN) .serif { font-family: PT Serif, Lyon-Text, Georgia, ui-serif, serif, 'Twemoji', 'Noto Color Emoji', 'Noto Serif CJK SC'; }
+.pdf:lang(zh-TW) .serif { font-family: PT Serif, Lyon-Text, Georgia, ui-serif, serif, 'Twemoji', 'Noto Color Emoji', 'Noto Serif CJK TC'; }
+.pdf:lang(ko-KR) .serif { font-family: PT Serif, Lyon-Text, Georgia, ui-serif, serif, 'Twemoji', 'Noto Color Emoji', 'Noto Serif CJK KR'; }
+.pdf .mono { font-family: PT Mono, iawriter-mono, Nitti, Menlo, Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK JP'; }
+.pdf:lang(zh-CN) .mono { font-family: PT Mono, iawriter-mono, Nitti, Menlo, Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK SC'; }
+.pdf:lang(zh-TW) .mono { font-family: PT Mono, iawriter-mono, Nitti, Menlo, Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK TC'; }
+.pdf:lang(ko-KR) .mono { font-family: PT Mono, iawriter-mono, Nitti, Menlo, Courier, monospace, 'Twemoji', 'Noto Color Emoji', 'Noto Sans Mono CJK KR'; }
+.highlight-default {
+	color: rgba(55, 53, 47, 1);
+}
+.highlight-gray {
+	color: rgba(120, 119, 116, 1);
+	fill: rgba(120, 119, 116, 1);
+}
+.highlight-brown {
+	color: rgba(159, 107, 83, 1);
+	fill: rgba(159, 107, 83, 1);
+}
+.highlight-orange {
+	color: rgba(217, 115, 13, 1);
+	fill: rgba(217, 115, 13, 1);
+}
+.highlight-yellow {
+	color: rgba(203, 145, 47, 1);
+	fill: rgba(203, 145, 47, 1);
+}
+.highlight-teal {
+	color: rgba(68, 131, 97, 1);
+	fill: rgba(68, 131, 97, 1);
+}
+.highlight-blue {
+	color: rgba(51, 126, 169, 1);
+	fill: rgba(51, 126, 169, 1);
+}
+.highlight-purple {
+	color: rgba(144, 101, 176, 1);
+	fill: rgba(144, 101, 176, 1);
+}
+.highlight-pink {
+	color: rgba(193, 76, 138, 1);
+	fill: rgba(193, 76, 138, 1);
+}
+.highlight-red {
+	color: rgba(212, 76, 71, 1);
+	fill: rgba(212, 76, 71, 1);
+}
+.highlight-gray_background {
+	background: rgba(241, 241, 239, 1);
+}
+.highlight-brown_background {
+	background: rgba(244, 238, 238, 1);
+}
+.highlight-orange_background {
+	background: rgba(251, 236, 221, 1);
+}
+.highlight-yellow_background {
+	background: rgba(251, 243, 219, 1);
+}
+.highlight-teal_background {
+	background: rgba(237, 243, 236, 1);
+}
+.highlight-blue_background {
+	background: rgba(231, 243, 248, 1);
+}
+.highlight-purple_background {
+	background: rgba(244, 240, 247, 0.8);
+}
+.highlight-pink_background {
+	background: rgba(249, 238, 243, 0.8);
+}
+.highlight-red_background {
+	background: rgba(253, 235, 236, 1);
+}
+.block-color-default {
+	color: inherit;
+	fill: inherit;
+}
+.block-color-gray {
+	color: rgba(120, 119, 116, 1);
+	fill: rgba(120, 119, 116, 1);
+}
+.block-color-brown {
+	color: rgba(159, 107, 83, 1);
+	fill: rgba(159, 107, 83, 1);
+}
+.block-color-orange {
+	color: rgba(217, 115, 13, 1);
+	fill: rgba(217, 115, 13, 1);
+}
+.block-color-yellow {
+	color: rgba(203, 145, 47, 1);
+	fill: rgba(203, 145, 47, 1);
+}
+.block-color-teal {
+	color: rgba(68, 131, 97, 1);
+	fill: rgba(68, 131, 97, 1);
+}
+.block-color-blue {
+	color: rgba(51, 126, 169, 1);
+	fill: rgba(51, 126, 169, 1);
+}
+.block-color-purple {
+	color: rgba(144, 101, 176, 1);
+	fill: rgba(144, 101, 176, 1);
+}
+.block-color-pink {
+	color: rgba(193, 76, 138, 1);
+	fill: rgba(193, 76, 138, 1);
+}
+.block-color-red {
+	color: rgba(212, 76, 71, 1);
+	fill: rgba(212, 76, 71, 1);
+}
+.block-color-gray_background {
+	background: rgba(241, 241, 239, 1);
+}
+.block-color-brown_background {
+	background: rgba(244, 238, 238, 1);
+}
+.block-color-orange_background {
+	background: rgba(251, 236, 221, 1);
+}
+.block-color-yellow_background {
+	background: rgba(251, 243, 219, 1);
+}
+.block-color-teal_background {
+	background: rgba(237, 243, 236, 1);
+}
+.block-color-blue_background {
+	background: rgba(231, 243, 248, 1);
+}
+.block-color-purple_background {
+	background: rgba(244, 240, 247, 0.8);
+}
+.block-color-pink_background {
+	background: rgba(249, 238, 243, 0.8);
+}
+.block-color-red_background {
+	background: rgba(253, 235, 236, 1);
+}
+.select-value-color-uiBlue { background-color: rgba(35, 131, 226, .07); }
+.select-value-color-pink { background-color: rgba(245, 224, 233, 1); }
+.select-value-color-purple { background-color: rgba(232, 222, 238, 1); }
+.select-value-color-green { background-color: rgba(219, 237, 219, 1); }
+.select-value-color-gray { background-color: rgba(227, 226, 224, 1); }
+.select-value-color-transparentGray { background-color: rgba(227, 226, 224, 0); }
+.select-value-color-translucentGray { background-color: rgba(255, 255, 255, 0.0375); }
+.select-value-color-orange { background-color: rgba(250, 222, 201, 1); }
+.select-value-color-brown { background-color: rgba(238, 224, 218, 1); }
+.select-value-color-red { background-color: rgba(255, 226, 221, 1); }
+.select-value-color-yellow { background-color: rgba(253, 236, 200, 1); }
+.select-value-color-blue { background-color: rgba(211, 229, 239, 1); }
+.select-value-color-pageGlass { background-color: undefined; }
+.select-value-color-washGlass { background-color: undefined; }
+
+.checkbox {
+	display: inline-flex;
+	vertical-align: text-bottom;
+	width: 16;
+	height: 16;
+	background-size: 16px;
+	margin-left: 2px;
+	margin-right: 5px;
+}
+
+.checkbox-on {
+	background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%3Crect%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22%2358A9D7%22%2F%3E%0A%3Cpath%20d%3D%22M6.71429%2012.2852L14%204.9995L12.7143%203.71436L6.71429%209.71378L3.28571%206.2831L2%207.57092L6.71429%2012.2852Z%22%20fill%3D%22white%22%2F%3E%0A%3C%2Fsvg%3E");
+}
+
+.checkbox-off {
+	background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%3Crect%20x%3D%220.75%22%20y%3D%220.75%22%20width%3D%2214.5%22%20height%3D%2214.5%22%20fill%3D%22white%22%20stroke%3D%22%2336352F%22%20stroke-width%3D%221.5%22%2F%3E%0A%3C%2Fsvg%3E");
+}
+	
+</style></head><body><article id="4bbee412-2e9c-4fde-bb87-9829477126e2" class="page sans"><header><h1 class="page-title">Artifact</h1><p class="page-description"></p></header><div class="page-body"><h1 id="7071474a-5ac4-42f2-9913-d3769c176851" class="">Correctness: <code>correctness</code></h1><h2 id="7eb3510e-9cc5-4990-a213-ba7b2170df9d" class="">Generic Claims</h2><table id="bfd7e0c0-4818-49f7-9d41-00394b71c428" class="simple-table"><thead class="simple-table-header"><tr id="ed08b954-e58f-42b7-a91b-f07584677428"><th id="RlVE" class="simple-table-header-color simple-table-header" style="width:236.8359375px">Claim</th><th id="leIg" class="simple-table-header-color simple-table-header" style="width:160.7734375px">File</th><th id="FDd:" class="simple-table-header-color simple-table-header" style="width:409.4296875px">Location in file</th><th id="^^[Z" class="simple-table-header-color simple-table-header" style="width:250px">Notes</th></tr></thead><tbody><tr id="00dfe33a-3ee4-482a-ae43-cfb446058691"><td id="RlVE" class="" style="width:236.8359375px">Compartment model</td><td id="leIg" class="" style="width:160.7734375px">common/AST.v</td><td id="FDd:" class="" style="width:409.4296875px">Module <code>COMP</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="4dc7cbc8-26c0-4e3f-9283-e8dc326e6214"><td id="RlVE" class="" style="width:236.8359375px">Compartments</td><td id="leIg" class="" style="width:160.7734375px">common/AST.v</td><td id="FDd:" class="" style="width:409.4296875px">Definition <code>compartment</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="ae4e4f27-bb6d-4230-abca-17e725486b9a"><td id="RlVE" class="" style="width:236.8359375px">Interfaces</td><td id="leIg" class="" style="width:160.7734375px">common/AST.v</td><td id="FDd:" class="" style="width:409.4296875px">Module <code>Policy</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="888dd55c-11bb-4d20-b60d-7a8006c744b7"><td id="RlVE" class="" style="width:236.8359375px">Programs</td><td id="leIg" class="" style="width:160.7734375px">common/AST.v</td><td id="FDd:" class="" style="width:409.4296875px">Record <code>program</code></td><td id="^^[Z" class="" style="width:250px">Standard CompCert definition with the addition of a <code>Policy.t</code>(interface) component, properties related to well-formedness of this component</td></tr><tr id="5e9f63b5-2094-4ddd-bbc9-aed10376eb60"><td id="RlVE" class="" style="width:236.8359375px">Assignment of compartment to definitions and objects</td><td id="leIg" class="" style="width:160.7734375px">common/AST.v</td><td id="FDd:" class="" style="width:409.4296875px">Typeclass <code>has_comp</code></td><td id="^^[Z" class="" style="width:250px">This is defined as a typeclass because the type of functions varies.</td></tr><tr id="b63fdf0d-8a52-433a-98b6-ede44e099e1d"><td id="RlVE" class="" style="width:236.8359375px">Interface checks: definition of allowed cross-compartment calls</td><td id="leIg" class="" style="width:160.7734375px">common/Globalenvs.v</td><td id="FDd:" class="" style="width:409.4296875px">Definition <code>allowed_cross_call</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="a18a8984-a422-432c-98c3-9553ac06e7d4"><td id="RlVE" class="" style="width:236.8359375px">Interface checks: allowed calls</td><td id="leIg" class="" style="width:160.7734375px">common/Globalenvs.v</td><td id="FDd:" class="" style="width:409.4296875px">Definition <code>allowed_call</code></td><td id="^^[Z" class="" style="width:250px">Builds on top of the previous definition to allow for intra-compartment calls </td></tr><tr id="af1d4276-c529-47cd-b06f-e9a3c000c3eb"><td id="RlVE" class="" style="width:236.8359375px">Interface checks: preservation by compilation of allowed calls</td><td id="leIg" class="" style="width:160.7734375px">common/Globalenvs.v</td><td id="FDd:" class="" style="width:409.4296875px">Theorems <code>match_genvs_allowed_calls</code>, <code>allowed_call_transf_partial</code>, <code>allowed_call_transf</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="7082254f-550c-430a-93db-63b3097da14d"><td id="RlVE" class="" style="width:236.8359375px">Trace events</td><td id="leIg" class="" style="width:160.7734375px">common/Events.v</td><td id="FDd:" class="" style="width:409.4296875px">Definition <code>event</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="1c3b71d3-d9ad-4ff0-8d96-5a808ee41624"><td id="RlVE" class="" style="width:236.8359375px">Properties of system calls</td><td id="leIg" class="" style="width:160.7734375px">common/Events.v</td><td id="FDd:" class="" style="width:409.4296875px">Record <code>extcall_properties</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="56a46024-d764-44a6-99a0-3c0fa58a6817"><td id="RlVE" class="" style="width:236.8359375px">Generation of the new trace events</td><td id="leIg" class="" style="width:160.7734375px">common/Events.v</td><td id="FDd:" class="" style="width:409.4296875px">Definitions <code>call_trace</code> and <code>return_trace</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="8057923c-e213-49ea-b45e-c8fa73fb9543"><td id="RlVE" class="" style="width:236.8359375px">Memory containing compartment information</td><td id="leIg" class="" style="width:160.7734375px">common/Memory.v</td><td id="FDd:" class="" style="width:409.4296875px">Record <code>mem&#x27;</code> and in particular field <code>mem_compartments</code></td><td id="^^[Z" class="" style="width:250px"></td></tr><tr id="b2015a84-ed8d-4123-aefa-f365a0e9c93e"><td id="RlVE" class="" style="width:236.8359375px">Memory operations require compartment permissions</td><td id="leIg" class="" style="width:160.7734375px">common/Memory.v</td><td id="FDd:" class="" style="width:409.4296875px">Definition <code>valid_access</code> </td><td id="^^[Z" class="" style="width:250px">Given by the conjunct <code>can_access_block m b cp</code> meaning that <code>cp</code> can access the block <code>b</code> in memory <code>m</code></td></tr><tr id="95fcf9a9-c06a-4037-999f-e13ab63e0305"><td id="RlVE" class="" style="width:236.8359375px">Registers are all caller saved</td><td id="leIg" class="" style="width:160.7734375px"></td><td id="FDd:" class="" style="width:409.4296875px"></td><td id="^^[Z" class="" style="width:250px"></td></tr></tbody></table><h2 id="b79c5752-b66c-4758-a1f9-5dc7e09862b8" class="">How to check changes to CompCert’s languages</h2><p id="96c1bca5-128c-4d19-a48d-040b99016ef7" class="">All the languages are changed in similar ways. As such, we describe the location of the changes on the Cminor language, and invite the reviewers to check the other languages if they wish to do so.</p><table id="d2bc615b-e854-4f6f-8201-d7127fc75210" class="simple-table"><thead class="simple-table-header"><tr id="4195b33c-f4e2-4023-bb53-f9611e1306fe"><th id="ln;{" class="simple-table-header-color simple-table-header" style="width:250px">Claim</th><th id="z&lt;D\" class="simple-table-header-color simple-table-header" style="width:205px">File</th><th id="yW&gt;a" class="simple-table-header-color simple-table-header" style="width:381px">Location in file</th><th id="vIsP" class="simple-table-header-color simple-table-header" style="width:250px">Notes</th></tr></thead><tbody><tr id="be185487-a49c-4ded-adeb-b23f3c38d002"><td id="ln;{" class="" style="width:250px">Interface checks at the point of calls and returns</td><td id="z&lt;D\" class="" style="width:205px">backend/Cminor.v</td><td id="yW&gt;a" class="" style="width:381px">In <code>step</code>, conditions <code>(ALLOWED: Genv.allowed_call ge (comp_of f) vf)</code> for calls.</td><td id="vIsP" class="" style="width:250px">There is no check for allowed returns in most languages, including Cminor.</td></tr><tr id="9222e7b9-85cd-4045-8825-0f55b33596bd"><td id="ln;{" class="" style="width:250px">Cross-compartment calls and returns don’t pass pointers</td><td id="z&lt;D\" class="" style="width:205px">backend/Cminor.v</td><td id="yW&gt;a" class="" style="width:381px">In <code>step</code>, conditions <code>(NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -&gt; Forall not_ptr vargs)</code> and <code>(NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -&gt; not_ptr v)</code></td><td id="vIsP" class="" style="width:250px"></td></tr><tr id="c9347761-0a1a-4e64-a552-4e3c71d66c99"><td id="ln;{" class="" style="width:250px">Generation of events</td><td id="z&lt;D\" class="" style="width:205px">backend/Cminor.v</td><td id="yW&gt;a" class="" style="width:381px">In <code>step</code>, condition <code>(EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t)</code> and <code>(EV: return_trace ge (comp_of f) cp v ty t)</code></td><td id="vIsP" class="" style="width:250px"></td></tr><tr id="4460497e-0767-4ea1-848c-4e88ccfe0cec"><td id="ln;{" class="" style="width:250px">Correctness of the pass from Csharpminor to Cminor</td><td id="z&lt;D\" class="" style="width:205px">cfrontend/Cminorgenproof.v</td><td id="yW&gt;a" class="" style="width:381px">Entire file. The most important theorem is the theorem <code>transl_step_correct</code></td><td id="vIsP" class="" style="width:250px"></td></tr></tbody></table><h2 id="8e8cd141-be2c-485d-b848-2d9f8f3d309d" class="">Language-specific claims</h2><table id="0d3d1f04-8f15-41d0-a4bb-136a9263d45f" class="simple-table"><thead class="simple-table-header"><tr id="7379c18a-4acc-4296-99c8-02ac03e1c01f"><th id="bO&lt;j" class="simple-table-header-color simple-table-header" style="width:250px">Claim</th><th id="jweE" class="simple-table-header-color simple-table-header" style="width:178px">File</th><th id="vBJz" class="simple-table-header-color simple-table-header" style="width:359px">Location in file</th><th id="gRfD" class="simple-table-header-color simple-table-header" style="width:250px">Notes</th></tr></thead><tbody><tr id="ad18fd32-d46d-4408-83f0-99044cc25254"><td id="bO&lt;j" class="" style="width:250px">Cross-compartment inlining disabled</td><td id="jweE" class="" style="width:178px">backend/Inlining.v</td><td id="vBJz" class="" style="width:359px">Definition <code>can_inline</code></td><td id="gRfD" class="" style="width:250px">This comes from the check <code>cp_eq_dec cp (comp_of f)</code></td></tr><tr id="adfc32a8-efdf-44d6-b0b6-de4dc4264759"><td id="bO&lt;j" class="" style="width:250px">Cross-compartment tailcall optimization disabled</td><td id="jweE" class="" style="width:178px">backend/Tailcall.v</td><td id="vBJz" class="" style="width:359px">Definition <code>transf_instr</code></td><td id="gRfD" class="" style="width:250px">The <code>Itailcall</code> instruction is only generated when the condition <code>intra_compartment_call</code> holds.</td></tr><tr id="1e9fa796-6ebb-46a1-84d2-cad765f4ad84"><td id="bO&lt;j" class="" style="width:250px">Cross-compartment tailcalls disabled</td><td id="jweE" class="" style="width:178px">All languages definition</td><td id="vBJz" class="" style="width:359px">Semantics of the languages</td><td id="gRfD" class="" style="width:250px">When a tailcall instruction exists, then the semantics prevent it from being executed cross-compartment by having a condition <code>(COMP: comp_of fd = comp_of f)</code> </td></tr></tbody></table><h1 id="788a3b83-9095-47b9-af7a-6deff08c2b48" class="">Back-translation: <code>backtranslation</code></h1><table id="62741a8c-e89e-4969-8061-9f0c4e09b77b" class="simple-table"><thead class="simple-table-header"><tr id="f650ecff-c19c-493d-a02d-a9861bd43891"><th id="ngP&lt;" class="simple-table-header-color simple-table-header" style="width:250px">Claim</th><th id="J=yA" class="simple-table-header-color simple-table-header" style="width:229px">File</th><th id="bX&lt;&lt;" class="simple-table-header-color simple-table-header" style="width:335px">Location in file</th><th id="Sy;l" class="simple-table-header-color simple-table-header" style="width:250px">Notes</th></tr></thead><tbody><tr id="570de293-6afa-4b30-9d30-f00ce6e4f9a6"><td id="ngP&lt;" class="" style="width:250px">Informative events</td><td id="J=yA" class="" style="width:229px">security/BtInfoAsm.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Definition <code>bundle_event</code></td><td id="Sy;l" class="" style="width:250px">This is a more general version of the events presented in the paper</td></tr><tr id="401f5686-f975-4704-9457-cefdf281337e"><td id="ngP&lt;" class="" style="width:250px">Well-formed informative trace</td><td id="J=yA" class="" style="width:229px">security/BtInfoAsm.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Definition <code>istar</code> and <code>ir_step</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="180ce7ef-02bb-4642-80f1-6b1e1207799b"><td id="ngP&lt;" class="" style="width:250px">Memory deltas</td><td id="J=yA" class="" style="width:229px">security/MemoryDelta.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Section <code>MEMDELTA</code>, definitions <code>mem_delta_kind</code> , <code>mem_delta</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="6b06db46-441a-48c9-a1bc-47e036cd910e"><td id="ngP&lt;" class="" style="width:250px">Existence of a well-formed informative trace corresponding to a trace prefix</td><td id="J=yA" class="" style="width:229px">security/BtInfoAsm.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorem <code>asm_to_ir</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="02d29a7c-5645-46eb-b826-c41164f294fb"><td id="ngP&lt;" class="" style="width:250px">Back-translation function on informative traces</td><td id="J=yA" class="" style="width:229px">security/Backtranslation.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Definition <code>gen_program</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="3441a9c4-0fbf-4736-b8d4-084596abf3b9"><td id="ngP&lt;" class="" style="width:250px">Correctness of the back-translation from the intermediate language to Clight</td><td id="J=yA" class="" style="width:229px">security/BacktranslationProof.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Definition <code>ir_to_clight</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="c8a7489f-9d5d-4314-afe1-024fd36a95d8"><td id="ngP&lt;" class="" style="width:250px">Correctness of the back-translation</td><td id="J=yA" class="" style="width:229px">security/BacktranslationProof2.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorem <code>backtranslation_proof</code></td><td id="Sy;l" class="" style="width:250px"></td></tr></tbody></table><h1 id="6a3fbff0-9339-4c98-b10d-3333a5a95645" class="">Recomposition: <code>recomposition</code></h1><table id="4385eea2-112b-42aa-b173-089faecb3d3c" class="simple-table"><thead class="simple-table-header"><tr id="2aeb4c75-ff18-4bc3-8b29-bb19ce9133a7"><th id="ngP&lt;" class="simple-table-header-color simple-table-header" style="width:250px">Claim</th><th id="J=yA" class="simple-table-header-color simple-table-header" style="width:229px">File</th><th id="bX&lt;&lt;" class="simple-table-header-color simple-table-header" style="width:335px">Location in file</th><th id="Sy;l" class="simple-table-header-color simple-table-header" style="width:250px">Notes</th></tr></thead><tbody><tr id="b60cd214-266d-46bd-9c42-0c2a8a6109f4"><td id="ngP&lt;" class="" style="width:250px">Three-way simulation</td><td id="J=yA" class="" style="width:229px">common/Smallstep.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Definition <code>tsim_properties</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="b0bf87a9-9fd2-4336-8b68-736681046a45"><td id="ngP&lt;" class="" style="width:250px">Three-way simulation implies preservation of traces</td><td id="J=yA" class="" style="width:229px">common/Smallstep.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorem <code>tsimulation_star</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="768185db-70cc-487b-8d7b-4d5580f335fd"><td id="ngP&lt;" class="" style="width:250px">Simulation diagrams</td><td id="J=yA" class="" style="width:229px">common/Smallstep.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Section <code>THREEWAY_SIMU_DIAGRAM</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="3f1d78fb-9691-482a-9cd8-c37b9d298c48"><td id="ngP&lt;" class="" style="width:250px">Proof of recomposition</td><td id="J=yA" class="" style="width:229px">security/Recomposition.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorems <code>simulation</code>, <code>step_E0_strong</code>, <code>step_E0_weak</code>, <code>step_t</code></td><td id="Sy;l" class="" style="width:250px"></td></tr></tbody></table><h1 id="d8fe786d-136b-4a8f-bf55-f4e35c83be5a" class="">Blame: <code>blame</code></h1><table id="959bd78c-000e-41d4-95e8-16cc39321859" class="simple-table"><thead class="simple-table-header"><tr id="447dc0b8-0981-4fe8-9ef8-33035e2a057f"><th id="ngP&lt;" class="simple-table-header-color simple-table-header" style="width:250px">Claim</th><th id="J=yA" class="simple-table-header-color simple-table-header" style="width:229px">File</th><th id="bX&lt;&lt;" class="simple-table-header-color simple-table-header" style="width:335px">Location in file</th><th id="Sy;l" class="simple-table-header-color simple-table-header" style="width:250px">Notes</th></tr></thead><tbody><tr id="17d309fd-645c-481e-b1d7-4e271d96c034"><td id="ngP&lt;" class="" style="width:250px">Main blame theorem</td><td id="J=yA" class="" style="width:229px">security/Blame.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorem <code>does_prefix_star</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="eec21f46-5e8c-498b-b90e-91aaf22e8c9e"><td id="ngP&lt;" class="" style="width:250px">Definition 6: Blame</td><td id="J=yA" class="" style="width:229px">security/Blame.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorem <code>blame_program</code></td><td id="Sy;l" class="" style="width:250px">Follows directly from <code>does_prefix_star</code></td></tr><tr id="7b148d86-192c-4aa1-875b-df058fcb036f"><td id="ngP&lt;" class="" style="width:250px">Full program run lemmas</td><td id="J=yA" class="" style="width:229px">security/Blame.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorems <code>parallel_exec</code> and<br/><br/><code>parallel_exec&#x27;</code>.</td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="70850f22-2d7b-4715-a3cd-c050cf734e8a"><td id="ngP&lt;" class="" style="width:250px">Synchronized execution lemmas</td><td id="J=yA" class="" style="width:229px">security/Blame.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorems <code>parallel_star_E0</code><br/>and <br/><code>parallel_exec1</code></td><td id="Sy;l" class="" style="width:250px"></td></tr><tr id="3307ce64-29a0-4089-b14e-52b4df6ae183"><td id="ngP&lt;" class="" style="width:250px">Stepwise lemmas</td><td id="J=yA" class="" style="width:229px">security/Blame.v</td><td id="bX&lt;&lt;" class="" style="width:335px">Theorems <code>parallel_concrete</code> and<br/><br/><code>parallel_abstract_t</code></td><td id="Sy;l" class="" style="width:250px"></td></tr></tbody></table></div></article><span class="sans" style="font-size:14px;padding-top:2em"></span></body></html>

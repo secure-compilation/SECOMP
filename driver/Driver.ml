@@ -28,7 +28,7 @@ let tool_name = "C verified compiler"
 let sdump_suffix = ref ".json"
 
 let nolink () =
-  !option_c || !option_S || !option_E || !option_interp
+  !option_c || !option_S || !option_E || !option_interp || !option_interp_asm
 
 let object_filename sourcename =
   if nolink () then
@@ -44,7 +44,7 @@ let compile_c_file sourcename ifile ofile =
     dst := if !opt then Some (output_filename sourcename ~suffix:ext)
       else None in
   set_dest Cprint.destination option_dparse ".parsed.c";
-  set_dest Cprint.destination' option_dparse ".parsed.imports";
+  set_dest Cprint.destination' option_dparse ".parsed.intf";
   set_dest PrintCsyntax.destination option_dcmedium ".compcert.c";
   set_dest PrintClight.destination option_dclight ".light.c";
   set_dest PrintCminor.destination option_dcminor ".cm";
@@ -52,6 +52,8 @@ let compile_c_file sourcename ifile ofile =
   set_dest Regalloc.destination_alloctrace option_dalloctrace ".alloctrace";
   set_dest PrintLTL.destination option_dltl ".ltl";
   set_dest PrintMach.destination option_dmach ".mach";
+  set_dest PrintCapAsm.destination option_dcapasm ".cap_asm";
+  (* set_dest PrintAsm.destination option_dasm ".s.intf"; *)
   set_dest AsmToJSON.destination option_sdump !sdump_suffix;
   (* Parse the ast *)
   let csyntax = parse_c_file sourcename ifile in
@@ -65,21 +67,13 @@ let compile_c_file sourcename ifile ofile =
     | Errors.Error msg ->
       let loc = file_loc sourcename in
         fatal_error loc "%a"  print_error msg in
-  (* let _  = (\* TEMP *\) *)
-  (*   if !Interp.emulate_backend then *)
-  (*     match Compiler.transf_c_program csyntax with *)
-  (*     | Errors.OK asm -> *)
-  (*         PrintAsm.print_program_asm stderr asm; *)
-  (*         Interp.execute_asm asm; *)
-  (*     | Errors.Error msg -> *)
-  (*       let loc = file_loc sourcename in *)
-  (*         fatal_error loc "%a"  print_error msg in *)
   (* Dump Asm in binary and JSON format *)
   AsmToJSON.print_if asm sourcename;
   (* Print Asm in text form *)
   let oc = open_out ofile in
   PrintAsm.print_program oc asm;
   close_out oc
+
 
 (* From C source to asm *)
 
@@ -88,6 +82,18 @@ let compile_i_file sourcename preproname =
     Machine.config := Machine.compcert_interpreter !Machine.config;
     let csyntax = parse_c_file sourcename preproname in
     Interp.execute csyntax;
+        ""
+  end else if !option_interp_asm then begin
+    Machine.config := Machine.compcert_interpreter !Machine.config;
+    let csyntax = parse_c_file sourcename preproname in
+    let asm =
+      match (Compiler.transf_c_program csyntax) with
+      | Errors.OK asm ->
+        asm
+      | Errors.Error msg ->
+        let loc = file_loc sourcename in
+        fatal_error loc "%a"  print_error msg in
+    Interp.execute_asm asm;
         ""
   end else if !option_S then begin
     compile_c_file sourcename preproname
@@ -224,14 +230,15 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
  linker_help ^
 {|Tracing options:
   -dprepro       Save C file after preprocessing in <file>.i
-  -dparse        Save C file after parsing and elaboration in <file>.parsed.c
+  -dparse        Save C file after parsing and elaboration in <file>.parsed.c and interface information in <file>.parsed.intf
   -dc            Save generated Compcert C in <file>.compcert.c
   -dclight       Save generated Clight in <file>.light.c
   -dcminor       Save generated Cminor in <file>.cm
   -drtl          Save RTL at various optimization points in <file>.rtl.<n>
   -dltl          Save LTL after register allocation in <file>.ltl
   -dmach         Save generated Mach code in <file>.mach
-  -dasm          Save generated assembly in <file>.s
+  -dcapasm       Save generated capability assembly in <file>.cap_asm
+  -dasm          Save generated assembly in <file>.s and interface information in <file>.s.intf
   -dall          Save all generated intermediate files in <file>.<ext>
   -sdump         Save info for post-linking validation in <file>.json
 |} ^
@@ -239,6 +246,7 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
   warning_help ^
   {|Interpreter mode:
   -interp        Execute given .c files using the reference interpreter
+  -interp-asm    Compile given .c files to CompCert's assembly and interpret them using the ASM interpreter
   -quiet         Suppress diagnostic messages for the interpreter
   -trace         Have the interpreter produce a detailed trace of reductions
   -random        Randomize execution order
@@ -343,6 +351,7 @@ let cmdline_actions =
   Exact "-dalloctrace", Set option_dalloctrace;
   Exact "-dmach", Set option_dmach;
   Exact "-dasm", Set option_dasm;
+  Exact "-dcapasm", Set option_dcapasm;
   Exact "-dall", Self (fun _ ->
     option_dprepro := true;
     option_dparse := true;
@@ -353,7 +362,8 @@ let cmdline_actions =
     option_dltl := true;
     option_dalloctrace := true;
     option_dmach := true;
-    option_dasm := true);
+    option_dasm := true;
+    option_dcapasm := true);
   Exact "-sdump", Set option_sdump;
   Exact "-sdump-suffix", String (fun s -> option_sdump := true; sdump_suffix:= s);
   Exact "-sdump-folder", String (fun s -> AsmToJSON.sdump_folder := s);] @
@@ -363,6 +373,7 @@ let cmdline_actions =
   warning_options @
 (* Interpreter mode *)
  [ Exact "-interp", Set option_interp;
+  Exact "-interp-asm", Set option_interp_asm;
   Exact "-quiet", Unit (fun () -> Interp.trace := 0);
   Exact "-trace", Unit (fun () -> Interp.trace := 2);
   Exact "-random", Unit (fun () -> Interp.mode := Interp.Random);
@@ -422,8 +433,10 @@ let _ =
       fatal_error no_loc "ambiguous '-o' option (multiple source files)";
     if !num_input_files = 0 then
       fatal_error no_loc "no input file";
-    if not !option_interp && !main_function_name <> "main" then
-      fatal_error no_loc "option '-main' requires option '-interp'";
+    if !option_interp && !option_interp_asm then
+      fatal_error no_loc "can only have one of '-interp' or '-interp-asm'";
+    if not !option_interp_asm && not !option_interp && !main_function_name <> "main" then
+      fatal_error no_loc "option '-main' requires option '-interp' or '-interp-asm'";
     let linker_args = time "Total compilation time" perform_actions () in
     if not (nolink ()) && linker_args <> [] then begin
       linker (output_filename_default "a.out") linker_args

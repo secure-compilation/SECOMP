@@ -232,6 +232,15 @@ Proof.
   - inv FIND.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf vf' fd,
     Val.lessdef vf vf' ->
@@ -957,6 +966,7 @@ Lemma sel_builtin_default_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' k,
   Cminor.eval_exprlist ge sp e1 m1 (comp_of f) al vl ->
   external_call ef (Genv.to_senv ge) (comp_of f) vl m1 t v m2 ->
+  Genv.allowed_syscall ge (comp_of f) ef ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   exists e2' m2',
      plus step tge (State f (sel_builtin_default optid ef al) k sp e1' m1')
@@ -972,6 +982,7 @@ Proof.
   econstructor. auto. eexact A.
   eauto.
   eapply external_call_symbols_preserved. eexact senv_preserved. eexact D.
+  eapply allowed_syscall_translated; eauto.
   split; auto. apply sel_builtin_res_correct; auto.
 Qed. 
 
@@ -979,6 +990,7 @@ Lemma sel_builtin_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' k,
   Cminor.eval_exprlist ge sp e1 m1 (comp_of f) al vl ->
   external_call ef (Genv.to_senv ge) (comp_of f) vl m1 t v m2 ->
+  Genv.allowed_syscall ge (comp_of f) ef ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   (* forall ALLOWED: Policy.allowed_call (comp_of f) (External ef), *)
   exists e2' m2',
@@ -1529,7 +1541,7 @@ Proof.
   { destruct fd; try congruence. }
   rewrite <- SIG. monadInv TF. reflexivity.
   rewrite <- CPT; trivial.
-  (* rewrite CPT in ALLOWED'; eauto. *)
+  (* rewrite CPTin ALLOWED'; eauto. *)
   (* eapply allowed_call_translated; eauto. *)
   rewrite <- CPT; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
@@ -1635,9 +1647,11 @@ Proof.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   apply plus_one; econstructor. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply allowed_syscall_translated; eauto.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
   exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto.
+  rewrite <- CPT; eauto.
   rewrite <- CPT; eauto.
   intros (e2' & m2' & P & Q & R).
   left; econstructor; split. eexact P.

@@ -16,6 +16,7 @@ type gen_config = {
   global_var_max_size : int;
   max_arg_count : int;
   debug : bool;
+  min_trace_len : int;
   max_trace_len : int;
 }
 
@@ -165,17 +166,19 @@ let sample_external_funcs config =
 let sample_builtins config =
   let open QCheck.Gen in
   let gen =
+    let unique_prefix = ['n'; 'o'; 't'; 'a'; 'c'; 'f'; 'u'; 'n'; '_'] in
     let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
     let* sign = sample_signature config in
-    return (AST.EF_builtin (name, sign)) in
+    return (AST.EF_builtin (unique_prefix @ name, sign)) in
   list_repeat config.num_builtins gen
 
 let sample_runtime_funcs config =
   let open QCheck.Gen in
   let gen =
+    let unique_prefix = ['n'; 'o'; 't'; 'a'; 'c'; 'f'; 'u'; 'n'; '_'] in
     let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
     let* sign = sample_signature config in
-    return (AST.EF_runtime (name, sign)) in
+    return (AST.EF_runtime (unique_prefix @ name, sign)) in
   list_repeat config.num_runtime_funcs gen
 
 let dump_exports exports =
@@ -294,7 +297,7 @@ let build_prog_pol ctx =
       else ())
     imports;
   let policy =
-    ({ policy_comps = PTree.empty; policy_export = !policy_export; policy_import = !policy_import }
+    ({ policy_comps = PTree.empty; policy_export = !policy_export; policy_import = !policy_import; policy_syscalls = PTree.empty }
       : AST.Policy.t)
   in
   policy

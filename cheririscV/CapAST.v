@@ -20,7 +20,7 @@
 Require Import String.
 Require Export AST.
 Require Import Coqlib Maps Errors Integers Floats.
-Require Archi.
+Require CapArchi.
 
 Set Implicit Arguments.
 
@@ -242,7 +242,7 @@ Proof. unfold CTptr, CMptr; destruct Archi.ptr64; auto. Qed.
   and associated operations. *)
 
 Inductive cap_external_function : Type :=
-  | CEF_external (name: string) (cp: AST.compartment) (sg: capsignature)
+  | CEF_external (name: string) (cp: AST.COMP.compartment) (sg: capsignature)
      (** A system call or library function.  Produces an event
          in the trace. *)
   | CEF_builtin (name: string) (sg: capsignature)
@@ -297,8 +297,8 @@ Instance has_comp_cap_external_function : AST.has_comp cap_external_function :=
   fun ef =>
     match ef with
     | CEF_external _ cp _ => cp
-    | CEF_malloc | CEF_free | CEF_vload _ | CEF_vstore _ | CEF_memcpy _ _ => AST.privileged_compartment (* default_compartment *)
-    | _ => AST.default_compartment
+    | CEF_malloc | CEF_free | CEF_vload _ | CEF_vstore _ | CEF_memcpy _ _ => AST.COMP.top (* default_compartment *)
+    | _ => AST.COMP.bottom
     end.
 
 (** The type signature of an external function. *)
@@ -350,7 +350,7 @@ Definition ef_reloads (ef: cap_external_function) : bool :=
 
 Definition external_function_eq: forall (ef1 ef2: cap_external_function), {ef1=ef2} + {ef1<>ef2}.
 Proof.
-  generalize AST.ident_eq string_dec signature_eq chunk_eq captyp_eq list_eq_dec zeq Int.eq_dec; intros.
+  generalize AST.ident_eq string_dec signature_eq chunk_eq captyp_eq list_eq_dec zeq Int.eq_dec AST.COMP.cp_eq_dec; intros.
   decide equality.
 Defined.
 Global Opaque external_function_eq.
@@ -447,3 +447,48 @@ Proof.
 Qed.
 
 Set Contextual Implicit.
+
+Definition typ_rpair (A: Type) (typ_of: A -> captyp) (p: rpair A): captyp :=
+  match p with
+  | One r => typ_of r
+  | Twolong rhi rlo => CTlong
+  end.
+
+Definition map_rpair (A B: Type) (f: A -> B) (p: rpair A): rpair B :=
+  match p with
+  | One r => One (f r)
+  | Twolong rhi rlo => Twolong (f rhi) (f rlo)
+  end.
+
+Definition regs_of_rpair (A: Type) (p: rpair A): list A :=
+  match p with
+  | One r => r :: nil
+  | Twolong rhi rlo => rhi :: rlo :: nil
+  end.
+
+Fixpoint regs_of_rpairs (A: Type) (l: list (rpair A)): list A :=
+  match l with
+  | nil => nil
+  | p :: l => regs_of_rpair p ++ regs_of_rpairs l
+  end.
+
+Lemma in_regs_of_rpairs:
+  forall (A: Type) (x: A) p, In x (regs_of_rpair p) -> forall l, In p l -> In x (regs_of_rpairs l).
+Proof.
+  induction l; simpl; intros. auto. apply in_app. destruct H0; auto. subst a. auto.
+Qed.
+
+Lemma in_regs_of_rpairs_inv:
+  forall (A: Type) (x: A) l, In x (regs_of_rpairs l) -> exists p, In p l /\ In x (regs_of_rpair p).
+Proof.
+  induction l; simpl; intros. contradiction.
+  rewrite in_app_iff in H; destruct H.
+  exists a; auto.
+  apply IHl in H. firstorder auto.
+Qed.
+
+Definition forall_rpair (A: Type) (P: A -> Prop) (p: rpair A): Prop :=
+  match p with
+  | One r => P r
+  | Twolong rhi rlo => P rhi /\ P rlo
+  end.

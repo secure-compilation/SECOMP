@@ -250,3 +250,12 @@ Variant import :=
 Variant export :=
   | Export : (* exporting compartment *) string ->
              (* imported function name *) string -> export.
+
+Variant syscall_import :=
+  | ImportSyscall : (* import compartment *) string ->
+             (* imported function name *) string -> syscall_import.
+
+Record pol :=
+  { imports: list import;
+    exports: list export;
+    syscall_imports: list syscall_import }.

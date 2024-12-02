@@ -100,6 +100,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 
 (** * Properties of control flow *)
 
@@ -2375,7 +2384,9 @@ Local Transparent destroyed_by_op.
   rewrite <- (comp_transl_partial _ H3).
   erewrite Genv.find_funct_ptr_find_comp_of_block in A; eauto. simpl in A.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eauto. eauto.
+  erewrite Genv.find_funct_ptr_find_comp_of_block in ALLOWED; eauto. simpl in ALLOWED.
+  rewrite <- comp_transf_function; eauto using allowed_syscall_translated.
+  eauto.
   rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
   { eapply match_stack_external_call; eauto. }
@@ -2592,6 +2603,22 @@ Local Transparent destroyed_at_function_entry.
   intros. rewrite V by auto with asmgen. reflexivity.
 
   - simpl in *; unfold ge in *; congruence.
+(* - (* external function *) *)
+(*   exploit functions_translated; eauto. *)
+(*   intros [tf [A B]]. simpl in B. inv B. *)
+(*   exploit extcall_arguments_match; eauto. *)
+(*   intros [args' [C D]]. *)
+(*   exploit external_call_mem_extends; eauto. *)
+(*   intros [res' [m2' [P [Q [R S]]]]]. *)
+
+(*   left; econstructor; split. *)
+(*   apply plus_one. eapply exec_step_external; eauto. *)
+(*   eapply external_call_symbols_preserved; eauto. apply senv_preserved. *)
+(*   eauto using allowed_syscall_translated. *)
+(*   econstructor; eauto. *)
+(*   erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto. simpl in STACKS'. auto. *)
+(*   eapply agree_set_other; eauto. *)
+(*   eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto. *)
 
 - inv STACKS.
   inv STACKS'; simpl in *.

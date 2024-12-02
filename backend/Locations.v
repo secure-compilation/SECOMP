@@ -443,6 +443,21 @@ Module IndexedTyp <: INDEXED_TYPE.
   Lemma index_inj: forall x y, index x = index y -> x = y.
   Proof. destruct x; destruct y; simpl; congruence. Qed.
   Definition eq := typ_eq.
+  Definition left_inverse (p: positive): t :=
+    match p with
+    | 1%positive => Tany32
+    | 2%positive => Tint
+    | 3%positive => Tsingle
+    | 4%positive => Tany64
+    | 5%positive => Tfloat
+    | 6%positive => Tlong
+    | _ => Tany32
+    end.
+  Lemma left_inverse_inv:
+    forall x, left_inverse (index x) = x.
+  Proof.
+    now destruct x.
+  Qed.
 End IndexedTyp.
 
 Module OrderedTyp := OrderedIndexed(IndexedTyp).
@@ -454,6 +469,18 @@ Module IndexedSlot <: INDEXED_TYPE.
   Lemma index_inj: forall x y, index x = index y -> x = y.
   Proof. destruct x; destruct y; simpl; congruence. Qed.
   Definition eq := slot_eq.
+  Definition left_inverse (p: positive): t :=
+    match p with
+    | 1%positive => Local
+    | 2%positive => Incoming
+    | 3%positive => Outgoing
+    | _ => Local
+    end.
+  Lemma left_inverse_inv:
+    forall x, left_inverse (index x) = x.
+  Proof.
+    now destruct x.
+  Qed.
 End IndexedSlot.
 
 Module OrderedSlot := OrderedIndexed(IndexedSlot).

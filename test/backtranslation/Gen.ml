@@ -328,7 +328,12 @@ let bundle_builtin ctx rand_state =
 
 let bundle_trace ctx rand_state =
   let open QCheck.Gen in
-  let size = int_range 0 ((Gen_ctx.get_config ctx).max_trace_len / 2) rand_state in
+  let min = (Gen_ctx.get_config ctx).min_trace_len in
+  let max = (Gen_ctx.get_config ctx).max_trace_len in
+  let size = if min = max
+             then min / 2
+             else int_range (min / 2) (1 + max / 2) rand_state
+  in
   let rec bundle_trace_aux curr_comp = function
     | 0 -> []
     | n -> (

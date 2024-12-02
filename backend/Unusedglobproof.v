@@ -853,6 +853,17 @@ Proof.
   apply globals_symbols_inject; auto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall ef cp,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros ef cp.
+  unfold Genv.allowed_syscall, Genv.allowed_syscall_b; destruct ef; try auto.
+  subst ge tge. rewrite !Genv.globalenv_policy.
+  erewrite <- match_prog_pol; eauto.
+Qed.
+
 Lemma find_function_inject:
   forall j ros rs fd trs,
   meminj_preserves_globals j ->
@@ -1205,6 +1216,7 @@ Proof.
   intros (j' & tv & tm' & A & B & C & D & E & F & G & I).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
+  eapply allowed_syscall_translated; eauto.
   eapply match_states_regular with (j := j'); eauto.
   apply match_stacks_incr with j; auto.
   intros. exploit G; eauto. intros [U V].
@@ -1260,6 +1272,7 @@ Proof.
   intros (j' & tres & tm' & A & B & C & D & E & F & G & I).
   econstructor; split.
   eapply exec_function_external; eauto.
+  eapply allowed_syscall_translated; eauto.
   eapply match_states_return with (j := j'); eauto.
   apply match_stacks_bound with (Mem.nextblock m) (Mem.nextblock tm).
   apply match_stacks_incr with j; auto.

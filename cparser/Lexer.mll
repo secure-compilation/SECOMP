@@ -93,7 +93,10 @@ let () =
       ("unsigned", fun loc -> UNSIGNED loc);
       ("void", fun loc -> VOID loc);
       ("volatile", fun loc -> VOLATILE loc);
-      ("while", fun loc -> WHILE loc)];
+      ("while", fun loc -> WHILE loc);
+      ("imports", fun loc -> IMPORTS loc);
+      ("exports", fun loc -> EXPORTS loc);
+      ("imports_syscall", fun loc -> IMPORTS_SYSCALL loc)];
   if Configuration.system <> "diab" then
     (* We can ignore the __extension__ GCC keyword. *)
     ignored_keywords := SSet.add "__extension__" !ignored_keywords
@@ -410,9 +413,10 @@ rule initial = parse
   | "}"|"%>"                      { RBRACE(currentLoc lexbuf) }
   | "["|"<:"                      { LBRACK(currentLoc lexbuf) }
   | "]"|":>"                      { RBRACK(currentLoc lexbuf) }
-  | "§"                           { SECTION(currentLoc lexbuf) }
-  | "«"                           { IMPORTS(currentLoc lexbuf) }
-  | "»"                           { EXPORTS(currentLoc lexbuf) }
+  | "§"|"@"                       { SECTION(currentLoc lexbuf) }
+  | "imports"                     { IMPORTS(currentLoc lexbuf) }
+  | "exports"                     { EXPORTS(currentLoc lexbuf) }
+  | "imports_syscall"             { IMPORTS_SYSCALL(currentLoc lexbuf) }
   | "("                           { LPAREN(currentLoc lexbuf) }
   | ")"                           { RPAREN(currentLoc lexbuf) }
   | ";"                           { SEMICOLON(currentLoc lexbuf) }
@@ -681,6 +685,7 @@ and singleline_comment = parse
       | Pre_parser.SECTION loc -> loop (Parser.SECTION loc)
       | Pre_parser.IMPORTS loc -> loop (Parser.IMPORTS loc)
       | Pre_parser.EXPORTS loc -> loop (Parser.EXPORTS loc)
+      | Pre_parser.IMPORTS_SYSCALL loc -> loop (Parser.IMPORTS_SYSCALL loc)
       | Pre_parser.SEMICOLON loc -> loop (Parser.SEMICOLON loc)
       | Pre_parser.SHORT loc -> loop (Parser.SHORT loc)
       | Pre_parser.SIGNED loc -> loop (Parser.SIGNED loc)

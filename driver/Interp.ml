@@ -384,6 +384,55 @@ let do_printf m fmt args =
 
 let (>>=) opt f = match opt with None -> None | Some arg -> f arg
 
+
+(* Emulation of fgets, with assumed stream = stdin. *)
+
+(* Store bytestring contents into a global pointer *)
+
+let store_string m blk ofs buff size =
+  let rec store m i =
+    if i < size then
+      Mem.store Mint8unsigned m blk
+       (Z.add ofs (Z.of_sint i))
+       (Vint (Z.of_uint (Char.code (Bytes.get buff i)))) COMP.top >>= fun m' ->
+      store m' (i+1)
+    else Some m in
+  store m 0
+
+let do_fgets_aux size =
+
+  let buff = Bytes.create size in
+
+  let rec get count  =
+    if size = 0 then
+      None
+    else if count = size - 1 then
+      (Bytes.set buff count '\000'; Some size)
+    else
+      try
+       let c = input_char stdin in
+       begin
+         Bytes.set buff count c;
+          if c = '\n' then
+            (Bytes.set buff (count + 1) '\000'; Some (count + 2))
+         else
+           get (count + 1)
+        end
+      with End_of_file ->
+       if count > 0 || size = 1 (* special case to match glibc behavior *) then
+         (Bytes.set buff count '\000'; Some (count + 1))
+       else
+          None
+  in get 0 >>= fun count ->
+     Some (buff,count)
+
+let do_fgets m blk ofs size =
+  match do_fgets_aux (Z.to_int size) with
+    None ->
+      Some (coq_Vnullptr, m)
+  | Some (buff,count) ->
+      store_string m blk ofs buff count >>= fun m' ->
+      Some (Vptr(blk,ofs), m')
 (* Like eventval_of_val, but accepts static globals as well *)
 
 let convert_external_arg ge v t =
@@ -414,6 +463,11 @@ let do_external_function id sg ge cp w args m =
       flush stdout;
       convert_external_args ge args sg.sig_args >>= fun eargs ->
       Some(((w, [Event_syscall(id, eargs, [], EVint len, [])]), Vint len), m)
+  | "fgets", Vptr(b, ofs) :: Vint siz :: args' ->
+      do_fgets m b ofs siz >>= fun (p,m') ->
+      convert_external_args ge args sg.sig_args >>= fun eargs ->
+      convert_external_arg ge p (proj_rettype sg.sig_res) >>= fun eres ->
+      Some(((w, [Event_syscall(id, eargs, [], eres, [])]), p), m')   (* temporary version *)
   | _ ->
       None
 
@@ -716,7 +770,42 @@ and world_vstore_asm ge m chunk id ofs ev =
   Mem.store chunk m b ofs v (Mem.block_compartment m b) >>= fun m' ->
   Some(world_asm ge m')
 
+(* let diagnose_stuck_asm p ge (s: Asm.state) = *)
+(*   let open Asm in *)
+(*   match s with *)
+(*   | Asm.State (st, rs, m, cp) -> *)
+(*     begin match rs PC with *)
+(*       | Vptr (b, ofs) -> *)
+(*         begin match Genv.find_funct_ptr ge b with *)
+(*           | Some fd -> *)
+(*             begin match fd with *)
+(*               | AST.Internal f -> *)
+(*                 begin match Asm.find_instr (Ptrofs.unsigned ofs) f.fn_code with *)
+(*                   | Some i -> *)
+(*                     fprintf p "Stuck: "; *)
+(*                     PrintAsm.print_instruction_asm p i; *)
+(*                     begin match exec_instr ge f i rs m (comp_of Asm.has_comp_function f) with *)
+(*                       | Next _ -> fprintf p "can step@." *)
+(*                       | Stuck -> fprintf p "can't step@." *)
+(*                     end *)
+(*                   | None -> fprintf p "Stuck: didn't find instruction to execute@." *)
+(*                 end *)
+(*               | AST.External _ -> fprintf p "Stuck: external function@." *)
+(*             end *)
+(*           | None -> fprintf p "Stuck: didn't find function to execute@." *)
+(*         end *)
+(*       | _ -> fprintf p "Stuck: PC isn't a pointer@." *)
+(*     end *)
+(*   | Asm.ReturnState _ -> fprintf p "Stuck: Returnstate@." *)
+
+
 let do_step_asm p prog ge time s w =
+  match Asm.at_final_state s with
+  | Some r ->
+    fprintf p "Time %d: program terminated (exit code = %ld)@."
+      time (camlint_of_coqint r);
+    None
+  | None ->
     if !trace >= 1 && time <= 0 then begin
       fprintf p "Time %d: out of fuel@."
                 time;
@@ -725,9 +814,10 @@ let do_step_asm p prog ge time s w =
     end else
     match Asm.take_step do_external_function do_inline_assembly prog ge w s with
     | None ->
-        if !trace >= 1 then
-          fprintf p "Time %d: program terminated (machine stuck)@."
-                    time;
+        if !trace >= 1 then begin
+          fprintf p "Time %d: program terminated (machine stuck)@." time;
+          (* diagnose_stuck_asm p ge s *)
+        end;
           (* exit 0 *)
           None
     | Some(t, s') ->
@@ -735,7 +825,7 @@ let do_step_asm p prog ge time s w =
 
 let rec explore_one_asm p prog ge time s w =
   if !trace >= 2 then
-    (* fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state (prog, ge, s); *)
+    (* fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state_asm (prog, ge, s); *)
     fprintf p "@[<hov 2>Time %d:@ @]@." time;
   match do_step_asm p prog ge time s w with
   | Some (r, s', w') ->

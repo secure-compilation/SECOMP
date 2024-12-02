@@ -13,6 +13,7 @@ type gen_config = {
   global_var_max_size : int;
   max_arg_count : int;
   debug : bool;
+  min_trace_len : int;
   max_trace_len : int;
 }
 

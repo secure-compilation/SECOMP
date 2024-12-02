@@ -272,7 +272,10 @@ type import =
 type export =
   | Export of ident * ident
 
-type program = (globdecl list * (import list * export list))
+type syscall_import =
+  | ImportSyscall of ident * string
+
+type program = (globdecl list * (import list * export list * syscall_import list))
 
 (** Builtin types and functions *)
 
