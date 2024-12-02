@@ -2384,7 +2384,9 @@ Local Transparent destroyed_by_op.
   rewrite <- (comp_transl_partial _ H3).
   erewrite Genv.find_funct_ptr_find_comp_of_block in A; eauto. simpl in A.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite Genv.find_funct_ptr_find_comp_of_block in ALLOWED; eauto. simpl in ALLOWED.
+  erewrite Genv.find_funct_ptr_find_comp_of_block in ALLOWED; eauto.
+  erewrite Genv.find_funct_ptr_find_comp_of_block in ALLOWED; eauto.
+  simpl in ALLOWED.
   rewrite <- comp_transf_function; eauto using allowed_syscall_translated.
   eauto.
   rewrite <- comp_transf_function; eauto.
@@ -2885,6 +2887,8 @@ Local Transparent destroyed_at_function_entry.
       (Simpl; eauto).
       eapply Genv.find_funct_ptr_iff. exploit functions_translated; eauto.
       rewrite <- (comp_transl_partial _ H1).
+      apply allowed_syscall_translated; eauto.
+      rewrite <- (comp_transl_partial _ H1).
       eapply external_call_symbols_preserved; eauto. apply senv_preserved.
       { Simpl. rewrite H4. simpl. erewrite agree_sp; eauto.
         unfold extcall_arguments in *. clear -extcall_args'.
@@ -2999,6 +3003,8 @@ Local Transparent destroyed_at_function_entry.
       (Simpl; eauto).
 
       rewrite <- Genv.find_funct_ptr_iff; eauto.
+      rewrite <- (comp_transl_partial _ H1).
+      eapply allowed_syscall_translated; eauto.
       rewrite <- (comp_transl_partial _ H1).
       eapply external_call_symbols_preserved; eauto. apply senv_preserved.
       { Simpl. erewrite agree_sp; eauto.
@@ -3138,6 +3144,8 @@ Local Transparent destroyed_at_function_entry.
       (Simpl; eauto).
       eapply Genv.find_funct_ptr_iff. exploit functions_translated; eauto.
       rewrite <- (comp_transl_partial _ H1).
+      eapply allowed_syscall_translated; eauto.
+      rewrite <- (comp_transl_partial _ H1).
       eapply external_call_symbols_preserved; eauto. apply senv_preserved.
       { Simpl. rewrite H4. simpl. erewrite agree_sp; eauto.
         unfold extcall_arguments in *. clear -extcall_args'.
@@ -3256,6 +3264,8 @@ Local Transparent destroyed_at_function_entry.
       simpl; eauto.
       (Simpl; eauto).
       eapply Genv.find_funct_ptr_iff. exploit functions_translated; eauto.
+      rewrite <- (comp_transl_partial _ H1).
+      eapply allowed_syscall_translated; eauto.
       rewrite <- (comp_transl_partial _ H1).
       eapply external_call_symbols_preserved; eauto. apply senv_preserved.
       { Simpl. simpl. erewrite agree_sp; eauto.
