@@ -888,6 +888,17 @@ Proof.
     + simpl. admit.
 Admitted.
 
+Lemma complete_update_policy (pol: Policy.t) (defs: list (ident * globdef B W)):
+  pol_complete (update_policy pol defs) defs.
+Proof.
+  unfold pol_complete.
+  rewrite Forall_forall.
+  induction defs.
+  - intros x H; inv H.
+  - intros [id gd] H. inv H.
+    + simpl. admit.
+    + simpl. admit.
+Admitted.
 End TRANSF_POL.
 
 Section TRANSF_PROGRAM.
