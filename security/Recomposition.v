@@ -528,6 +528,12 @@ Section Invariants.
           forall (EMPTY1: empty_perm m1 dummy_sp1),
           forall (EMPTY2: empty_perm m2 dummy_sp2),
           forall (EMPTY3: empty_perm m3 dummy_sp3),
+          forall (SAME_AT_SET_PERM:
+              forall b1 ofs1, sp1 = Vptr b1 ofs1 ->
+              forall b3 ofs3, sp3 = Vptr b3 ofs3 ->
+            forall ofs,
+              memval_inject j__δ (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+                (ZMap.get ofs (Mem.mem_contents m3) !! b3)),
             stackframe_rel ge1 ge2 ge3 δ j__δ j__oppδ m1 m2 m3
               (Stackframe b1 sg cp' sp1 ofs1 dummy_ra1 dummy_sp1)
               (Stackframe b2 sg cp' sp2 ofs2 dummy_ra2 dummy_sp2)
@@ -563,6 +569,12 @@ Section Invariants.
           forall (EMPTY1: empty_perm m1 dummy_sp1),
           forall (EMPTY2: empty_perm m2 dummy_sp2),
           forall (EMPTY3: empty_perm m3 dummy_sp3),
+          forall (SAME_AT_SET_PERM:
+              forall b2 ofs2, sp2 = Vptr b2 ofs2 ->
+              forall b3 ofs3, sp3 = Vptr b3 ofs3 ->
+            forall ofs,
+              memval_inject j__oppδ (ZMap.get ofs (Mem.mem_contents m2) !! b2)
+                (ZMap.get ofs (Mem.mem_contents m3) !! b3)),
             stackframe_rel ge1 ge2 ge3 δ j__δ j__oppδ m1 m2 m3
               (Stackframe b1 sg cp' sp1 ofs1 dummy_ra1 dummy_sp1)
               (Stackframe b2 sg cp' sp2 ofs2 dummy_ra2 dummy_sp2)
@@ -606,6 +618,7 @@ Section Invariants.
         now destruct s.
         destruct (s cp'), (s (Genv.find_comp_of_block _ _)); eauto; congruence.
         destruct (s cp'), (s (Genv.find_comp_of_block _ _)); eauto; congruence.
+
       + eapply stackframe_related_δ; eauto.
         destruct δ, (s cp'); eauto; congruence.
         destruct δ, (s cp'); eauto; congruence.
@@ -625,6 +638,7 @@ Section Invariants.
       + econstructor; eauto.
         destruct (side_eq); eauto.
         destruct (side_eq); eauto.
+        intros; eapply memval_inject_incr; eauto.
       + eapply stackframe_related_opp_δ; eauto.
         destruct (side_eq); eauto.
         destruct (side_eq); eauto.
@@ -647,6 +661,7 @@ Section Invariants.
       + eapply stackframe_related_opp_δ; eauto.
         destruct (side_eq); eauto.
         destruct (side_eq); eauto.
+        intros; eapply memval_inject_incr; eauto.
   Qed.
 
   Definition regset_rel (j: meminj) (rs rs': regset): Prop :=
@@ -932,12 +947,16 @@ Proof.
           destruct sp1; try auto.
           split. eapply Mem.store_valid_block_1; eauto; eapply PERM1.
           intros o N. eapply PERM1. now eapply Mem.perm_store_2; eauto.
-        (* + unfold nonempty in *. *)
-        (*   destruct sp1; try contradiction. *)
-        (*   eapply Mem.perm_store_1; eauto. *)
         + unfold empty_perm in *.
           split. eapply Mem.store_valid_block_1; eauto; eapply EMPTY1.
           intros ? ?. eapply EMPTY1. eapply Mem.perm_store_2; eauto.
+        + intros; subst sp1 sp3.
+          replace (ZMap.get ofs5 (Mem.mem_contents m1') !! b0) with
+            (ZMap.get ofs5 (Mem.mem_contents m1) !! b0); eauto.
+          erewrite Mem.store_mem_contents with (m1 := m1) (m2 := m1'); eauto.
+          assert (b <> b0).
+          { intros ?; subst. inv H4; congruence. }
+          rewrite PMap.gso; auto.
       - eapply stackframe_related_opp_δ; eauto.
         + unfold same_content_stack in *.
           intros ? ? ? R G.
@@ -956,9 +975,6 @@ Proof.
           destruct sp1; try auto.
           split. eapply Mem.store_valid_block_1; eauto; eapply PERM1.
           intros o N. eapply PERM1. now eapply Mem.perm_store_2; eauto.
-        (* + unfold nonempty in *. *)
-        (*   destruct sp1; try contradiction. *)
-        (*   eapply Mem.perm_store_1; eauto. *)
         + unfold empty_perm in *.
           split. eapply Mem.store_valid_block_1; eauto; eapply EMPTY1.
           intros ? ?. eapply EMPTY1. eapply Mem.perm_store_2; eauto.
@@ -1111,14 +1127,20 @@ Proof.
             intros ? N. eapply PERM1. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc; eauto.
             inv H4; eapply Mem.valid_block_inject_1; eauto using partial_mem_inject.
-          (* * unfold nonempty in *. *)
-          (*   destruct sp1; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
           * unfold empty_perm in *. split.
             eapply Mem.valid_block_alloc; eauto; eapply EMPTY1.
             intros ? ?. eapply EMPTY1.
             eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc; eauto. eapply EMPTY1.
+          * intros. subst sp1 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m1') !! b4) with
+              (ZMap.get ofs (Mem.mem_contents m1) !! b4); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv exec. simpl.
+            assert (b4 <> Mem.nextblock m1).
+            { intros ?; subst. inv H4. apply incr in H8; congruence. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
         + simpl in *.
           eapply stackframe_related_opp_δ; eauto.
           * unfold same_content_stack in *.
@@ -1134,9 +1156,6 @@ Proof.
             intros ? N. eapply PERM1. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc; eauto.
             eapply PERM1.
-          (* * unfold nonempty in *. *)
-          (*   destruct sp1; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
           * unfold empty_perm in *. split.
             eapply Mem.valid_block_alloc; eauto; eapply EMPTY1.
             intros ? ?. eapply EMPTY1.
@@ -1344,16 +1363,6 @@ Proof.
         eapply PERM3.
         intros ofs N. eapply PERM3. eapply ec_max_perm; eauto using external_call_spec.
         inv H4; try contradiction; eapply Mem.valid_block_inject_2; eauto using partial_mem_inject.
-      (* * unfold nonempty in *. *)
-      (*   destruct sp1; try contradiction. *)
-      (*   rewrite <- ec_public_not_freeable; eauto using external_call_spec. *)
-      (*   eapply Mem.perm_valid_block. eauto. *)
-      (*   destruct PERM1. intros ?. eapply H1. eapply Mem.perm_implies; eauto. constructor. *)
-      (* * unfold nonempty in *. *)
-      (*   destruct sp3; try contradiction. *)
-      (*   rewrite <- ec_public_not_freeable; eauto using external_call_spec. *)
-      (*   eapply Mem.perm_valid_block. eauto. *)
-      (*   destruct PERM3. intros ?. eapply H1. eapply Mem.perm_implies; eauto. constructor. *)
       * unfold empty_perm in *. split.
         eapply external_call_valid_block; eauto using external_call_spec.
         eapply EMPTY1.
@@ -1364,6 +1373,9 @@ Proof.
         eapply EMPTY3.
         intros ofs N. eapply EMPTY3. eapply ec_max_perm; eauto using external_call_spec.
         eapply EMPTY3.
+      * intros; subst sp1 sp3.
+        unfold at_most_readable in *. destruct PERM1 as [VALID1 NOT_WRITABLE1].
+        admit.
     + eapply stackframe_related_opp_δ; eauto.
       * unfold same_content_stack in *.
         intros ? ? ? E G.
@@ -1437,7 +1449,7 @@ Proof.
         eapply EMPTY3.
         intros ofs N. eapply EMPTY3. eapply ec_max_perm; eauto using external_call_spec.
         eapply EMPTY3.
-Qed.
+Admitted.
 
 Lemma extcall_preserves_mem_rel_opp_side1: forall s cp cp_main ge1 ge2 ge3 j j__oppδ δ m1 m1' m2 m3 ef vargs t vres st1 st2 st3
                                              (not_bottom: cp <> bottom)
@@ -1679,6 +1691,7 @@ Proof.
         eapply EMPTY1.
         intros ofs N. eapply EMPTY1. eapply ec_max_perm; eauto using external_call_spec.
         eapply EMPTY1.
+      * admit.
     + eapply stackframe_related_opp_δ; eauto.
       * unfold same_content_stack in *.
         intros ? ? ? E G.
@@ -1714,7 +1727,7 @@ Proof.
         eapply EMPTY1.
         intros ofs N. eapply EMPTY1. eapply ec_max_perm; eauto using external_call_spec.
         eapply EMPTY1.
-Qed.
+Admitted.
 
 (** Useful simplification tactic *)
 (** Taken from Asmgenproof1.v *)
@@ -2448,6 +2461,30 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * intros; subst sp1 sp3.
+            assert (j__δ b1 = None).
+            { eapply Mem.mi_freeblocks.
+              eapply partial_mem_inject; eauto.
+              eapply Mem.fresh_block_alloc; eauto. }
+            replace (ZMap.get ofs (Mem.mem_contents m1') !! b5) with
+              (ZMap.get ofs (Mem.mem_contents m1) !! b5); eauto.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv H. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H8.
+              eapply Mem.mi_mappedblocks in H11; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H11.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc1. simpl.
+            assert (b5 <> Mem.nextblock m1).
+            { intros ?; subst. inv H8. congruence. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
         + simpl in *.
           eapply stackframe_related_opp_δ; eauto.
           * unfold same_content_stack in *.
@@ -2480,12 +2517,6 @@ Section Lemmas.
             intros ? N. eapply PERM3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := b); eauto.
             eapply PERM3.
-          (* * unfold nonempty in *. *)
-          (*   destruct sp1; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
-          (* * unfold nonempty in *. *)
-          (*   destruct sp3; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
           * unfold empty_perm in *. split.
             eapply Mem.valid_block_alloc; eauto. eapply EMPTY1.
             intros ? N. eapply EMPTY1. eapply Mem.perm_alloc_4; eauto.
@@ -2496,6 +2527,17 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * intros; subst sp2 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv H. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H8.
+              eapply Mem.mi_mappedblocks in H11; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H11.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
     }
   Qed.
 
@@ -2709,6 +2751,30 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * assert (j__δ b1 = None).
+            { eapply Mem.mi_freeblocks.
+              eapply partial_mem_inject; eauto.
+              eapply Mem.fresh_block_alloc; eauto. }
+            intros; subst sp1 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m1') !! b5) with
+              (ZMap.get ofs (Mem.mem_contents m1) !! b5); eauto.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc3. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H4.
+              eapply Mem.mi_mappedblocks in H8; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H8.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc1. simpl.
+            assert (b5 <> Mem.nextblock m1).
+            { intros ?; subst. inv H4. congruence. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
         + simpl in *.
           eapply stackframe_related_opp_δ; eauto.
           * unfold same_content_stack in *.
@@ -2741,12 +2807,6 @@ Section Lemmas.
             intros ? N. eapply PERM3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := b); eauto.
             eapply PERM3.
-          (* * unfold nonempty in *. *)
-          (*   destruct sp1; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
-          (* * unfold nonempty in *. *)
-          (*   destruct sp3; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
           * unfold empty_perm in *. split.
             eapply Mem.valid_block_alloc; eauto. eapply EMPTY1.
             intros ? N. eapply EMPTY1. eapply Mem.perm_alloc_4; eauto.
@@ -2757,6 +2817,18 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * intros; subst sp2 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc3. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H4.
+              eapply Mem.mi_mappedblocks in H8; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H8.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
     }
   Qed.
 
@@ -2998,6 +3070,30 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * assert (j__δ b1 = None).
+            { eapply Mem.mi_freeblocks.
+              eapply partial_mem_inject; eauto.
+              eapply Mem.fresh_block_alloc; eauto. }
+            intros; subst sp1 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m1') !! b5) with
+              (ZMap.get ofs (Mem.mem_contents m1) !! b5); eauto.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv H. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H8.
+              eapply Mem.mi_mappedblocks in H11; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H11.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc1. simpl.
+            assert (b5 <> Mem.nextblock m1).
+            { intros ?; subst. inv H8. congruence. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
         + simpl in *.
           eapply stackframe_related_opp_δ; eauto.
           * unfold same_content_stack in *.
@@ -3030,12 +3126,6 @@ Section Lemmas.
             intros ? N. eapply PERM3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := b); eauto.
             eapply PERM3.
-          (* * unfold nonempty in *. *)
-          (*   destruct sp1; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
-          (* * unfold nonempty in *. *)
-          (*   destruct sp3; try contradiction. *)
-          (*   eapply Mem.perm_alloc_1; eauto. *)
           * unfold empty_perm in *. split.
             eapply Mem.valid_block_alloc; eauto. eapply EMPTY1.
             intros ? N. eapply EMPTY1. eapply Mem.perm_alloc_4; eauto.
@@ -3046,6 +3136,18 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * intros; subst sp2 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv H. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H8.
+              eapply Mem.mi_mappedblocks in H11; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H11.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
     }
   Qed.
 
@@ -3257,6 +3359,30 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * assert (j__δ b1 = None).
+            { eapply Mem.mi_freeblocks.
+              eapply partial_mem_inject; eauto.
+              eapply Mem.fresh_block_alloc; eauto. }
+            intros; subst sp1 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m1') !! b5) with
+              (ZMap.get ofs (Mem.mem_contents m1) !! b5); eauto.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc3. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H4.
+              eapply Mem.mi_mappedblocks in H8; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H8.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc1. simpl.
+            assert (b5 <> Mem.nextblock m1).
+            { intros ?; subst. inv H4. congruence. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
         + simpl in *.
           eapply stackframe_related_opp_δ; eauto.
           * unfold same_content_stack in *.
@@ -3305,6 +3431,18 @@ Section Lemmas.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
+          * intros; subst sp2 sp3.
+            replace (ZMap.get ofs (Mem.mem_contents m3') !! b6) with
+              (ZMap.get ofs (Mem.mem_contents m3) !! b6); eauto.
+            Local Transparent Mem.alloc.
+            unfold Mem.alloc in *. inv alloc3. simpl.
+            assert (b6 <> Mem.nextblock m3).
+            { intros ?; subst. inv H4.
+              eapply Mem.mi_mappedblocks in H8; [| eapply partial_mem_inject]; eauto.
+              unfold Mem.valid_block in H8.
+              eapply Pos.lt_irrefl; eauto. }
+            rewrite PMap.gso; auto.
+            Local Opaque Mem.alloc.
     }
   Qed.
 
@@ -3568,6 +3706,9 @@ Section Lemmas.
             eapply Mem.valid_block_free_1; eauto. eapply EMPTY3.
             intros ? N. eapply EMPTY3.
             eapply Mem.perm_free_3; eauto.
+          * apply Mem.free_result in free1. rewrite free1.
+            apply Mem.free_result in free3. rewrite free3.
+            unfold Mem.unchecked_free. destruct zle; auto.
         + simpl in *.
           eapply stackframe_related_opp_δ; eauto.
           * unfold same_content_stack in *.
@@ -3650,6 +3791,8 @@ Section Lemmas.
             eapply Mem.valid_block_free_1; eauto. eapply EMPTY3.
             intros ? N. eapply EMPTY3.
             eapply Mem.perm_free_3; eauto.
+          * apply Mem.free_result in free3. rewrite free3.
+            unfold Mem.unchecked_free. destruct zle; auto.
     }
   Qed.
 
@@ -3854,16 +3997,34 @@ Section Lemmas.
             destruct sp3; try auto.
             split. eapply Mem.store_valid_block_1; eauto. eapply PERM3.
             intros o N. eapply PERM3. now eapply Mem.perm_store_2; eauto.
-          (* + unfold nonempty in *. *)
-          (*   destruct sp1; try contradiction. *)
-          (*   eapply Mem.perm_store_1; eauto. *)
-          (* + unfold nonempty in *. *)
-          (*   destruct sp3; try contradiction. *)
-          (*   eapply Mem.perm_store_1; eauto. *)
           + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY1.
             intros o N. eapply EMPTY1. now eapply Mem.perm_store_2; eauto.
           + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY3.
             intros o N. eapply EMPTY3. now eapply Mem.perm_store_2; eauto.
+          + erewrite Mem.store_mem_contents with (m1 := m1) (m2 := m1'); eauto.
+            erewrite Mem.store_mem_contents with (m1 := m3) (m2 := m3'); eauto.
+            intros; subst sp1 sp3.
+            destruct (peq b5 b1).
+            { subst b1.
+              assert (b6 = b3). { inv H5. inv ptr_inj. congruence. }
+              subst b6.
+              intros.
+              rewrite !PMap.gss.
+                eapply encode_val_inject with (chunk := ch) in val_inj.
+              exploit (Mem.setN_inj (fun _ => True) 0 j__δ); eauto.
+              intros ??; eauto. replace (q + 0) with q by lia.
+              eauto.
+              instantiate (1 := ofs).
+              instantiate (2 := ofs5).
+              replace (ofs + 0) with ofs by lia.
+              replace (ofs5 + 0) with ofs5 by lia.
+              eauto.
+            }
+            { assert (b6 <> b3).
+              inv H5; eauto.
+              eapply meminj_injective; eauto.
+              rewrite !PMap.gso; auto.
+              eapply SAME_AT_SET_PERM; eauto. }
         - eapply stackframe_related_opp_δ; eauto.
           + unfold same_content_stack in *.
             intros ? ? ? E G.
@@ -3915,16 +4076,22 @@ Section Lemmas.
             destruct sp3; try auto.
             split. eapply Mem.store_valid_block_1; eauto. eapply PERM3.
             intros o N. eapply PERM3. now eapply Mem.perm_store_2; eauto.
-          (* + unfold nonempty in *. *)
-          (*   destruct sp1; try contradiction. *)
-          (*   eapply Mem.perm_store_1; eauto. *)
-          (* + unfold nonempty in *. *)
-          (*   destruct sp3; try contradiction. *)
-          (*   eapply Mem.perm_store_1; eauto. *)
           + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY1.
             intros o N. eapply EMPTY1. now eapply Mem.perm_store_2; eauto.
           + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY3.
             intros o N. eapply EMPTY3. now eapply Mem.perm_store_2; eauto.
+          + erewrite Mem.store_mem_contents with (m1 := m3) (m2 := m3'); eauto.
+            intros; subst sp2 sp3.
+            { assert (b6 <> b3).
+              intros ?; subst b6.
+              unfold at_most_readable in PERM3.
+              destruct PERM3 as [? PERM3].
+                eapply Mem.store_valid_access_3 in store3.
+                destruct store3 as [Y _].
+                eapply PERM3. eapply Mem.perm_max. eapply Y. instantiate (1 := ofs).
+                destruct ch; simpl; lia.
+                rewrite !PMap.gso; auto.
+                eapply SAME_AT_SET_PERM; eauto. }
       }
   Qed.
 
@@ -4000,6 +4167,10 @@ Section Lemmas.
         Mem.set_perm m2 b2 Readable = Some m2' ->
         forall (NOTDEF2: forall fd, Genv.find_def ge2 b2 <> Some (Gfun fd)),
         forall (NOTDEF3: forall fd, Genv.find_def ge3 b3 <> Some (Gfun fd)),
+        forall (SAME_AT_SET_PERM:
+            forall ofs : ZIndexed.t,
+              memval_inject j (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+                (ZMap.get (ofs + delta) (Mem.mem_contents m3) !! b3)),
           mem_rel s ge1 ge3 j δ m1 m3 ->
           mem_rel s ge2 ge3 j' (opposite δ) m2 m3 ->
           stack_rel s cp_main ge1 ge2 ge3 δ j j' m1 m2 m3 st1 st2 st3 ->
@@ -4009,7 +4180,7 @@ Section Lemmas.
                    stack_rel s cp_main ge1 ge2 ge3 δ j j' m1' m2' m3' st1 st2 st3.
   Proof.
     intros cp_main j j' m1 m2 m3 m1' m2' b1 b2 b3 delta st1 st2 st3
-      j_b1 set1 ? set2 ? ? m1_m3 m2_m3 st_rel.
+      j_b1 set1 ? set2 ? ? ? m1_m3 m2_m3 st_rel.
     exploit (Mem.set_parallel_inject j m1 m3); eauto;
       [eapply partial_mem_inject; eauto | |].
     { eapply meminj_injective; eauto. }
@@ -4203,6 +4374,14 @@ Section Lemmas.
           intros ? n.
           eapply Mem.set_perm_perm in n as [? G]; eauto. eapply Mem.perm_implies in G. now eapply H1; eauto.
           constructor.
+        * intros; subst sp1 sp3.
+          Local Transparent Mem.set_perm.
+          replace (Mem.mem_contents m1') with (Mem.mem_contents m1).
+          replace (Mem.mem_contents m3') with (Mem.mem_contents m3).
+          eauto.
+          unfold Mem.set_perm in set3. destruct plt; inv set3; simpl. reflexivity.
+          unfold Mem.set_perm in set1. destruct plt; inv set1; simpl. reflexivity.
+          (* Local Opaque Mem.set_perm. *)
       + eapply stackframe_related_opp_δ; eauto.
         * intros ?????.
           split.
@@ -4307,6 +4486,13 @@ Section Lemmas.
           intros ? n.
           eapply Mem.set_perm_perm in n as [? G]; eauto. eapply Mem.perm_implies in G. now eapply H1; eauto.
           constructor.
+        * intros; subst sp2 sp3.
+          Local Transparent Mem.set_perm.
+          replace (Mem.mem_contents m2') with (Mem.mem_contents m2).
+          replace (Mem.mem_contents m3') with (Mem.mem_contents m3).
+          eauto.
+          unfold Mem.set_perm in set3. destruct plt; inv set3; simpl. reflexivity.
+          unfold Mem.set_perm in set2. destruct plt; inv set2; simpl. reflexivity.
   Qed.
 
   Lemma set_perm_preserves_rel':
@@ -4323,6 +4509,10 @@ Section Lemmas.
         Mem.set_perm m2 b2 Freeable = Some m2' ->
         forall (NOTDEF2: forall fd, Genv.find_def ge2 b2 <> Some (Gfun fd)),
         forall (NOTDEF3: forall fd, Genv.find_def ge3 b3 <> Some (Gfun fd)),
+        forall (SAME_AT_SET_PERM:
+            forall ofs : ZIndexed.t,
+              memval_inject j (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+                (ZMap.get (ofs + delta) (Mem.mem_contents m3) !! b3)),
           mem_rel s ge1 ge3 j δ m1 m3 ->
           mem_rel s ge2 ge3 j' (opposite δ) m2 m3 ->
           stack_rel s cp_main ge1 ge2 ge3 δ j j' m1 m2 m3 (f1 :: st1) (f2 :: st2) (f3 :: st3) ->
@@ -4332,7 +4522,7 @@ Section Lemmas.
                    stack_rel s cp_main ge1 ge2 ge3 δ j j' m1' m2' m3' st1 st2 st3.
   Proof.
     intros cp_main j j' m1 m2 m3 m1' m2' b1 b2 b3 delta f1 st1 f2 st2 f3 st3
-      old_sp j_b1 set1 ? set2 ? ? m1_m3 m2_m3 st_rel.
+      old_sp j_b1 set1 ? set2 ? ? ? m1_m3 m2_m3 st_rel.
     exploit (Mem.set_parallel_inject j m1 m3); eauto;
       [eapply partial_mem_inject; eauto | |].
     { eapply meminj_injective; eauto. }
@@ -4546,6 +4736,13 @@ Section Lemmas.
           intros ? n.
           eapply Mem.set_perm_perm in n as [? G]; eauto. eapply Mem.perm_implies in G. now eapply H1; eauto.
           constructor.
+        * intros; subst sp1 sp3.
+          Local Transparent Mem.set_perm.
+          replace (Mem.mem_contents m1') with (Mem.mem_contents m1).
+          replace (Mem.mem_contents m3') with (Mem.mem_contents m3).
+          eauto.
+          unfold Mem.set_perm in set3. destruct plt; inv set3; simpl. reflexivity.
+          unfold Mem.set_perm in set1. destruct plt; inv set1; simpl. reflexivity.
       + eapply stackframe_related_opp_δ; eauto.
         * intros ?????.
           split.
@@ -4662,6 +4859,13 @@ Section Lemmas.
           intros ? n.
           eapply Mem.set_perm_perm in n as [? G]; eauto. eapply Mem.perm_implies in G. now eapply H1; eauto.
           constructor.
+        * intros; subst sp2 sp3.
+          Local Transparent Mem.set_perm.
+          replace (Mem.mem_contents m2') with (Mem.mem_contents m2).
+          replace (Mem.mem_contents m3') with (Mem.mem_contents m3).
+          eauto.
+          unfold Mem.set_perm in set3. destruct plt; inv set3; simpl. reflexivity.
+          unfold Mem.set_perm in set2. destruct plt; inv set2; simpl. reflexivity.
   Qed.
 
 End Lemmas.
@@ -5729,6 +5933,8 @@ Section Theorems.
           + split. eapply Mem.valid_block_free_1; eauto. eapply EMPTY2.
             intros ? N. eapply EMPTY2.
             eapply Mem.perm_free_3; eauto.
+          + apply Mem.free_result in eq1. rewrite eq1.
+            unfold Mem.unchecked_free. destruct zle; auto.
       }
   Qed.
 
@@ -7181,6 +7387,15 @@ Section Theorems.
           intros ofs perm1''.
           eapply Mem.perm_alloc_inv in perm1''; eauto.
           destruct eq_block; [lia | eapply B; eauto].
+        * intros; subst sp1 sp3.
+          Local Transparent Mem.alloc.
+          unfold Mem.alloc in *. inv alloc1. simpl.
+          destruct (peq b4 (Mem.nextblock m1)).
+          { subst b4. rewrite PMap.gss.
+            rewrite ZMap.gi. constructor. }
+          rewrite PMap.gso; eauto.
+          eapply memval_inject_incr; eauto.
+          Local Opaque Mem.alloc.
       + eapply stackframe_related_opp_δ; eauto.
         * destruct side_eq; eauto.
         * destruct side_eq; eauto.
@@ -7474,6 +7689,12 @@ Section Theorems.
       cp <> top ->
       cp' <> bottom ->
       cp' <> top ->
+      forall (SAME_AT_SET_PERM:
+          forall b1 ofs1, rs1 X2 = Vptr b1 ofs1 ->
+          forall b3 ofs3, rs3 X2 = Vptr b3 ofs3 ->
+          forall ofs,
+            memval_inject j1 (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+              (ZMap.get ofs (Mem.mem_contents m3) !! b3)),
       stack_rel s cp_main ge1 ge2 ge3 δ j1 j2 m1 m2 m3 st1 st2 st3 ->
       exists j1' j2' dra1 dsp1 dra2 dsp2 st3' rs3' m3',
         st1' = Stackframe b1 sig cp' (rs1 X2) ofs1 dra1 dsp1 :: st1 /\
@@ -7498,7 +7719,7 @@ Section Theorems.
     intros upd1 comp1 inj_pres1 m1_m3 rs1_X1 comp_b1 rs1_rs3
       ev no_cross call_args1 call_args2
       upd2 comp2 inj_pres2 m2_m3 rs2_X1 comp_b2 rs2_PC_rs3_PC
-      comp3 callee_comp_st3 s_cp cp'_cp cp_bottom cp_top cp'_bottom cp'_top st_rel.
+      comp3 callee_comp_st3 s_cp cp'_cp cp_bottom cp_top cp'_bottom cp'_top ? st_rel.
 
     unfold update_stack_call in upd1, upd2; unfold update_stack_call.
     rewrite comp1 in upd1; rewrite comp2 in upd2; rewrite comp3.
@@ -7745,7 +7966,62 @@ Section Theorems.
           -- rewrite same_side; destruct side_eq as [_ |]; try contradiction.
              econstructor; eauto.
           -- rewrite same_side; destruct side_eq as [_ |]; try contradiction.
-             econstructor; eauto. }
+             econstructor; eauto.
+          -- intros ? ? A ? ? B ofs; inv A; inv B.
+             replace (ZMap.get ofs (Mem.mem_contents m1''') !! b0)
+               with (ZMap.get ofs (Mem.mem_contents m1) !! b0).
+             replace (ZMap.get ofs (Mem.mem_contents m3''') !! b4)
+               with (ZMap.get ofs (Mem.mem_contents m3) !! b4).
+             eapply memval_inject_incr; eauto.
+             replace (Mem.mem_contents m3''') with (Mem.mem_contents m3'').
+             Local Transparent Mem.alloc.
+             unfold Mem.alloc in *. inv alloc3'. simpl.
+             assert (b4 <> Mem.nextblock m3').
+             { clear -j1_b1' m1_m3'.
+               intros ?; subst.
+               eapply Mem.mi_mappedblocks in j1_b1'; [| eapply partial_mem_inject]; eauto.
+               unfold Mem.valid_block in j1_b1'.
+               eapply Pos.lt_irrefl; eauto. }
+             rewrite PMap.gso; auto.
+             unfold Mem.alloc in *. inv alloc3. simpl.
+             assert (b4 <> Mem.nextblock m3).
+             { clear -j1_b1' m1_m3.
+               intros ?; subst.
+               eapply Mem.mi_mappedblocks in j1_b1'; [| eapply partial_mem_inject]; eauto.
+               unfold Mem.valid_block in j1_b1'.
+               eapply Pos.lt_irrefl; eauto. }
+             rewrite PMap.gso; auto.
+             unfold Mem.set_perm in set_perm3. destruct plt; inv set_perm3; simpl; auto.
+             Local Opaque Mem.alloc.
+             replace (Mem.mem_contents m1''') with (Mem.mem_contents m1'').
+             Local Transparent Mem.alloc.
+             unfold Mem.alloc in *. inv alloc1'. simpl.
+             assert (b0 <> Mem.nextblock m1').
+             { intros ?. subst.
+               apply j1_j1' in j1_b1'.
+               clear -j1_b1' m1'_m3'.
+               assert (not (Mem.valid_block m1' (Mem.nextblock m1'))).
+               { unfold Mem.valid_block. eapply Pos.lt_irrefl; eauto. }
+               eapply Mem.mi_freeblocks in H.
+               2: { eapply partial_mem_inject; eauto. }
+               congruence.
+             }
+             rewrite PMap.gso; auto.
+             unfold Mem.alloc in *. inv alloc1. simpl.
+             assert (b0 <> Mem.nextblock m1).
+             { intros ?. subst.
+               (* apply j1_j1' in j1_b1'. *)
+               clear -j1_b1' m1_m3'.
+               assert (not (Mem.valid_block m1 (Mem.nextblock m1))).
+               { unfold Mem.valid_block. eapply Pos.lt_irrefl; eauto. }
+               eapply Mem.mi_freeblocks in H.
+               2: { eapply partial_mem_inject; eauto. }
+               congruence.
+             }
+             rewrite PMap.gso; auto.
+             unfold Mem.set_perm in set_perm1. destruct plt; inv set_perm1; simpl; auto.
+             Local Opaque Mem.alloc.
+        }
         { eapply stackframe_related_δ; eauto; try congruence.
           -- destruct side_eq as [| _]; try contradiction.
              econstructor; eauto. eapply j2'_j2''; eauto.
@@ -7754,7 +8030,62 @@ Section Theorems.
           -- destruct side_eq as [| _]; try contradiction.
              econstructor; eauto.
              eapply j2''_dsp2; simpl; eauto. now destruct (s cp), (s cp').
-             reflexivity. }
+             reflexivity.
+          -- intros ? ? A ? ? B ofs; inv A; inv B.
+             replace (ZMap.get ofs (Mem.mem_contents m1''') !! b0)
+               with (ZMap.get ofs (Mem.mem_contents m1) !! b0).
+             replace (ZMap.get ofs (Mem.mem_contents m3''') !! b4)
+               with (ZMap.get ofs (Mem.mem_contents m3) !! b4).
+             eapply memval_inject_incr; eauto.
+             replace (Mem.mem_contents m3''') with (Mem.mem_contents m3'').
+             Local Transparent Mem.alloc.
+             unfold Mem.alloc in *. inv alloc3'. simpl.
+             assert (b4 <> Mem.nextblock m3').
+             { clear -j1_b1' m1_m3'.
+               intros ?; subst.
+               eapply Mem.mi_mappedblocks in j1_b1'; [| eapply partial_mem_inject]; eauto.
+               unfold Mem.valid_block in j1_b1'.
+               eapply Pos.lt_irrefl; eauto. }
+             rewrite PMap.gso; auto.
+             unfold Mem.alloc in *. inv alloc3. simpl.
+             assert (b4 <> Mem.nextblock m3).
+             { clear -j1_b1' m1_m3.
+               intros ?; subst.
+               eapply Mem.mi_mappedblocks in j1_b1'; [| eapply partial_mem_inject]; eauto.
+               unfold Mem.valid_block in j1_b1'.
+               eapply Pos.lt_irrefl; eauto. }
+             rewrite PMap.gso; auto.
+             unfold Mem.set_perm in set_perm3. destruct plt; inv set_perm3; simpl; auto.
+             Local Opaque Mem.alloc.
+             replace (Mem.mem_contents m1''') with (Mem.mem_contents m1'').
+             Local Transparent Mem.alloc.
+             unfold Mem.alloc in *. inv alloc1'. simpl.
+             assert (b0 <> Mem.nextblock m1').
+             { intros ?. subst.
+               apply j1_j1' in j1_b1'.
+               clear -j1_b1' m1'_m3'.
+               assert (not (Mem.valid_block m1' (Mem.nextblock m1'))).
+               { unfold Mem.valid_block. eapply Pos.lt_irrefl; eauto. }
+               eapply Mem.mi_freeblocks in H.
+               2: { eapply partial_mem_inject; eauto. }
+               congruence.
+             }
+             rewrite PMap.gso; auto.
+             unfold Mem.alloc in *. inv alloc1. simpl.
+             assert (b0 <> Mem.nextblock m1).
+             { intros ?. subst.
+               (* apply j1_j1' in j1_b1'. *)
+               clear -j1_b1' m1_m3'.
+               assert (not (Mem.valid_block m1 (Mem.nextblock m1))).
+               { unfold Mem.valid_block. eapply Pos.lt_irrefl; eauto. }
+               eapply Mem.mi_freeblocks in H.
+               2: { eapply partial_mem_inject; eauto. }
+               congruence.
+             }
+             rewrite PMap.gso; auto.
+             unfold Mem.set_perm in set_perm1. destruct plt; inv set_perm1; simpl; auto.
+             Local Opaque Mem.alloc.
+          }
 
       * simpl. rewrite comp_b3. auto.
       * simpl. rewrite callee_comp_st3. auto.
@@ -7953,6 +8284,56 @@ Section Theorems.
       induction args_args'; auto.
       inv no_cross; rewrite IHargs_args'; auto.
       inv H; now simpl in *.
+    - intros ofs.
+      replace (ZMap.get ofs (Mem.mem_contents m1'') !! b1')
+        with (ZMap.get ofs (Mem.mem_contents m1) !! b1').
+      replace (ofs + 0) with ofs by lia.
+      replace (ZMap.get ofs (Mem.mem_contents m3'') !! b3')
+        with (ZMap.get ofs (Mem.mem_contents m3) !! b3').
+      eapply memval_inject_incr; eauto.
+      Local Transparent Mem.alloc.
+      unfold Mem.alloc in *. inv alloc3'. simpl.
+      assert (b3' <> Mem.nextblock m3').
+      { clear -j1_b1' m1_m3'.
+        intros ?; subst.
+        eapply Mem.mi_mappedblocks in j1_b1'; [| eapply partial_mem_inject]; eauto.
+        unfold Mem.valid_block in j1_b1'.
+        eapply Pos.lt_irrefl; eauto. }
+      rewrite PMap.gso; auto.
+      unfold Mem.alloc in *. inv alloc3. simpl.
+      assert (b3' <> Mem.nextblock m3).
+      { clear -j1_b1' m1_m3.
+        intros ?; subst.
+        eapply Mem.mi_mappedblocks in j1_b1'; [| eapply partial_mem_inject]; eauto.
+        unfold Mem.valid_block in j1_b1'.
+        eapply Pos.lt_irrefl; eauto. }
+      rewrite PMap.gso; auto.
+      Local Opaque Mem.alloc.
+      Local Transparent Mem.alloc.
+      unfold Mem.alloc in *. inv alloc1'. simpl.
+      assert (b1' <> Mem.nextblock m1').
+      { intros ?. subst.
+        apply j1_j1' in j1_b1'.
+        clear -j1_b1' m1'_m3'.
+        assert (not (Mem.valid_block m1' (Mem.nextblock m1'))).
+        { unfold Mem.valid_block. eapply Pos.lt_irrefl; eauto. }
+        eapply Mem.mi_freeblocks in H.
+        2: { eapply partial_mem_inject; eauto. }
+        congruence.
+      }
+      rewrite PMap.gso; auto.
+      unfold Mem.alloc in *. inv alloc1. simpl.
+      assert (b1' <> Mem.nextblock m1).
+      { intros ?. subst.
+        (* apply j1_j1' in j1_b1'. *)
+        clear -j1_b1' m1_m3'.
+        assert (not (Mem.valid_block m1 (Mem.nextblock m1))).
+        { unfold Mem.valid_block. eapply Pos.lt_irrefl; eauto. }
+        eapply Mem.mi_freeblocks in H.
+        2: { eapply partial_mem_inject; eauto. }
+        congruence.
+      }
+      rewrite PMap.gso; auto.
   Qed.
 
   Lemma step_t: forall (s1 s1': state) (s2 s2': state) e,
@@ -8126,6 +8507,15 @@ Section Theorems.
       rewrite NEXTPC. simpl; unfold Genv.find_comp_of_block; rewrite NEXT_INT.
       eapply no_top1; eauto.
 
+      { intros; subst. replace (ofs2) with (ofs2 + 0) at 2 by lia.
+        specialize (rs1_rs3' X2). rewrite H10, H11 in *. inv rs1_rs3'; eauto.
+        assert (delta = 0) as ->. { eapply delta_zero in H15; eauto. }
+        destruct (Mem.perm_dec m' b1 ofs2 Cur Readable).
+        { eapply Mem.mi_memval. eapply partial_mem_inject; eauto. eauto. eauto. }
+        exploit PERM; eauto. intros [A | A].
+        exfalso. eapply n; auto. eapply A.
+        rewrite A. constructor. }
+
       intros (j1' & j2' & dra1 & dsp1 & dra2 & dsp2 & st3' & rs3'' & m3'' & -> & ->
               & STUPD3 & inj_pres1 & inj_pres2 & mrel1 & mrel2 & incr1 &incr2 & strel &
                 eq_pc & side1 & side2 & call_args3).
@@ -8153,6 +8543,7 @@ Section Theorems.
           congruence.
           specialize (rs1_rs3' PC) as inj_pc. rewrite NEXTPC, rs3'_PC in inj_pc.
           inv inj_pc; try congruence. exploit (delta_zero s ge1 ge3); eauto; intros ->.
+        * intros. admit.
       + destruct (side_eq (s (Genv.find_comp_in_genv ge1 (rs' PC))) δ) as [e1 | n1].
         * left; split.
           -- econstructor; eauto.
@@ -8381,6 +8772,10 @@ Section Theorems.
           symmetry in MAKE_FREEABLE0. symmetry in MAKE_FREEABLE.
           exploit (set_perm_preserves_rel' s W1 W2 W3); eauto using match_prog_unique.
           + { inv st_rel; eauto. }
+          + intros ?. assert (delta = 0) as ->.
+            { eapply delta_zero in H14; eauto. }
+            replace (ofs + 0) with ofs by lia.
+            eapply SAME_AT_SET_PERM; eauto.
           + intros [? [? [? [? ?]]]].
             eexists; split; [| split; [| split]]; eauto.
         - destruct sp1; try congruence.
@@ -8391,6 +8786,10 @@ Section Theorems.
           destruct st_rel as [? [? [? [? ?]]]]. eexists; split; eauto.
           split; eauto.
           now destruct δ. split; eauto. eapply stack_rel_comm in H16; eauto. now destruct δ.
+          intros ?. assert (delta = 0) as ->.
+          { eapply delta_zero in H15; eauto. }
+            replace (ofs + 0) with ofs by lia.
+            eapply SAME_AT_SET_PERM; eauto.
           now destruct δ. }
 
       eexists (State st3' (invalidate_cross_return
@@ -8412,36 +8811,18 @@ Section Theorems.
              ++ econstructor; eauto.
                 { unfold invalidate_cross_return. simpl.
                   inv frame_rel; auto; simpl in *. }
-                  (* - inv COMP1; eauto. *)
-                  (*   inv H11. *)
-                  (*   erewrite find_comp_of_block_preserved; eauto using delta_zero. *)
-                  (*   inv H11. *)
-                  (*   erewrite find_comp_of_block_preserved; eauto using delta_zero. *)
-                  (* - rewrite CP3 in *. now destruct (s cp'). } *)
              ++ econstructor; eauto.
                 { unfold invalidate_cross_return. simpl.
                   inv frame_rel; auto; simpl in *. }
-                  (* - inv COMP1; eauto. *)
-                  (*   inv H11. *)
-                  (*   erewrite find_comp_of_block_preserved; eauto using delta_zero. *)
-                  (*   inv H11. *)
-                  (*   erewrite find_comp_of_block_preserved; eauto using delta_zero. *)
-                  (* - rewrite CP3 in *. now destruct (s cp'). } *)
              ++ unfold invalidate_cross_return. simpl.
                 inv frame_rel; auto; simpl in *.
              ++ unfold invalidate_cross_return. simpl.
                 inv frame_rel; auto; simpl in *.
              ++ unfold invalidate_cross_return. simpl.
                 inv frame_rel; auto; simpl in *.
-                (* ** inv H11. *)
-                (*    erewrite find_comp_of_block_preserved; eauto using delta_zero. *)
-                (* ** rewrite CP3 in *. now destruct (s cp'). *)
              ++ eauto.
              ++ subst cp'. simpl.
                 inv frame_rel; auto; simpl in *.
-                (* ** inv H11. *)
-                (*    erewrite find_comp_of_block_preserved; eauto using delta_zero. *)
-                (* ** rewrite CP3 in *. now destruct (s cp'). *)
              ++ unfold invalidate_cross_return. simpl.
                 inv frame_rel; auto; simpl in *.
                 ** inv H11.
@@ -9278,7 +9659,7 @@ Section Theorems.
              inv COMP2; eauto.
              rewrite eq_pc' in *; simpl in *; unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
              reflexivity.
-  Qed.
+  Admitted.
 
 End Theorems.
 
@@ -10172,6 +10553,9 @@ Section Simulation.
         exploit transform_find_symbol_2; eauto. intros [? ?]; auto. congruence.
         auto.
         simpl. intros. eapply Genv.find_symbol_find_def_inversion; eauto.
+        unfold comp_of_main.
+        rewrite <- rewr_cp_main, same_cp_main2, rewr_cp_main.
+        rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
         unfold comp_of_main. eapply stack_rel_comm; eauto.
         rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
         unfold comp_of_main. rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.

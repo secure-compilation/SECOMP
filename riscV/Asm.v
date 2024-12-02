@@ -1497,6 +1497,10 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (STUPD: update_stack_call st sig (comp_of f) rs' m' = Some (st', rs'', m'')),
       forall (ARGS: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
                call_arguments rs' (rs'#SP) m' sig args),
+      forall (PERM: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
+               forall b ofs0, rs'#SP = Vptr b ofs0 ->
+               forall ofs, Mem.perm m' b ofs Cur Readable \/
+                        (ZMap.get ofs (Mem.mem_contents m') !! b) = Undef),
       (* note: it doesn't matter which register file we use to get the arguments *)
       (* Check signature *)
 

@@ -4367,12 +4367,15 @@ Lemma set_mapped_inj:
         f b1 = Some (b1', delta1) ->
         f b2 = Some (b2', delta2) ->
         b1' <> b2'),
+  forall (SAME_AT_SET_PERM: forall ofs,
+      memval_inject f (ZMap.get ofs (mem_contents m1) # b1)
+        (ZMap.get (ofs + delta) (mem_contents m2) # b2)),
   f b1 = Some(b2, delta) ->
   exists m2',
       set_perm m2 b2 p = Some m2'
    /\ mem_inj f m1' m2'.
 Proof.
-  intros f m1 m2 b1 b2 delta p m1' m1_m2 set1 mapped_blocks no_overlap no_overlap_strong f_b1.
+  intros f m1 m2 b1 b2 delta p m1' m1_m2 set1 mapped_blocks no_overlap no_overlap_strong ? f_b1.
   assert (X: { m2' | set_perm m2 b2 p = Some m2' }).
   { unfold set_perm in *.
     destruct (plt b1 (nextblock m1)); try discriminate.
@@ -5774,6 +5777,9 @@ Theorem set_parallel_inject:
   set_perm m1 b p = Some m1' ->
   (forall (b1 b2 b1' b2' : block) (delta1 delta2 : Z),
       b1 <> b2 -> f b1 = Some (b1', delta1) -> f b2 = Some (b2', delta2) -> b1' <> b2') ->
+  forall (SAME_AT_SET_PERM: forall ofs,
+      memval_inject f (ZMap.get ofs (mem_contents m1) # b)
+        (ZMap.get (ofs + delta) (mem_contents m2) # b')),
   f b = Some(b', delta) ->
   exists m2',
      set_perm m2 b' p = Some m2'
