@@ -2521,10 +2521,7 @@ Lemma match_genvs_allowed_addrof:
     allowed_addrof (globalenv tp) cp id.
 Proof.
   unfold allowed_addrof.
-  intros cp id.
-  rewrite match_genvs_find_comp_of_ident.
-  rewrite match_genvs_public_symbol.
-  reflexivity.
+  intros; now rewrite match_genvs_allowed_addrof_b.
 Qed.
 
 Lemma match_genvs_allowed_calls:

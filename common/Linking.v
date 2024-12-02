@@ -538,14 +538,12 @@ Proof.
   - unfold Policy.eqb in eq_pol.
     apply andb_prop in eq_pol as [eq_pol2 eq_pol3].
     apply andb_prop in eq_pol2 as [eq_pol1 eq_pol2].
-    (* apply PTree.beq_correct in eq_pol1. *)
-    (* rewrite <- eq_pol in *. *)
+    apply andb_prop in eq_pol1 as [eq_pol0 eq_pol1].
     pose proof (prog_pol_complete p2) as G.
     unfold pol_complete in G. rewrite Forall_forall in G.
     eapply PTree.elements_complete in H0. eapply in_prog_defmap in H0.
-    (* intros cp ?. *)
-    rewrite PTree.beq_correct in eq_pol1.
-    specialize (eq_pol1 i). (* simpl in H1. rewrite H1 in eq_pol1. *)
+    rewrite PTree.beq_correct in eq_pol0.
+    specialize (eq_pol0 i).
     destruct ((Policy.policy_comps (prog_pol p2)) ! i) eqn:EQ; try contradiction.
     simpl. destruct ((Policy.policy_comps (prog_pol p1)) ! i) eqn:EQ'; try contradiction. eauto.
     exploit G; eauto. intros [? ?]; simpl in *; congruence.
