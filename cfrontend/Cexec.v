@@ -1820,8 +1820,8 @@ Definition do_step (w: world) (s: state) : list transition :=
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs (fn_comp f);
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ tres _) vargs k m =>
-      check (Genv.allowed_syscall_b ge (call_comp k) ef);
-      match do_external _ _ ge do_external_function do_inline_assembly ef (call_comp k) w vargs m with
+      check (Genv.allowed_syscall_b ge (call_comp cp_main k) ef);
+      match do_external _ _ ge do_external_function do_inline_assembly ef (call_comp cp_main k) w vargs m with
       | None => nil
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (rettype_of_type tres) bottom) :: nil
       end

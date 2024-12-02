@@ -688,8 +688,8 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
-      external_call ef ge (call_comp k) vargs m t vres m' ->
-      forall (ALLOWED: Genv.allowed_syscall ge (call_comp k) ef),
+      external_call ef ge (call_comp cp_main k) vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (call_comp cp_main k) ef),
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m' (rettype_of_type tres) bottom)
 

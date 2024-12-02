@@ -1111,8 +1111,8 @@ Proof.
   destruct (zeq (sizeof ce ty) 0).
 + (* special case size = 0 *)
   assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof ce ty)).
-    lia. eapply Mem.loadbytes_can_access_block_inj; eauto. congruence. }
+  { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof ce ty) c).
+    lia. intros ?. congruence. }
   subst.
   destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil c)
   as [tm' SB].
