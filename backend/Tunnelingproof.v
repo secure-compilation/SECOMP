@@ -839,7 +839,6 @@ Proof.
   eapply exec_function_external; eauto.
   replace (call_comp cp_main ts) with (call_comp cp_main s) by (inv STK; auto; inv H; auto).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
   eapply allowed_syscall_translated; eauto.
   econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
