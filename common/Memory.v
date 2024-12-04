@@ -2341,6 +2341,12 @@ Proof.
   injection ALLOC; intros. rewrite <- H0; auto.
 Qed.
 
+Lemma alloc_mem_contents:
+  mem_contents m2 = PMap.set (nextblock m1) (ZMap.init Undef) (mem_contents m1).
+Proof.
+  unfold alloc in ALLOC. inv ALLOC. reflexivity.
+Qed.
+
 Theorem alloc_result:
   b = nextblock m1.
 Proof.
