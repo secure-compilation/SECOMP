@@ -1891,6 +1891,7 @@ Program Definition test_program_1 :=
         (CompTree.empty _))
     _
     _
+    _
     : Mach.program.
 Next Obligation.
   unfold Policy.in_pub. split.
@@ -1927,6 +1928,10 @@ Next Obligation.
   - intros. inversion H. rewrite H1. apply flowsto_refl.
   - intros. inversion H. rewrite H1. apply flowsto_refl.
   - apply Forall_nil.
+Qed.
+Next Obligation.
+  unfold pol_complete. simpl.
+  repeat apply Forall_cons; unfold Maps.PTree.get; simpl; eauto.
 Qed.
 
 (* A more elaborate compartmentalized Mach program with conditions *)
@@ -2027,14 +2032,19 @@ Program Definition test_program_2 :=
       Ptrofs.zero (* ... *)
   in
   mkprogram
-    ((main_id, Gfun (Internal main)) :: (maximum_id, Gfun (Internal maximum)) :: (minimum_id, Gfun (Internal minimum)) :: (clip_id, Gfun (Internal clip)) :: nil)
+    ((main_id, Gfun (Internal main)) ::
+       (maximum_id, Gfun (Internal maximum)) ::
+       (minimum_id, Gfun (Internal minimum)) ::
+       (clip_id, Gfun (Internal clip)) :: nil)
     (main_id :: maximum_id :: minimum_id :: clip_id :: nil)
     main_id
     (Policy.mkpolicy
-       (Maps.PTree.set clip_cp (Comp clip_cp)
-          (Maps.PTree.set minmax_cp (Comp minmax_cp)
-             (Maps.PTree.set main_cp (Comp main_cp)
-                (Maps.PTree.empty _))))
+       (Maps.PTree.set clip_id (Comp clip_cp)
+          (Maps.PTree.set maximum_id (Comp minmax_cp)
+             (Maps.PTree.set minimum_id (Comp minmax_cp)
+                (Maps.PTree.set clip_id (Comp clip_cp)
+                   (Maps.PTree.set main_id (Comp main_cp)
+                      (Maps.PTree.empty _))))))
        (CompTree.set (Comp clip_cp) (clip_id :: nil)
           (CompTree.set (Comp minmax_cp) (minimum_id :: maximum_id :: nil)
              (CompTree.set (Comp main_cp) nil
@@ -2044,6 +2054,7 @@ Program Definition test_program_2 :=
              (CompTree.set (Comp main_cp) (((Comp clip_cp), clip_id) :: nil)
                 (CompTree.empty _))))
         (CompTree.empty _))
+    _
     _
     _
     : Mach.program.
@@ -2089,12 +2100,16 @@ Qed.
 Next Obligation.
   unfold agr_comps.
   simpl.
-  repeat apply Forall_cons; unfold Maps.PTree.get; simpl; intros.
-  - discriminate.
-  - discriminate.
-  - discriminate.
-  - discriminate.
+  repeat apply Forall_cons; unfold Maps.PTree.get; simpl.
+  - intros. inversion H. rewrite H1. apply flowsto_refl.
+  - intros. inversion H. rewrite H1. apply flowsto_refl.
+  - intros. inversion H. rewrite H1. apply flowsto_refl.
+  - intros. inversion H. rewrite H1. apply flowsto_refl.
   - apply Forall_nil.
+Qed.
+Next Obligation.
+  unfold pol_complete.
+  repeat apply Forall_cons; unfold Maps.PTree.get; simpl; eauto.
 Qed.
 
 (* A Mach program with stack usage and recursive function calls *)
@@ -2155,8 +2170,8 @@ Program Definition test_program_3 :=
     (main_id :: sum_id :: nil)
     main_id
     (Policy.mkpolicy
-       (Maps.PTree.set sum_cp (Comp sum_cp)
-          (Maps.PTree.set main_cp (Comp main_cp)
+       (Maps.PTree.set sum_id (Comp sum_cp)
+          (Maps.PTree.set main_id (Comp main_cp)
              (Maps.PTree.empty _)))
        (CompTree.set (Comp sum_cp) (sum_id :: nil)
           (CompTree.set (Comp main_cp) nil
@@ -2165,6 +2180,7 @@ Program Definition test_program_3 :=
           (CompTree.set (Comp main_cp) (((Comp sum_cp), sum_id) :: nil)
              (CompTree.empty _)))
         (CompTree.empty _))
+    _
     _
     _
     : Mach.program.
@@ -2202,9 +2218,13 @@ Next Obligation.
 unfold agr_comps.
 simpl.
 repeat apply Forall_cons; unfold Maps.PTree.get; simpl; intros.
-- discriminate.
-- discriminate.
+- intros. inversion H. rewrite H1. apply flowsto_refl.
+- intros. inversion H. rewrite H1. apply flowsto_refl.
 - apply Forall_nil.
+Qed.
+Next Obligation.
+  unfold pol_complete. simpl.
+  repeat apply Forall_cons; unfold Maps.PTree.get; simpl; eauto.
 Qed.
 
 (* Program transformation in proof mode *)
