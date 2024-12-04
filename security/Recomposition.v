@@ -5238,6 +5238,15 @@ Section Theorems.
         rewrite (match_prog_pol _ _ _ _ match_W1_W3), <- same_comp. auto.
   Qed.
 
+  Lemma allowed_syscall_preserved: forall cp ef,
+    Genv.allowed_syscall ge1 cp ef ->
+    Genv.allowed_syscall ge3 cp ef.
+  Proof.
+    unfold Genv.allowed_syscall, Genv.allowed_syscall_b.
+    rewrite !Genv.globalenv_policy.
+    erewrite (match_prog_pol _ _ W1 W3 match_W1_W3); eauto.
+  Qed.
+
   Lemma call_arguments_preserved:
     forall j__δ m1 m3 rs1 rs3 sp1 sp3,
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
@@ -6900,6 +6909,7 @@ Section Theorems.
       eexists; exists j__δ'; split; [| split; [| split; [| split; [| split]]]].
       + econstructor; [| now eapply star_refl | now traceEq].
         eapply exec_step_builtin; eauto.
+        eapply allowed_syscall_preserved; eauto.
       + eauto.
       + eauto.
       + replace (mem_of_state s2) with m2; eauto. destruct s2; simpl in *; congruence.
@@ -6966,7 +6976,7 @@ Section Theorems.
           exploit find_def_preserved; eauto.
           intros [gd' [? [G ?]]].
           inv G. inv H10. eauto. }
-
+        eapply allowed_syscall_preserved; eauto.
       + eauto.
       + eauto.
       + simpl; eauto.
@@ -9281,6 +9291,7 @@ Section Theorems.
       eexists; exists j__δ', j__oppδ; split; [| split; [| split; [| split]]].
       + econstructor; [| now eapply star_refl | now traceEq].
         eapply exec_step_builtin; eauto.
+        eapply allowed_syscall_preserved; eauto.
       + eauto.
       + eauto.
       + simpl.
@@ -9410,6 +9421,7 @@ Section Theorems.
       eexists; exists j__δ', j__oppδ'; split; [| split; [| split; [| split]]].
       + econstructor; [| now eapply star_refl | now traceEq].
         eapply exec_step_builtin; eauto.
+        eapply allowed_syscall_preserved; eauto.
       + eauto.
       + eauto.
       + simpl. eapply stack_rel_comm in st_rel'''; destruct δ; eauto.
@@ -9518,6 +9530,7 @@ Section Theorems.
       { eapply stack_rel_comm in st_rel''; destruct δ; eauto. }
       intros (j__δ'' & vres' & m3'' & extcall' & inj_res & unchanged1 & unchanged2 & incr & sep & inj_pres' & m'_m3' & m2_m3'' & rs_rs3' & st_rel''').
 
+      exploit allowed_syscall_preserved; eauto. intros allowed_syscall.
       specialize (rs_rs3' PC) as G.
       rewrite NEXTPC in G. inv G.
       exploit defs_inject; eauto. intros [gd' [? [-> [MGD kept]]]].
@@ -9626,6 +9639,7 @@ Section Theorems.
       eapply stack_rel_comm in st_rel'''; destruct δ; eauto.
       intros (j__δ'' & vres' & m3'' & extcall' & inj_res & unchanged1 & unchanged2 & incr & sep & inj_pres' & m'_m3' & m2_m3'' & rs_rs3' & st_rel').
 
+      exploit allowed_syscall_preserved; eauto. intros syscall_allowed.
       specialize (rs_rs3' PC) as G.
       rewrite NEXTPC in G. inv G.
       exploit defs_inject; eauto. intros [gd' [? [-> [MGD kept]]]].
