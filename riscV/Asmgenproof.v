@@ -1810,10 +1810,6 @@ Local Transparent destroyed_by_op.
       rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
       simpl. destruct flowsto_dec; try congruence.
       exfalso; apply n; auto with comps. }
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
     { rewrite <- comp_transf_function; eauto. }
     { rewrite <- comp_transf_function; eauto.
       rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
@@ -1878,10 +1874,6 @@ Local Transparent destroyed_by_op.
     rewrite <- (comp_transl_partial _ TTRANSF); eauto. destruct cp_eq_dec.
     reflexivity. contradiction.
     Simpl; erewrite agree_sp; eauto.
-    { rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
-      simpl. destruct flowsto_dec; try congruence.
-      exfalso; apply n; auto with comps. }
     { rewrite <- comp_transf_function; eauto.
       rewrite <- (comp_transl_partial _ TTRANSF), <- ALLOWED; eauto.
       simpl. destruct flowsto_dec; try congruence.
@@ -1993,7 +1985,6 @@ Local Transparent destroyed_by_op.
     destruct Mem.perm_dec; try congruence.
     rewrite perm'. reflexivity.
   -- Simpl; erewrite agree_sp; eauto.
-  -- admit.
   -- intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
     clear -TTRANSF.
     monadInv TTRANSF; auto. monadInv EQ. destruct zlt; try now auto.
@@ -2163,7 +2154,6 @@ Local Transparent destroyed_by_op.
        destruct Mem.perm_dec; try congruence.
        rewrite perm'. reflexivity.
     -- (Simpl; erewrite agree_sp; eauto).
-    -- admit.
     -- intros _. eexists; split. eapply Genv.find_funct_ptr_iff. eauto.
        clear -TTRANSF.
        monadInv TTRANSF; auto. monadInv EQ. destruct zlt; try now auto.
@@ -3353,7 +3343,7 @@ Local Transparent destroyed_at_function_entry.
       { eapply external_call_valid_block; eauto. }
       { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
       { congruence. }
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
