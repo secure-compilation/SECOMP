@@ -801,7 +801,7 @@ Program Definition set_perm (m: mem) (b: block) (p: permission): option mem :=
   if plt b m.(nextblock) then
     Some (mkmem m.(mem_contents)
                (PMap.set b
-                  (fun ofs k => if m.(mem_access)#b ofs Max then Some p else None)
+                  (fun ofs k => if perm_dec m b ofs Cur Readable (* m.(mem_access)#b ofs Max *) then Some p else None)
                   m.(mem_access))
                m.(mem_compartments)
                    m.(nextblock) _ _ _ _)
@@ -809,8 +809,9 @@ Program Definition set_perm (m: mem) (b: block) (p: permission): option mem :=
     None.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
-  destruct ((mem_access m) # b ofs Max) eqn:?.
-  destruct ((mem_access m) # b ofs Cur).
+  (* destruct ((mem_access m) # b ofs Max) eqn:?. *)
+  destruct (perm_dec m b ofs Cur Readable) eqn:?.
+  (* destruct ((mem_access m) # b ofs Cur) eqn:?. *)
   red; auto with mem. red; auto with mem.
   exploit access_max; eauto. rewrite Heqo.
   intros H'. destruct ((mem_access m) # b ofs Cur). contradiction. auto.
