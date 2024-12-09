@@ -1686,6 +1686,54 @@ Qed.
 (*     destruct ((Mem.mem_compartments M) ! B) *)
 (*   end. *)
 
+Lemma in_param_one_same_ty: forall ofs_arg ty ty0 sg,
+    In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+    In (One (S Incoming ofs_arg ty0)) (loc_parameters sg) ->
+    ty = ty0.
+Proof.
+  unfold loc_parameters.
+  intros ofs_arg ty ty0 sg A B.
+  apply list_in_map_inv in A as [x [A A']].
+  apply list_in_map_inv in B as [y [B B']].
+  destruct x; simpl in A; try congruence.
+  destruct y; simpl in B; try congruence.
+Admitted.
+
+Lemma in_param_twolong_hi_same_ty: forall ofs_arg ty ty0 lo lo0 sg,
+    In (Twolong (S Incoming ofs_arg ty) lo) (loc_parameters sg) ->
+    In (Twolong (S Incoming ofs_arg ty0) lo0) (loc_parameters sg) ->
+    ty = ty0.
+Proof.
+Admitted.
+
+Lemma in_param_twolong_lo_same_ty: forall ofs_arg ty ty0 hi hi0 sg,
+    In (Twolong hi (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+    In (Twolong hi0 (S Incoming ofs_arg ty0)) (loc_parameters sg) ->
+    ty = ty0.
+Proof.
+Admitted.
+
+Lemma in_param_twolong_hi_lo: forall ofs_arg ty ty0 hi lo sg,
+    In (Twolong hi (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+    In (Twolong (S Incoming ofs_arg ty0) lo) (loc_parameters sg) ->
+    False.
+Proof.
+Admitted.
+
+Lemma in_param_one_twolong_hi: forall ofs_arg ty ty0 lo sg,
+    In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+    In (Twolong (S Incoming ofs_arg ty0) lo) (loc_parameters sg) ->
+    False.
+Proof.
+Admitted.
+
+Lemma in_param_one_twolong_lo: forall ofs_arg ty ty0 hi sg,
+    In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
+    In (Twolong hi (S Incoming ofs_arg ty0)) (loc_parameters sg) ->
+    False.
+Proof.
+Admitted.
+
 Lemma semantics_determinate: forall p, determinate (semantics p).
 Proof.
 Ltac Equalities :=
@@ -1701,11 +1749,51 @@ intros; constructor; simpl; intros.
   + split. constructor.
     destruct rd0.
     * exploit H9; eauto. exploit H23; eauto.
-      assert (ty = ty0) as <- by admit.
+      assert (ty = ty0) as <-.
+      { inv H19; inv H7.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          eapply in_param_one_same_ty; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_hi; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_hi; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          eapply in_param_twolong_hi_same_ty; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_twolong_hi_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_twolong_hi_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          eapply in_param_twolong_lo_same_ty; eauto.
+      }
       assert (v = v0) as <- by congruence.
       congruence.
     * exploit H10; eauto. exploit H24; eauto.
-      assert (ty = ty0) as <- by admit.
+      assert (ty = ty0) as <-.
+      { inv H19; inv H7.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          eapply in_param_one_same_ty; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_hi; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_hi; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          eapply in_param_twolong_hi_same_ty; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_twolong_hi_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_one_twolong_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          exfalso; eapply in_param_twolong_hi_lo; eauto.
+        - assert (ofs_arg0 = ofs_arg) as -> by lia.
+          eapply in_param_twolong_lo_same_ty; eauto.
+      }
       assert (v = v0) as <- by congruence.
       congruence.
   + admit.
@@ -1921,79 +2009,84 @@ Section ExecSem.
         unfold get_builtin_args in IHbl2. rewrite IHbl2; auto.
   Qed.
 
-  (* Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) := *)
-  (*   let comp_of_main := comp_of_main p in *)
-  (*   match s with *)
-  (*   | State st rs m cp => *)
-  (*       do Vptr b ofs <- rs PC; *)
-  (*       do fd <- Genv.find_funct_ptr ge b; *)
-  (*       match fd with *)
-  (*       | Internal f => *)
-  (*           do i <- find_instr (Ptrofs.unsigned ofs) (fn_code f); *)
-  (*           match i with *)
-  (*           | Pbuiltin ef args res => *)
-  (*               do vargs <- get_builtin_args ge rs (rs X2) m args; *)
-  (*               do res_builtin <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m; *)
-  (*               check (Genv.allowed_syscall_b ge (comp_of f) ef); *)
-  (*               let '(w', t, vres, m') := res_builtin in *)
-  (*               let rs' := nextinstr *)
-  (*                         (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef)) (rs # X1 <- Vundef) # X31 <- Vundef)) in *)
-  (*               Some (t, State st rs' m' (comp_of f)) *)
-  (*           | _ => *)
-  (*               match exec_instr ge f i rs m (comp_of f) with *)
-  (*               | Next rs' m' => *)
-  (*                   match sig_call i, is_return i with *)
-  (*                   | None, false => (* exec_step_internal *) *)
-  (*                       do Vptr b' ofs' <- rs' PC; *)
-  (*                       let cp' := Genv.find_comp_of_block ge b' in *)
-  (*                       check (cp_eq_dec (comp_of f) cp'); *)
-  (*                       Some (E0, State st rs' m' (comp_of f)) *)
-  (*                   | Some sig, false => (* exec_step_internal_call *) *)
-  (*                       do Vptr b' ofs' <- rs' PC; *)
-  (*                       check (Genv.allowed_call_b ge (comp_of f) (Vptr b' Ptrofs.zero)); *)
-  (*                       do st' <- update_stack_call ge st sig (comp_of f) rs'; *)
-  (*                       do vargs <- get_call_arguments rs' m' sig; *)
-  (*                       let cp' := Genv.find_comp_of_block ge b' in *)
-  (*                       check (match Genv.type_of_call (comp_of f) cp' with *)
-  (*                              | Genv.CrossCompartmentCall => forallb not_ptr_b vargs *)
-  (*                              | _ => true *)
-  (*                              end); *)
-  (*                       do t <- get_call_trace _ _ ge (comp_of f) cp' (Vptr b' ofs') vargs (sig_args sig); *)
-  (*                       Some (t, State st' rs' m' (comp_of f)) *)
-  (*                   | None, true => (* exec_step_internal_return *) *)
-  (*                       (* check (Genv.allowed_call_b ge (comp_of f) (rs' PC)); *) *)
-  (*                       Some (E0, ReturnState st rs' m' (comp_of f)) *)
-  (*                   | Some _, true => None *)
-  (*                   end *)
-  (*               | Stuck => None *)
-  (*               end *)
-  (*           end *)
-  (*       | External ef => *)
-  (*           check (Ptrofs.eq ofs Ptrofs.zero); *)
-  (*           do vargs <- get_extcall_arguments rs m (ef_sig ef); *)
-  (*           do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m; *)
-  (*           check (Genv.allowed_syscall_b ge cp ef); *)
-  (*           let '(w', t, res, m') := res_external in *)
-  (*           let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in *)
-  (*           Some (t, ReturnState st rs' m' bottom) *)
-  (*       end *)
-  (*   | ReturnState st rs m rec_cp => *)
-  (*       check (negb (Val.eq (rs PC) Vnullptr)); *)
-  (*       let cp' := Genv.find_comp_in_genv ge (rs PC) in *)
+  Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
+    let comp_of_main := comp_of_main p in
+    match s with
+    | State st rs m cp =>
+        do Vptr b ofs <- rs PC;
+        do fd <- Genv.find_funct_ptr ge b;
+        match fd with
+        | Internal f =>
+            do i <- find_instr (Ptrofs.unsigned ofs) (fn_code f);
+            match i with
+            | Pbuiltin ef args res =>
+                do vargs <- get_builtin_args ge (comp_of f) rs (rs X2) m args;
+                do res_builtin <- do_external fundef unit ge do_external_function do_inline_assembly ef cp w vargs m;
+                check (Genv.allowed_syscall_b ge (comp_of f) ef);
+                let '(w', t, vres, m') := res_builtin in
+                let rs' := nextinstr
+                          (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef)) (rs # X1 <- Vundef) # X31 <- Vundef)) in
+                Some (t, State st rs' m' (comp_of f))
+            | _ =>
+                match exec_instr ge f i rs m (comp_of f) with
+                | Next rs' m' =>
+                    match sig_call i, is_return i with
+                    | None, false => (* exec_step_internal *)
+                        do Vptr b' ofs' <- rs' PC;
+                        let cp' := Genv.find_comp_of_block ge b' in
+                        check (cp_eq_dec (comp_of f) cp');
+                        Some (E0, State st rs' m' (comp_of f))
+                    | Some sig, false => (* exec_step_internal_call *)
+                        do Vptr b' ofs' <- rs' PC;
+                        check (Genv.allowed_call_b ge (comp_of f) (Vptr b' Ptrofs.zero));
+                        do st' <- update_stack_call ge st sig (comp_of f) rs' m';
+                        let '(st'', rs'', m'') := st' in
+                        let cp' := Genv.find_comp_of_block ge b' in
+                        do vargs <-
+                             match Genv.type_of_call (comp_of f) cp' with
+                             | Genv.CrossCompartmentCall =>
+                                 get_call_arguments rs'' (rs'' X2) m' sig
+                             | _ => Some nil end;
+                        (* do vargs <- get_call_arguments rs'' (rs'' X2) m' sig; *)
+                        check (match Genv.type_of_call (comp_of f) cp' with
+                               | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
+                               | _ => true
+                               end);
+                        do t <- get_call_trace fundef unit ge (comp_of f) cp' (Vptr b' ofs') vargs (sig_args sig);
+                        Some (t, State st'' rs'' m'' (comp_of f))
+                    | None, true => (* exec_step_internal_return *)
+                        (* check (Genv.allowed_call_b ge (comp_of f) (rs' PC)); *)
+                        Some (E0, ReturnState st rs' m' (parent_signature st) (comp_of f))
+                    | Some _, true => None
+                    end
+                | Stuck => None
+                end
+            end
+        | External ef =>
+            check (Ptrofs.eq ofs Ptrofs.zero);
+            do vargs <- get_extcall_arguments rs (rs SP) m (ef_sig ef);
+            do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m;
+            check (Genv.allowed_syscall_b ge cp ef);
+            let '(w', t, res, m') := res_external in
+            let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
+            Some (t, ReturnState st rs' m' (ef_sig ef) bottom)
+        end
+    | ReturnState st rs m sg rec_cp =>
+        check (negb (Val.eq (rs PC) Vnullptr));
+        let cp' := Genv.find_comp_in_genv ge (rs PC) in
 
-  (*       (* let rec_cp' := call_comp ge st in *) *)
-  (*       check (match flowsto_dec rec_cp cp' with *)
-  (*              | left _ => true *)
-  (*              | right _ => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st)) *)
-  (*              end); *)
-  (*       do st' <- update_stack_return ge st rec_cp rs; *)
-  (*       let sg := sig_of_call st in *)
-  (*       check (match Genv.type_of_call cp' rec_cp with *)
-  (*              | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg) *)
-  (*              | _ => true end); *)
-  (*       do t <- get_return_trace _ _ ge cp' rec_cp (return_value rs sg) (sig_res sg); *)
-  (*       Some (t, State st' rs m cp') *)
-  (*   end. *)
+        (* let rec_cp' := call_comp ge st in *)
+        check (match flowsto_dec rec_cp cp' with
+               | left _ => true
+               | right _ => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))
+               end);
+        do st' <- update_stack_return st;
+        check (match Genv.type_of_call cp' rec_cp with
+               | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg)
+               | _ => true end);
+        do t <- get_return_trace fundef unit ge cp' rec_cp (return_value rs sg) (sig_res sg);
+        Some (t, State st' rs m cp')
+    end.
 
   (* Definition at_final_state (s: state): option int := *)
   (*   match s with *)
