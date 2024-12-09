@@ -4810,12 +4810,53 @@ Proof.
   rewrite (nextblock_set _ _ _ _ H0).
   rewrite (nextblock_set _ _ _ _ SET).
   inv H; auto.
-  { admit. }
-  (* eapply set_perm _right_inj with (m1 := m1'); eauto. *)
-  (* eapply free_left_inj; eauto. *)
-  (* inv H; auto. *)
-  (* unfold inject_id; intros. inv H1. *)
-  (* eapply perm_free_2. eexact H0. instantiate (1 := ofs); lia. eauto. *)
+  { unfold extends in H. inv H.
+    inv mext_inj0.
+    constructor; unfold inject_id in *.
+    - intros. inv H.
+      destruct (peq b2 b).
+      + subst b2.
+        assert (perm_order p p0).
+        { unfold set_perm in H0. destruct plt; try discriminate. inv H0.
+          red in H1. simpl in H1. rewrite PMap.gss in H1.
+          destruct perm_dec; try now inv H1.
+          auto. }
+        assert (perm m2 b (ofs + 0) Cur Readable).
+        { unfold set_perm in H0. destruct plt; try discriminate. inv H0.
+          red in H1. simpl in H1. rewrite PMap.gss in H1.
+          destruct perm_dec; try now inv H1.
+          eapply mi_perm0; eauto. }
+        unfold set_perm in SET. destruct plt; try discriminate. inv SET.
+        red; simpl. rewrite PMap.gss.
+        destruct perm_dec; try contradiction. auto.
+      + eapply perm_set_2; eauto.
+        eapply perm_set_2' in H1; eauto.
+    - intros. inv H.
+      erewrite set_block_compartment; try exact H0.
+      symmetry. erewrite set_block_compartment; try exact SET.
+      symmetry.
+      assert (exists p', perm m1 b2 ofs Max p') as [p' ?].
+      { eapply set_perm_perm; eauto. eapply perm_max; eauto. }
+      eapply mi_access0; eauto.
+    - intros. inv H.
+      assert (exists p', range_perm m1 b2 ofs (ofs + size_chunk chunk) Max p') as [p' ?].
+      { eapply set_perm_range_perm; eauto. }
+      eapply mi_align0; eauto.
+    - intros. inv H.
+      assert (perm m1 b2 ofs Cur Readable).
+      { destruct (peq b2 b).
+        - subst.
+          unfold set_perm in H0. destruct plt; try discriminate. inv H0.
+          red in H1. simpl in H1. rewrite PMap.gss in H1.
+          destruct perm_dec; try now inv H1.
+        - eapply perm_set_2'; eauto.
+      }
+      replace (mem_contents m1') with (mem_contents m1).
+      replace (mem_contents m2') with (mem_contents m2).
+      eapply mi_memval0; eauto.
+      unfold set_perm in SET; destruct plt; try discriminate. inv SET; auto.
+      unfold set_perm in H0; destruct plt; try discriminate. inv H0; auto.
+  }
   intros.
   destruct (eq_block b b0).
   - subst b0.
@@ -4852,7 +4893,7 @@ Proof.
   - exploit mext_perm_inv; eauto using perm_set_4. intros [A|A].
     left. eapply perm_set_4'; eauto.
     right. intros C. eapply A. eapply perm_set_2'; eauto.
-Admitted.
+Qed.
 
 Theorem valid_block_extends:
   forall m1 m2 b,
@@ -5932,20 +5973,6 @@ Proof.
       intros ?. eapply H3. eapply perm_set_2'; eauto.
 Qed.
 
-
-Lemma set_outside_inject_parallel:
-  forall f m1 m2 m3 b1 b3 delta b2 m1' m2' m3' P f',
-    f b1 = Some (b3, delta) ->
-    perm_order P Readable ->
-    Mem.set_perm m1 b1 P = Some m1' ->
-    Mem.inject f m1 m3 ->
-    Mem.set_perm m2 b2 P = Some m2' ->
-    Mem.inject f' m2 m3 ->
-    Mem.set_perm m3 b3 P = Some m3' ->
-    Mem.inject f' m2' m3'.
-Proof.
-Admitted.
-
 Theorem set_outside_inject':
   forall f m1 m2 b p m2',
   inject f m1 m2 ->
@@ -5965,21 +5992,21 @@ Proof.
       eapply perm_set_2'; eauto.
 Qed.
 
-(* Lemma set_outside_inject': forall f m1 m2 b p m2', *)
-(*   inject f m1 m2 -> *)
-(*   set_perm m2 b p = Some m2' -> *)
-(*   (forall b' delta ofs' k p, *)
-(*     f b' = Some(b, delta) -> *)
-(*     perm m1 b' ofs' k p -> *)
-(*     False) -> *)
-(*   inject f m1 m2'. *)
-(* Proof. *)
-(*   intros. destruct H. constructor; eauto. *)
-(*   eapply set_outside_inj; eauto. *)
-(*   intros. unfold valid_block in *. erewrite nextblock_set; eauto. *)
-(*   intros. eapply mi_perm_inv0; eauto using perm_set_2'. *)
-(*   admit. *)
-(* Admitted. *)
+
+
+Lemma set_outside_inject_parallel:
+  forall f m1 m2 m3 b1 b3 delta b2 m1' m2' m3' P f',
+    f b1 = Some (b3, delta) ->
+    perm_order P Readable ->
+    Mem.set_perm m1 b1 P = Some m1' ->
+    Mem.inject f m1 m3 ->
+    Mem.set_perm m2 b2 P = Some m2' ->
+    Mem.inject f' m2 m3 ->
+    Mem.set_perm m3 b3 P = Some m3' ->
+    Mem.inject f' m2' m3'.
+Proof.
+  intros. admit.
+Admitted.
 
 (** Composing two memory injections. *)
 
