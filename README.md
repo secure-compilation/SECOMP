@@ -127,11 +127,13 @@ programs that can be executed. It also includes the systematic testing
 infrastructure employed to validate the assumptions and expected behavior of the
 back-translation function.
 
-The updated correctness proof is complete and can be
+The updated correctness proof is mostly complete and can be
 found in file `driver/Compiler.v`, theorems
 `transf_c_program_correct` and `separate_transf_c_program_correct`, and only
 depends on CompCert's existing axioms, or small adaptions thereof to account for
-the addition of compartments to the compiler.
+the addition of compartments to the compiler, except for file `Stackingproof.v` which
+still has to be adapted to some recent changes.
+
 To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
 `Print Assumptions separate_transf_c_program_correct`. This will load and print the list
 of axiomatized results used in the proofs.
@@ -145,10 +147,7 @@ The following files include the most interesting changes:
  `write` system calls.
  
 This branch also contains the recomposition proof.
-The proof is complete and most of the main correctness branch has been
-merged. Compared to the main correctness branch, this branch contains fixes to
-the way programs access arguments stored on the stack. The recomposition proof
-is modified to account for these changes.
+The proof is complete.
 
 File `common/Smallstep.v` contains the definition of the three-way simulation
 relation (`tsim_properties`), and the proof that it implies preservation
