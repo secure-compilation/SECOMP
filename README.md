@@ -55,8 +55,7 @@ System requirements can be verified through CompCert's `configure` script
 
 ## Structure
 
-The development is currently split into four branches, which we are working on
-merging into a single release:
+The development is currently split into 3 branches:
  - `ccs-main`: compiler correctness proof, recomposition proof, and testing infrastructure
  - `ccs-backtranslation`: proof of back-translation
  - `ccs-blame`: proof of blame
