@@ -127,12 +127,12 @@ programs that can be executed. This also includes the recomposition proof
 and the systematic testing infrastructure employed to validate the assumptions
 and expected behavior of the back-translation function.
 
-The updated correctness proof is basically complete and can be
+The updated correctness proof is generally complete and can be
 found in file `driver/Compiler.v`, theorems
 `transf_c_program_correct` and `separate_transf_c_program_correct`, and only
 depends on CompCert's existing axioms, or small adaptions thereof to account for
-the addition of compartments to the compiler, except a few admits in file
-`Stackingproof.v` which still has to be fully adapted to some recent changes.
+the addition of compartments to the compiler, as well as a few admits in file
+`Stackingproof.v`, which still has to be fully adapted to some recent changes.
 
 To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
 `Print Assumptions separate_transf_c_program_correct`. This will load and print the list
@@ -158,6 +158,12 @@ File `security/Recomposition.v` contains the proof of recomposition: lemma
 `simulation`, as well as the three cores lemmas used to instantiate the diagrams:
 `step_E0_strong`, `step_E0_weak`, and `step_t`.  The simulation invariants can
 be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
+
+Finally, the top-level secure compilation result (Theorem 8.1) is formalized
+in file `security/RSC.v`, but this is not integrated with the proofs of recomposition,
+back-translation, and blame. These steps are also generally complete, but they
+are not integrated, and back-translation and blame are still on separate branches
+described below.
 
 ### Examples
 
