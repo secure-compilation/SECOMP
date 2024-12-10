@@ -57,9 +57,9 @@ System requirements can be verified through CompCert's `configure` script
 
 The development is currently split into four branches, which we are working on
 merging into a single release:
- - `ccs-submission`: compiler correctness proof, recomposition proof, and testing infrastructure (main)
+ - `ccs-main`: compiler correctness proof, recomposition proof, and testing infrastructure
  - `ccs-backtranslation`: proof of back-translation
- - `secure-compilation`: proof of blame
+ - `ccs-blame`: proof of blame
 
 ## Building
 
@@ -88,7 +88,7 @@ able to compile its runtime, resulting in errors resembling:
     error: unsupported argument 'rv64imafd' to option '-march='
 
 Installing and using the GCC RISC-V compiler is necessary in order to compile
-the tests and examples in the `ccs-submission` branch (see Examples below).
+the tests and examples in the `ccs-main` branch (see Examples below).
 
 ## How one can inspect the Coq theorems and proofs
 
@@ -118,25 +118,26 @@ of and identifier and Check the type of an identifier, among others.
 
 The file `table.html` contains a mapping from claims from the paper to definitions and proofs.
 
-## Main branch: `ccs-submission`
+## Main branch: `ccs-main`
 
 This branch contains the extension of CompCert to compartments, which involved
 updating the languages, passes, and correctness proofs. This extension can be
 built into a compiler binary that can be used to compile compartmentalized C
-programs that can be executed. It also includes the systematic testing
-infrastructure employed to validate the assumptions and expected behavior of the
-back-translation function.
+programs that can be executed. This also includes the recomposition proof
+and the systematic testing infrastructure employed to validate the assumptions
+and expected behavior of the back-translation function.
 
-The updated correctness proof is mostly complete and can be
+The updated correctness proof is basically complete and can be
 found in file `driver/Compiler.v`, theorems
 `transf_c_program_correct` and `separate_transf_c_program_correct`, and only
 depends on CompCert's existing axioms, or small adaptions thereof to account for
-the addition of compartments to the compiler, except for file `Stackingproof.v` which
-still has to be adapted to some recent changes.
+the addition of compartments to the compiler, except a few admits in file
+`Stackingproof.v` which still has to be fully adapted to some recent changes.
 
 To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
 `Print Assumptions separate_transf_c_program_correct`. This will load and print the list
-of axiomatized results used in the proofs.
+of axiomatized results used in the proofs. This can be compared to the output of these
+commants for standard CompCert on branch `master`.
 
 The following files include the most interesting changes:
  - Compartment model: file `common/AST.v`, modules `COMPTYPE` and `COMP`.
@@ -146,8 +147,7 @@ The following files include the most interesting changes:
  the buffer-based IO development and the detailed models for the `read` and
  `write` system calls.
  
-This branch also contains the recomposition proof.
-The proof is complete.
+This branch also contains the recomposition proof, which is complete.
 
 File `common/Smallstep.v` contains the definition of the three-way simulation
 relation (`tsim_properties`), and the proof that it implies preservation
@@ -211,7 +211,7 @@ the system's libc and the emulator's libc.
 
 ### Compiling compartmentalized programs with the capabilities backend
 
-For this part, build the compiler on branch `ccs-submission` following the
+For this part, build the compiler on branch `ccs-main` following the
 general invocations of `configure` and `make`. One does not need to worry about
 linking, as only the compilation procedure is needed for this part.
 
@@ -243,7 +243,7 @@ This branch contains the back-translation proof. Use `make proof` to replay the 
 
 The proof is complete. This proof is done in a slightly more complex setting
 where system calls can belong to particular compartments. Also some recent
-changes to the mainline `ccs-submission` branch are in the process of being
+changes to the mainline `ccs-main` branch are in the process of being
 integrated.
 
 The memory deltas are defined in the file `security/MemoryDelta.v`.
@@ -264,7 +264,7 @@ to Clight: `backtranslation_proof`.
 
 ### Systematic testing the compilation of the back-translation (Assumption 1)
 
-For this part, build the compiler on branch `ccs-submission` following the general
+For this part, build the compiler on branch `ccs-main` following the general
 invocations of `configure` and `make`. One does not need to worry about linking,
 as only the compilation procedure is needed for this part.
 
@@ -296,11 +296,11 @@ A few more details are provided in `test/backtranslation/README.md`.
 
 If one is interested in reproduction, we have run our tests using QCheck 0.21.3.
 
-## Blame branch: `secure-compilation`
+## Blame branch: `ccs-blame`
 
 This branch contains the blame proof. Use `make proof` to replay the proof.
 
-The proof is complete. Some recent changes to the mainline `ccs-submission`
+The proof is complete. Some recent changes to the mainline `ccs-main`
 branch are in the process of being integrated.
 
 The main blame theorem can be found in file `security/Blame.v`, theorem
@@ -310,7 +310,7 @@ Definition 6 (Blame) can be found in file `security/Blame.v`, theorem
 `blame_program`.
 
 - This follows directly from `does_prefix_star` and uses a simple technical
-  lemma that is to be proved after integration on the mainline `ccs-submission`
+  lemma that is to be proved after integration on the mainline `ccs-main`
   branch.
 
 - Theorem `blame` is a simple corollary that matches the one used in the
