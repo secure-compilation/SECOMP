@@ -242,9 +242,10 @@ Simple compilation examples (in Coq) are in file `cheririscV/CapAsmgen.v`, secti
 The compiler binary is instrumented to produce capability assembly in addition
 to regular compartmentalized CompCert assembly, as described above.
 
-## Back-translation branch: `backtranslation`
+## Back-translation
 
-This branch contains the back-translation proof. Use `make proof` to replay the proof.
+The `ccs-backtranslation` branch contains the back-translation proof.
+Use `make proof` to replay the proof.
 
 The proof is complete. This proof is done in a slightly more complex setting
 where system calls can belong to particular compartments. Also some recent
