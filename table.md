@@ -5,7 +5,7 @@
 </div>
 
 ::: page-body
-# Correctness: `correctness` {#7071474a-5ac4-42f2-9913-d3769c176851}
+# Correctness: folder or branch `ccs-main` {#7071474a-5ac4-42f2-9913-d3769c176851}
 
 ## Generic Claims {#7eb3510e-9cc5-4990-a213-ba7b2170df9d}
 
@@ -39,7 +39,7 @@ to check the other languages if they wish to do so.
   Generation of events                                      backend/Cminor.v             In `step`, condition `(EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t)` and `(EV: return_trace ge (comp_of f) cp v ty t)`                                                                                          
   Correctness of the pass from Csharpminor to Cminor        cfrontend/Cminorgenproof.v   Entire file. The most important theorem is the theorem `transl_step_correct`                                                                                                                                                             
 
-## Recomposition: {#6a3fbff0-9339-4c98-b10d-3333a5a95645}
+## Recomposition: folder or branch `ccs-main` {#6a3fbff0-9339-4c98-b10d-3333a5a95645}
 
   Claim                                                 File                       Location in file                                                    Notes
   ----------------------------------------------------- -------------------------- ------------------------------------------------------------------- -------
@@ -56,7 +56,7 @@ to check the other languages if they wish to do so.
   Cross-compartment tailcall optimization disabled   backend/Tailcall.v         Definition `transf_instr`    The `Itailcall` instruction is only generated when the condition `intra_compartment_call` holds.
   Cross-compartment tailcalls disabled               All languages definition   Semantics of the languages   When a tailcall instruction exists, then the semantics prevent it from being executed cross-compartment by having a condition `(COMP: comp_of fd = comp_of f)`
 
-# Back-translation: `backtranslation` {#788a3b83-9095-47b9-af7a-6deff08c2b48}
+# Back-translation: folder or branch `ccs-backtranslation` {#788a3b83-9095-47b9-af7a-6deff08c2b48}
 
   Claim                                                                          File                               Location in file                                                 Notes
   ------------------------------------------------------------------------------ ---------------------------------- ---------------------------------------------------------------- ---------------------------------------------------------------------
@@ -68,7 +68,7 @@ to check the other languages if they wish to do so.
   Correctness of the back-translation from the intermediate language to Clight   security/BacktranslationProof.v    Definition `ir_to_clight`                                        
   Correctness of the back-translation                                            security/BacktranslationProof2.v   Theorem `backtranslation_proof`                                  
 
-# Blame: `blame` {#d8fe786d-136b-4a8f-bf55-f4e35c83be5a}
+# Blame: folder or branch `ccs-blame` {#d8fe786d-136b-4a8f-bf55-f4e35c83be5a}
 
   ---------------------------------------------------------------------------------
   Claim             File               Location in file        Notes
