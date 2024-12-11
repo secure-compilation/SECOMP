@@ -115,18 +115,18 @@ assumptions and axioms `theorem` depends on.
 At any point, you can use the commands on the Query menu to Print the definition
 of and identifier and Check the type of an identifier, among others.
 
-The file `table.html` contains a mapping from claims from the paper to definitions and proofs.
+The file `table.html` contains a mapping from claims in the paper to definitions and proofs.
 
 ## Main branch: `ccs-main`
 
-This branch contains the extension of CompCert to compartments, which involved
+The `ccs-main` branch contains the extension of CompCert to compartments, which involved
 updating the languages, passes, and correctness proofs. This extension can be
 built into a compiler binary that can be used to compile compartmentalized C
-programs that can be executed. This also includes the recomposition proof
+programs that can be executed. This branch also includes the recomposition proof
 and the systematic testing infrastructure employed to validate the assumptions
 and expected behavior of the back-translation function.
 
-The updated correctness proof is generally complete and can be
+The updated complier correctness proof is generally complete and can be
 found in file `driver/Compiler.v`, theorems
 `transf_c_program_correct` and `separate_transf_c_program_correct`, and only
 depends on CompCert's existing axioms, or small adaptions thereof to account for
@@ -136,7 +136,7 @@ the addition of compartments to the compiler, as well as a few admits in file
 To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
 `Print Assumptions separate_transf_c_program_correct`. This will load and print the list
 of axiomatized results used in the proofs. This can be compared to the output of these
-commants for standard CompCert on branch `master`.
+commands for standard CompCert on branch `master`.
 
 The following files include the most interesting changes:
  - Compartment model: file `common/AST.v`, modules `COMPTYPE` and `COMP`.
@@ -145,8 +145,8 @@ The following files include the most interesting changes:
  - Events: file `common/Events.v`, inductive `event`. The same file contains
  the buffer-based IO development and the detailed models for the `read` and
  `write` system calls.
- 
-This branch also contains the recomposition proof, which is complete.
+
+This branch also contains the recomposition proof, which is complete:
 
 File `common/Smallstep.v` contains the definition of the three-way simulation
 relation (`tsim_properties`), and the proof that it implies preservation
@@ -161,8 +161,8 @@ be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
 Finally, the top-level secure compilation result (Theorem 8.1) is formalized
 in file `security/RSC.v`, but this is not integrated with the proofs of recomposition,
 back-translation, and blame. These steps are also generally complete, but they
-are not integrated, and back-translation and blame are still on separate branches
-described below.
+are not integrated, and the back-translation and blame proofs are still on separate
+branches described below.
 
 ### Examples
 
@@ -242,14 +242,14 @@ Simple compilation examples (in Coq) are in file `cheririscV/CapAsmgen.v`, secti
 The compiler binary is instrumented to produce capability assembly in addition
 to regular compartmentalized CompCert assembly, as described above.
 
-## Back-translation branch: `backtranslation`
+## Back-translation
 
-This branch contains the back-translation proof. Use `make proof` to replay the proof.
+The `ccs-backtranslation` branch contains the back-translation proof.
+Use `make proof` to replay the proof.
 
 The proof is complete. This proof is done in a slightly more complex setting
 where system calls can belong to particular compartments. Also some recent
-changes to the mainline `ccs-main` branch are in the process of being
-integrated.
+changes to the `ccs-main` branch are not yet integrated.
 
 The memory deltas are defined in the file `security/MemoryDelta.v`.
 
@@ -305,8 +305,8 @@ If one is interested in reproduction, we have run our tests using QCheck 0.21.3.
 
 This branch contains the blame proof. Use `make proof` to replay the proof.
 
-The proof is complete. Some recent changes to the mainline `ccs-main`
-branch are in the process of being integrated.
+The proof is complete, but some recent changes to the `ccs-main`
+branch are not yet integrated.
 
 The main blame theorem can be found in file `security/Blame.v`, theorem
 `does_prefix_star`.
@@ -315,8 +315,7 @@ Definition 6 (Blame) can be found in file `security/Blame.v`, theorem
 `blame_program`.
 
 - This follows directly from `does_prefix_star` and uses a simple technical
-  lemma that is to be proved after integration on the mainline `ccs-main`
-  branch.
+  lemma that is to be proved after integration on the `ccs-main` branch.
 
 - Theorem `blame` is a simple corollary that matches the one used in the
   top-level security proof.
