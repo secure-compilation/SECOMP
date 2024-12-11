@@ -575,6 +575,7 @@ module Target : TARGET =
           | _ ->
               assert false
          end
+      | _ -> failwith "not implemented"
 
     let print_align oc alignment =
       fprintf oc "	.balign %d\n" alignment

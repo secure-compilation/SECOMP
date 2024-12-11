@@ -560,7 +560,7 @@ let diagnose_stuck_state p ge w = function
 (* Execution of a single step.  Return list of triples
    (reduction rule, next state, next world). *)
 
-let do_step p prog ge time s w =
+let do_step cp_main p prog ge time s w =
   match Cexec.at_final_state s with
   | Some r ->
       if !trace >= 1 then
@@ -571,7 +571,7 @@ let do_step p prog ge time s w =
       | First | Random -> exit (Int32.to_int (camlint_of_coqint r))
       end
   | None ->
-      let l = Cexec.do_step ge do_external_function do_inline_assembly w s in
+      let l = Cexec.do_step cp_main ge do_external_function do_inline_assembly w s in
       if l = []
       || List.exists (fun (Cexec.TR(r,t,s)) -> s = Stuckstate) l
       then begin
@@ -586,10 +586,10 @@ let do_step p prog ge time s w =
 
 (* Exploration of a single execution. *)
 
-let rec explore_one p prog ge time s w =
+let rec explore_one cp_main p prog ge time s w =
   if !trace >= 2 then
     fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state (prog, ge, s);
-  let succs = do_step p prog ge time s w in
+  let succs = do_step cp_main p prog ge time s w in
   if succs <> [] then begin
     let (r, s', w') =
       match !mode with
@@ -598,12 +598,12 @@ let rec explore_one p prog ge time s w =
       | All -> assert false in
     if !trace >= 2 then
       fprintf p "--[%s]-->@." (camlstring_of_coqstring r);
-    explore_one p prog ge (time + 1) s' w'
+    explore_one cp_main p prog ge (time + 1) s' w'
   end
 
 (* Exploration of all possible executions. *)
 
-let rec explore_all p prog ge time states =
+let rec explore_all cp p prog ge time states =
   if !trace >= 2 then begin
     List.iter
       (fun (n, s, w) ->
@@ -615,7 +615,7 @@ let rec explore_all p prog ge time states =
   | [] ->
       List.rev nextstates
   | (n, s, w) :: states ->
-      add_reducts nextstates seen numseen states n (do_step p prog ge time s w)
+      add_reducts nextstates seen numseen states n (do_step cp p prog ge time s w)
 
   and add_reducts nextstates seen numseen states n = function
   | [] ->
@@ -636,7 +636,7 @@ let rec explore_all p prog ge time states =
       add_reducts nextstates' seen' numseen' states n reducts
   in
     let nextstates = explore_next [] StateMap.empty 1 states in
-    if nextstates <> [] then explore_all p prog ge (time + 1) nextstates
+    if nextstates <> [] then explore_all cp p prog ge (time + 1) nextstates
 
 (* The variant of the source program used to build the world for
    executing events.
@@ -744,11 +744,12 @@ let execute prog =
       | None ->
           fprintf p "ERROR: Initial state undefined@."; exit 126
       | Some(ge, s) ->
+        let cp_main = Csem.comp_of_main prog1 in
           match !mode with
           | First | Random ->
-              explore_one p prog1 ge 0 s (world wge wm)
+              explore_one cp_main p prog1 ge 0 s (world wge wm)
           | All ->
-              explore_all p prog1 ge 0 [(1, s, world wge wm)]
+              explore_all cp_main p prog1 ge 0 [(1, s, world wge wm)]
 
 (* Execution of compiled assembly *)
 

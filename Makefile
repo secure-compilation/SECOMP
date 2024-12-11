@@ -142,8 +142,9 @@ CFRONTEND=Ctypes.v Cop.v Csyntax.v Csem.v Ctyping.v Cstrategy.v Cexec.v \
 
 # Security proof (in security/)
 
-SECURITY= Split.v Recomposition.v
-# RSC.v
+SECURITY= Split.v Recomposition.v Backtranslation.v MemoryWeak.v MemoryDelta.v BtBasics.v BtInfoAsm.v
+  # BacktranslationProof2.v BtBasics.v BtInfoAsm.v BtInfoAsmBound.v MemoryDelta.v MemoryWeak.v \
+  # Tactics.v
 
 # Low-level backend (in cheririscV/)
 
@@ -194,6 +195,17 @@ GENERATED=\
 all:
 	@test -f .depend || $(MAKE) depend
 	$(MAKE) proof
+	$(MAKE) extraction
+	$(MAKE) ccomp
+ifeq ($(HAS_RUNTIME_LIB),true)
+	$(MAKE) runtime
+endif
+ifeq ($(CLIGHTGEN),true)
+	$(MAKE) clightgen
+endif
+ifeq ($(INSTALL_COQDEV),true)
+	$(MAKE) compcert.config
+endif
 
 proof: $(FILES:.v=.vo)
 

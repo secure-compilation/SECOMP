@@ -162,6 +162,7 @@ Separate Extraction
    Compiler.transf_c_program Compiler.transf_cminor_program
    CapAsmgen.transf_program
    Cexec.do_initial_state Cexec.do_step Cexec.at_final_state
+   Csem.comp_of_main
    Ctypes.merge_attributes Ctypes.remove_attributes 
    Ctypes.build_composite_env Ctypes.layout_struct
    Initializers.transl_init Initializers.constval

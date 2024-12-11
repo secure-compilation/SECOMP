@@ -2088,15 +2088,15 @@ Section ExecSem.
         Some (t, State st' rs m cp')
     end.
 
-  (* Definition at_final_state (s: state): option int := *)
-  (*   match s with *)
-  (*   | ReturnState nil rs m cp => *)
-  (*       match rs X10 with *)
-  (*       | Vint r => if Val.eq (rs PC) Vnullptr then Some r else None *)
-  (*       | _ => None *)
-  (*       end *)
-  (*   | _ => None *)
-  (*   end. *)
+  Definition at_final_state (s: state): option int :=
+    match s with
+    | ReturnState nil rs m _ cp =>
+        match rs X10 with
+        | Vint r => if Val.eq (rs PC) Vnullptr then Some r else None
+        | _ => None
+        end
+    | _ => None
+    end.
 
   (* Lemma take_step_correct: forall p w s t s', *)
   (*     let ge := Genv.globalenv p in *)

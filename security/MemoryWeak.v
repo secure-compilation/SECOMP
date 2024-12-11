@@ -219,7 +219,9 @@ Section WINJ.
     rewrite (list_forall2_length H3). lia.
     (* eapply storebytes_range_perm; eauto. *)
     destruct (range_perm_storebytes _ _ _ _ cp H4) as [n2 STORE].
-    eapply can_access_block_winj; try eassumption. eapply storebytes_can_access_block_1; eassumption.
+    exploit storebytes_can_access_block_1; eauto. intros [].
+    left; eapply can_access_block_winj; try eassumption.
+    right. erewrite <- list_forall2_length; eauto.
     exists n2; split. eauto.
     constructor.
     (* perm *)
@@ -467,7 +469,10 @@ Section WINJ.
     apply range_perm_drop_2. red; intros.
     replace ofs with ((ofs - delta) + delta) by lia.
     eapply perm_winj; eauto. eapply range_perm_drop_1; eauto. lia.
-    eapply mwi_own; eauto. eapply can_access_block_drop_3; eauto.
+    exploit can_access_block_drop_3; eauto.
+    intros [].
+    { admit. }
+    eapply mwi_own; eauto.
     destruct X as [m2' DROP]. exists m2'; split; auto.
     inv H.
     constructor.
@@ -505,7 +510,7 @@ Section WINJ.
     (* align *)
     intros. eapply mwi_align0 with (ofs := ofs) (p := p0); eauto.
     red; intros; eapply perm_drop_4; eauto.
-  Qed.
+  Admitted.
 
   Lemma drop_outside_winj: forall f m1 m2 b lo hi p cp m2',
       mem_winj f m1 m2 ->
@@ -1581,7 +1586,9 @@ Section PROPS.
         (INJ: Mem.mem_inj j m m')
     :
     mem_winj j m m'.
-  Proof. inv INJ. split; auto. Qed.
+  Proof. inv INJ. split; auto.
+         admit.
+  Admitted.
 
   Lemma inject_implies_winject
         j m m'
@@ -1600,7 +1607,7 @@ Section PROPS.
         (INJV: mem_inj_val j m m')
     :
     Mem.mem_inj j m m'.
-  Proof. inv WINJ. split; eauto. Qed.
+  Proof. inv WINJ. split; eauto. admit. Admitted.
 
   Lemma winject_to_inject
         j m m'

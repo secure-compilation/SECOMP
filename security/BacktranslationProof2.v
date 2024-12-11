@@ -9,7 +9,6 @@ Require Import riscV.Asm.
 Require Import BtBasics BtInfoAsm BtInfoAsmBound MemoryDelta MemoryWeak.
 Require Import Ctypes Clight.
 Require Import Backtranslation BacktranslationAux BacktranslationProof.
-Require Import RSC.
 
 
 Section GENPROOFS.

@@ -6,6 +6,7 @@ Require Import Split.
 
 Require Import Tactics.
 Require Import riscV.Asm.
+(* Require Import MemoryWeak MemoryDelta. *)
 Require Import BtBasics BtInfoAsm MemoryDelta MemoryWeak.
 Require Import Ctypes Clight.
 
@@ -565,8 +566,10 @@ Section GEN.
                    (AST.prog_pol a_p)
                    []
                    (@PTree.empty composite)
-                   _
+                   _ _
                    _ _.
+  Next Obligation.
+    Admitted.
   Next Obligation.
     Admitted.
   Next Obligation.

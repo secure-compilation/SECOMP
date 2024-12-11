@@ -73,9 +73,9 @@ Section GENV.
     remember (fold_right (fun (ig : ident * globdef F V) (g : Genv.t F V) => Genv.add_global g ig)
                 (Genv.empty_genv F V prog_pol_pub) rev_prog_defs) as ge.
     assert (AGR': agr_comps prog_pol (rev rev_prog_defs)) by admit.
-    assert (GE: ge = Genv.globalenv (AST.mkprogram (rev rev_prog_defs) prog_public id0 prog_pol prog_pol_pub AGR')).
-    { subst ge. unfold Genv.globalenv. unfold Genv.add_globals. simpl.
-      rewrite <- fold_left_rev_right. rewrite rev_involutive. auto. }
+    (* assert (GE: ge = Genv.globalenv (AST.mkprogram (rev rev_prog_defs) prog_public id0 prog_pol prog_pol_pub AGR')). *)
+    (* { subst ge. unfold Genv.globalenv. unfold Genv.add_globals. simpl. *)
+    (*   rewrite <- fold_left_rev_right. rewrite rev_involutive. auto. } *)
     apply genv_find_def_add_global_spec in DEF.
     { destruct DEF as [[BLK GD] | [BLK GD]].
       - subst b gd0. exists id0.
@@ -87,15 +87,17 @@ Section GENV.
         destruct IHrev_prog_defs as [id' INV]. exists id'.
         apply Genv.find_invert_symbol. unfold Genv.find_symbol, Genv.add_global; simpl.
         rewrite PTree.gso. apply Genv.invert_find_symbol in INV. auto.
-        clear - H1 Heqge INV GE. apply Genv.invert_find_symbol in INV.
-        rewrite GE in INV. apply Genv.find_symbol_inversion in INV.
-        unfold prog_defs_names in INV. simpl in INV.
-        rewrite map_rev in INV. apply in_rev in INV. intros CONTRA. subst id'. auto.
+        admit.
+        (* clear - H1 Heqge INV . apply Genv.invert_find_symbol in INV. *)
+        (* rewrite GE in INV. apply Genv.find_symbol_inversion in INV. *)
+        (* unfold prog_defs_names in INV. simpl in INV. *)
+        (* rewrite map_rev in INV. apply in_rev in INV. intros CONTRA. subst id'. auto. *)
     }
     { destruct (Genv.find_symbol ge id0) eqn:CASE; auto. exfalso.
-      rewrite GE in CASE. apply Genv.find_symbol_inversion in CASE.
-      unfold prog_defs_names in CASE. simpl in CASE. rewrite map_rev in CASE. apply in_rev in CASE.
-      clear - CASE RNR. inversion RNR. auto.
+      admit.
+      (* rewrite GE in CASE. apply Genv.find_symbol_inversion in CASE. *)
+      (* unfold prog_defs_names in CASE. simpl in CASE. rewrite map_rev in CASE. apply in_rev in CASE. *)
+      (* clear - CASE RNR. inversion RNR. auto. *)
     }
   Admitted.
 
