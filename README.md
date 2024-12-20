@@ -5,12 +5,12 @@ machine-checked security proofs in Coq. Both of these are based on the CompCert
 formally verified C compiler. The Coq development contains the proofs, theorems,
 and testing described in the accompanying paper below.
 
-This README file contains detailed instructions on how to build, run and check
+This README file contains detailed instructions on how to build, run, and check
 the development. These can be done on most modern hardware, and depend only on
 OCaml, Coq, and some libraries that are available via the OCaml package manager
 OPAM. Additionally, some tests rely on the GCC RISC-V cross-compiler.
 
-The permanently archived [artifact](https://doi.org/10.5281/zenodo.11007679)
+The permanently archived [artifact](https://zenodo.org/records/14385810)
 associated with the paper below contains not only the sources but also a virtual
 machine (VM) that has all these dependencies already installed.  The `sudo`
 password of the VM is `secomp`.  Instead of branches, the artifact is split into
@@ -26,8 +26,8 @@ sub-folders that can be compiled and checked independently from the others.
 
 ## Requirements
 
-This development is built and tested with Coq 8.15.2. It is based on the 64-bit
-RISC-V backend of CompCert 3.12.
+This development is built and tested with Coq 8.15.2. It is based on
+CompCert 3.12 and its 64-bit RISC-V backend.
 
 General requirements:
  - OCaml version 4.5.0 or greater (OCaml 5 is not supported).
@@ -42,8 +42,8 @@ Extended requirements for systematic testing:
 
 Here are the OPAM commands one can use to install all OCaml dependencies above:
 
-    $ opam switch create 4.14.0
-    $ eval $(opam env --switch=4.14.0)
+    $ opam switch create 4.14.2
+    $ eval $(opam env --switch=4.14.2)
     $ opam install coq.8.15.2 menhir qcheck menhirLib
 
 In addition to the above, some of the toolchain relies on the riscv64
@@ -62,8 +62,8 @@ The development is currently split into 3 branches:
 
 ## Building
 
-Each branch can be built after installing its dependencies by configuring the
-CompCert build process, by going to that folder and running:
+Each branch can be built after installing its dependencies by first configuring the
+CompCert build process, by running:
 
     $ ./configure -toolprefix "riscv64-linux-gnu-" rv64-linux
 
@@ -72,7 +72,7 @@ compilation chain.
 
 One can then compile CompCert and check the proofs on that branch by running
 `make`, optionally with the `-j` command line option, where an optional
-argument number `N` can limit the number of simultaneous jobs:
+argument number `N` can limit the number of parallel jobs:
 
     $ make -jN
 
@@ -90,6 +90,8 @@ Installing and using the GCC RISC-V compiler is necessary in order to compile
 the tests and examples in the `ccs-main` branch (see Examples below).
 
 ## How one can inspect the Coq theorems and proofs
+
+The file `table.html` contains a mapping from claims in the paper to definitions and proofs.
 
 For those using the provided virtual machine, we recommend using the built-in
 CoqIDE environment to explore the Coq development. Users of the virtual machine
@@ -115,8 +117,6 @@ assumptions and axioms `theorem` depends on.
 At any point, you can use the commands on the Query menu to Print the definition
 of and identifier and Check the type of an identifier, among others.
 
-The file `table.html` contains a mapping from claims in the paper to definitions and proofs.
-
 ## Main branch: `ccs-main`
 
 The `ccs-main` branch contains the extension of CompCert to compartments, which involved
@@ -126,14 +126,15 @@ programs that can be executed. This branch also includes the recomposition proof
 and the systematic testing infrastructure employed to validate the assumptions
 and expected behavior of the back-translation function.
 
-The updated complier correctness proof is generally complete and can be
+The updated **complier correctness proof** is generally complete and can be
 found in file `driver/Compiler.v`, theorems
 `transf_c_program_correct` and `separate_transf_c_program_correct`, and only
 depends on CompCert's existing axioms, or small adaptions thereof to account for
 the addition of compartments to the compiler, as well as a few admits in file
 `Stackingproof.v`, which still has to be fully adapted to some recent changes.
 
-To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
+If one wants to verify this, uncomment and execute
+`Print Assumptions transf_c_program_correct` and
 `Print Assumptions separate_transf_c_program_correct`. This will load and print the list
 of axiomatized results used in the proofs. This can be compared to the output of these
 commands for standard CompCert on branch `master`.
@@ -146,7 +147,7 @@ The following files include the most interesting changes:
  the buffer-based IO development and the detailed models for the `read` and
  `write` system calls.
 
-This branch also contains the recomposition proof, which is complete:
+This branch also contains the **recomposition proof**, which is complete:
 
 File `common/Smallstep.v` contains the definition of the three-way simulation
 relation (`tsim_properties`), and the proof that it implies preservation
@@ -158,10 +159,10 @@ File `security/Recomposition.v` contains the proof of recomposition: lemma
 `step_E0_strong`, `step_E0_weak`, and `step_t`.  The simulation invariants can
 be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
 
-Finally, the top-level secure compilation result (Theorem 8.1) is formalized
-in file `security/RSC.v`, but this is not integrated with the proofs of recomposition,
+Finally, the **top-level secure compilation result** (Theorem 8.1) is formalized
+in file `security/RSC.v`, but this is not yet integrated with the proofs of recomposition,
 back-translation, and blame. These steps are also generally complete, but they
-are not integrated, and the back-translation and blame proofs are still on separate
+are not yet integrated, and the back-translation and blame proofs are still on separate
 branches described below.
 
 ### Examples
