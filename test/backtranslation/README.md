@@ -9,8 +9,8 @@ $ make -kj
 More information can be found in `testing.md` in the root directory. You do not need to install `ccomp` globally
 or worry to much about linking, as we only need to compilation procedure.
 
-### 2) Install QuickCheck
-We use the `QuickCheck` library ([Github](https://github.com/c-cube/qcheck)) to realize property based testing
+### 2) Install QCheck
+We use the `QCheck` library ([Github](https://github.com/c-cube/qcheck)) for property based testing.
 You can install it with [opam](https://opam.ocaml.org/) using the command below (we have run our tests with
 version `0.21.3`).
 ```
