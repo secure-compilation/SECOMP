@@ -282,7 +282,8 @@ A few more details are provided in `test/backtranslation/README.md`.
 
 ### Back-translation proof branch: `ccs-backtranslation`
 
-This branch contains the back-translation proof. Use `make proof` to replay the proof.
+This branch contains the back-translation proof.
+Use `make depend && make proof` to replay the proof.
 
 The proof is complete. This proof is done in a slightly more complex setting
 where system calls can belong to particular compartments. Also some recent
@@ -306,7 +307,8 @@ to Clight: `backtranslation_proof`.
 
 ## Blame proof branch: `ccs-blame`
 
-This branch contains the blame proof. Use `make proof` to replay the proof.
+This branch contains the blame proof.
+Use `make depend && make proof` to replay the proof.
 
 The proof is complete, but some recent changes to the `ccs-main`
 branch are not yet integrated.
