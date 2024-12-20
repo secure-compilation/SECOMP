@@ -286,21 +286,22 @@ Running the `test_backtranslation` binary performs the testing:
 
     [backtranslation]$ ./test_backtranslation
 
-More in detail, you can run the tests in two modes: *test mode* and
-*reproduction mode*. The test mode is the default mode and designed to run
+In more detail, you can run the tests in two modes: *test mode* and
+*reproduction mode*. The test mode is the default mode and designed to run random
 tests. In case of any failures, all intermediate seeds are printed, otherwise a
 statistic of the generated values is shown. Note that the number of tests grows
 **multiplicatively** so choose the parameters accordingly. In reproduction mode
 the specified seeds allow you to reproduce a very specific run.  The commands
-below exemplarily show how to run the tests in test- and reproduction mode
+below exemplarily show how to run the tests in test and reproduction mode
 respectively.
 
     [backtranslation]$ ./test_backtranslation -num_asm_progs 5 -num_traces 20
     [backtranslation]$ ./test_backtranslation -root_seed 4 -asm_seed 3 -trace_seed 8
 
-A few more details are provided in `test/backtranslation/README.md`.
+If one is interested in reproduction, we have run the large-scale testing
+experiments for the CCS'24 paper using QCheck 0.21.3.
 
-If one is interested in reproduction, we have run our tests using QCheck 0.21.3.
+A few more details are provided in `test/backtranslation/README.md`.
 
 ## Blame branch: `ccs-blame`
 
