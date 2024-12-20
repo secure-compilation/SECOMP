@@ -245,29 +245,6 @@ to regular compartmentalized CompCert assembly, as described above.
 
 ## Back-translation
 
-The `ccs-backtranslation` branch contains the back-translation proof.
-Use `make proof` to replay the proof.
-
-The proof is complete. This proof is done in a slightly more complex setting
-where system calls can belong to particular compartments. Also some recent
-changes to the `ccs-main` branch are not yet integrated.
-
-The memory deltas are defined in the file `security/MemoryDelta.v`.
-
-The informative events (called `bundled_events`), and the intermediate language
-characterizing the well-formedness of informative traces (`ir_step`) are defined
-in `security/BtAsm.v`. The proof going from RISC-V assembly to the intermediate
-language is called `asm_to_ir`.
-
-The `security/Backtranslation.v` contains the implementation of the
-back-translation function, `gen_program`.
-
-The `security/BacktranslationProof.v` contains the proof of correctness of the
-back-translation, starting from the intermediate language: `ir_to_clight`.
-
-The `security/BacktranslationProof2.v` contains the complete proof from assembly
-to Clight: `backtranslation_proof`.
-
 ### Systematic testing the compilation of the back-translation (Assumption 1)
 
 For this part, build the compiler on branch `ccs-main` following the general
@@ -302,6 +279,31 @@ If one is interested in reproduction, we have run the large-scale testing
 experiments for the CCS'24 paper using QCheck 0.21.3.
 
 A few more details are provided in `test/backtranslation/README.md`.
+
+### Back-translation proof: `ccs-backtranslation`
+
+The `ccs-backtranslation` branch contains the back-translation proof.
+Use `make proof` to replay the proof.
+
+The proof is complete. This proof is done in a slightly more complex setting
+where system calls can belong to particular compartments. Also some recent
+changes to the `ccs-main` branch are not yet integrated.
+
+The memory deltas are defined in the file `security/MemoryDelta.v`.
+
+The informative events (called `bundled_events`), and the intermediate language
+characterizing the well-formedness of informative traces (`ir_step`) are defined
+in `security/BtAsm.v`. The proof going from RISC-V assembly to the intermediate
+language is called `asm_to_ir`.
+
+The `security/Backtranslation.v` contains the implementation of the
+back-translation function, `gen_program`.
+
+The `security/BacktranslationProof.v` contains the proof of correctness of the
+back-translation, starting from the intermediate language: `ir_to_clight`.
+
+The `security/BacktranslationProof2.v` contains the complete proof from assembly
+to Clight: `backtranslation_proof`.
 
 ## Blame branch: `ccs-blame`
 
