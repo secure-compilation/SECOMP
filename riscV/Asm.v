@@ -2027,6 +2027,33 @@ Section ExecSem.
                 let rs' := nextinstr
                           (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef)) (rs # X1 <- Vundef) # X31 <- Vundef)) in
                 Some (t, State st rs' m' (comp_of f))
+            | Pld_arg ch rd ra o =>
+                match rd with
+                | inl ird =>
+                    match exec_load ge ch rs m ird ra o (comp_of f) false with
+                    | Next rs' m' => Some (E0, State st rs' m' (comp_of f))
+                    | Stuck =>
+                        do Vptr dsp z <- asm_parent_dummy_sp st;
+                        check (Ptrofs.eq z Ptrofs.zero);
+                        do Vptr dsp o' <- rs ra;
+                        let sp := asm_parent_sp st in
+                        do v <- Mem.loadv ch m (Val.offset_ptr sp (Ptrofs.add o' (eval_offset ge o))) top;
+                        let rs' := nextinstr (rs # ird <- v) in
+                        Some (E0, State st rs' m (comp_of f))
+                    end
+                | inr frd =>
+                    match exec_load ge ch rs m frd ra o (comp_of f) false with
+                    | Next rs' m' => Some (E0, State st rs' m' (comp_of f))
+                    | Stuck =>
+                        do Vptr dsp z <- asm_parent_dummy_sp st;
+                        check (Ptrofs.eq z Ptrofs.zero);
+                        do Vptr dsp o' <- rs ra;
+                        let sp := asm_parent_sp st in
+                        do v <- Mem.loadv ch m (Val.offset_ptr sp (Ptrofs.add o' (eval_offset ge o))) top;
+                        let rs' := nextinstr (rs # frd <- v) in
+                        Some (E0, State st rs' m (comp_of f))
+                    end
+                end
             | _ =>
                 match exec_instr ge f i rs m (comp_of f) with
                 | Next rs' m' =>
@@ -2045,7 +2072,7 @@ Section ExecSem.
                         do vargs <-
                              match Genv.type_of_call (comp_of f) cp' with
                              | Genv.CrossCompartmentCall =>
-                                 get_call_arguments rs'' (rs'' X2) m' sig
+                                 get_call_arguments rs' (rs' X2) m' sig
                              | _ => Some nil end;
                         (* do vargs <- get_call_arguments rs'' (rs'' X2) m' sig; *)
                         check (match Genv.type_of_call (comp_of f) cp' with
@@ -2053,10 +2080,10 @@ Section ExecSem.
                                | _ => true
                                end);
                         do t <- get_call_trace fundef unit ge (comp_of f) cp' (Vptr b' ofs') vargs (sig_args sig);
-                        Some (t, State st'' rs'' m'' (comp_of f))
+                        Some (t, State st'' (invalidate_call rs'' sig) m'' (comp_of f))
                     | None, true => (* exec_step_internal_return *)
                         (* check (Genv.allowed_call_b ge (comp_of f) (rs' PC)); *)
-                        Some (E0, ReturnState st rs' m' (parent_signature st) (comp_of f))
+                        Some (E0, ReturnState st rs' m' (fn_sig f) (comp_of f))
                     | Some _, true => None
                     end
                 | Stuck => None
@@ -2073,19 +2100,37 @@ Section ExecSem.
         end
     | ReturnState st rs m sg rec_cp =>
         check (negb (Val.eq (rs PC) Vnullptr));
-        let cp' := Genv.find_comp_in_genv ge (rs PC) in
-
-        (* let rec_cp' := call_comp ge st in *)
-        check (match flowsto_dec rec_cp cp' with
+        let cp' :=
+          match Val.eq (rs PC) (asm_parent_dummy_ra st) with
+          | left _ => Genv.find_comp_in_genv ge (asm_parent_ra st)
+          | right _ => Genv.find_comp_in_genv ge (rs PC)
+          end in
+        check (match cp_eq_dec rec_cp cp' with
                | left _ => true
-               | right _ => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))
+               | right _ => andb (Val.eq (rs PC) (asm_parent_dummy_ra st))
+                             (Val.eq (rs X2) (asm_parent_dummy_sp st))
                end);
-        do st' <- update_stack_return st;
+        do st' <-
+          match cp_eq_dec rec_cp cp' with
+          | left _ => Some st
+          | right _ => update_stack_return st
+          end;
         check (match Genv.type_of_call cp' rec_cp with
                | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg)
                | _ => true end);
         do t <- get_return_trace fundef unit ge cp' rec_cp (return_value rs sg) (sig_res sg);
-        Some (t, State st' rs m cp')
+        let rs' :=
+          match Val.eq (rs PC) (asm_parent_dummy_ra st) with
+          | left _ => invalidate_cross_return (invalidate_return rs sg) st
+          | right _ => invalidate_return rs sg
+          end in
+        do m' <-
+          match Val.eq (rs PC) (asm_parent_dummy_ra st) with
+          | left _ => do Vptr bsp _ <- asm_parent_sp st;
+                     Mem.set_perm m bsp Freeable
+          | right _ => Some m
+          end;
+        Some (t, State st' rs' m' cp')
     end.
 
   Definition at_final_state (s: state): option int :=
@@ -2098,15 +2143,70 @@ Section ExecSem.
     | _ => None
     end.
 
-  (* Lemma take_step_correct: forall p w s t s', *)
-  (*     let ge := Genv.globalenv p in *)
-  (*     step ge s t s' -> *)
-  (*     take_step p ge w s = Some (t, s'). *)
-  (* Proof. *)
-  (*   intros p w s t s' ge H. *)
-  (*   inv H; simpl; eauto. *)
-  (*   - rewrite H0, H1, H2, H3, H4, H5, NEXTPC, ALLOWED. *)
-  (*     destruct cp_eq_dec; try congruence. destruct i; auto. inv H3. *)
+  Lemma take_step_correct: forall p w s t s',
+      let ge := Genv.globalenv p in
+      step ge s t s' ->
+      take_step p ge w s = Some (t, s').
+  Proof.
+    intros p w s t s' ge H.
+    inv H; simpl; eauto.
+    - rewrite H0; simpl.
+      rewrite <- Genv.find_funct_ptr_iff in H1.
+      rewrite H1, H2, H3, H4, H5, NEXTPC, ALLOWED.
+      destruct cp_eq_dec; auto; try congruence.
+      destruct i; auto.
+      inv H3. inv H3.
+    - rewrite H0; simpl.
+      rewrite <- Genv.find_funct_ptr_iff in H1.
+      rewrite H1, H2, H3, H4.
+      destruct rd; auto.
+      + destruct exec_load eqn:?; auto.
+        * admit.
+        * assert (ch = chunk_of_type ty) as ->.
+          { admit. }
+          erewrite Ptrofs.eq_true, H7, H8; eauto.
+      + destruct exec_load eqn:?; auto.
+        * admit.
+        * assert (ch = chunk_of_type ty) as ->.
+          { admit. }
+          erewrite Ptrofs.eq_true, H7, H9; eauto.
+    - rewrite H0; simpl.
+      rewrite <- Genv.find_funct_ptr_iff in H1.
+      rewrite H1, H2.
+      destruct rd; auto.
+      + rewrite EXECi; auto.
+      + rewrite EXECf; auto.
+    - rewrite H0; simpl.
+      rewrite <- Genv.find_funct_ptr_iff in H1.
+      rewrite H1, H2, H3, H4.
+      destruct i; try now inv H4.
+      + simpl.
+        rewrite NEXTPC. apply Genv.allowed_call_reflect in ALLOWED.
+        rewrite ALLOWED. rewrite STUPD.
+        unfold get_call_trace. unfold Genv.type_of_call in *.
+        destruct flowsto_dec.
+        assert (t = E0) as -> by admit. reflexivity.
+        admit.
+      + admit.
+    - rewrite H0; simpl.
+      rewrite <- Genv.find_funct_ptr_iff in H1.
+      rewrite H1, H2, H3, H4.
+      destruct i; try now inv H4.
+    - replace (negb (Val.eq (rs PC) Vnullptr)) with true.
+      destruct cp_eq_dec; try congruence.
+      destruct Val.eq; try congruence.
+      unfold get_return_trace, Genv.type_of_call.
+      destruct flowsto_dec; auto. rewrite e; auto.
+      unfold get_return_trace, Genv.type_of_call.
+      admit.
+      admit.
+      admit.
+      admit.
+      admit.
+    - admit.
+    - admit.
+    - admit.
+  Admitted.
   (*   - rewrite H0, H1, H2, H3, H4, NEXTPC. *)
   (*     destruct i; inv H4; simpl. *)
   (*     + apply Genv.allowed_call_reflect in ALLOWED; rewrite ALLOWED. *)
