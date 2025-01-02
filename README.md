@@ -10,7 +10,7 @@ the development. These can be done on most modern hardware, and depend only on
 OCaml, Coq, and some libraries that are available via the OCaml package manager
 OPAM. Additionally, some tests rely on the GCC RISC-V cross-compiler.
 
-The permanently archived [artifact](https://zenodo.org/records/14385810)
+The permanently archived [artifact](https://doi.org/10.5281/zenodo.11007678)
 associated with the paper below contains not only the sources but also a virtual
 machine (VM) that has all these dependencies already installed.  The `sudo`
 password of the VM is `secomp`.  Instead of branches, the artifact is split into
