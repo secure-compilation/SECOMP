@@ -5,6 +5,8 @@ PARSED_IMPORTS := $(SOURCES:.c=.parsed.imports)
 EXECUTABLES := $(SOURCES:.c=.compcert)
 INTERPS := $(SOURCES:.c=.interp)
 INTERPASMS := $(SOURCES:.c=.interp-asm)
+CAPASMS := $(SOURCES:.c=.cap_asm)
+PARSED_INTF := $(SOURCES:.c=.parsed.intf)
 
 all: $(OBJECTS) $(INTERPS)
 
@@ -17,4 +19,4 @@ all: $(OBJECTS) $(INTERPS)
 #	meld $*.interp $*.interp-asm
 
 clean:
-	rm -f $(OBJECTS) $(PARSED_SOURCES) $(PARSED_IMPORTS) $(EXECUTABLES) $(INTERPS) $(INTERPASMS) *.intf
+	rm -f $(OBJECTS) $(PARSED_SOURCES) $(PARSED_IMPORTS) $(EXECUTABLES) $(INTERPS) $(INTERPASMS) $(CAPASMS) $(PARSED_INTF)
