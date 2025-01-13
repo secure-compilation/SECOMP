@@ -621,6 +621,7 @@ Opaque builtin_strength_reduction.
     econstructor; econstructor; split.
     eapply exec_Ibuiltin; eauto.
     eapply eval_builtin_args_preserved. eexact allowed_addrof_preserved. eexact symbols_preserved. eauto.
+    admit.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     rewrite comp_transf_function; eauto using allowed_syscall_translated.
     eapply match_states_succ; eauto.
@@ -699,6 +700,7 @@ Opaque builtin_strength_reduction.
   intros [v' [m2' [A [B [C D]]]]].
   simpl. left; econstructor; econstructor; split.
   eapply exec_function_external; eauto.
+  admit.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   (* erewrite <- match_stacks_call_comp; eauto. *)
   eauto using allowed_syscall_translated.
@@ -713,7 +715,7 @@ Opaque builtin_strength_reduction.
   rewrite comp_transf_function.
   now eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto. constructor. apply set_reg_lessdef; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

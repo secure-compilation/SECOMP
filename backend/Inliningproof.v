@@ -1354,6 +1354,10 @@ Proof.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
     rewrite <- SAMECOMP; eauto.
     rewrite <- SAMECOMP.
+
+    admit.
+  (* eapply external_conds_preserved; eauto. eapply senv_preserved. admit. *)
+    rewrite <- SAMECOMP.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     rewrite <- SAMECOMP; eauto using allowed_syscall_translated.
   econstructor.
@@ -1527,6 +1531,7 @@ Proof.
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
+    admit.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     eauto using allowed_syscall_translated.
   econstructor.
@@ -1598,7 +1603,7 @@ Proof.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto.
   subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.

@@ -198,6 +198,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_expr le (Eletvar n) v
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
+      external_call_conds ef ge cp m vl ->
       external_call ef ge cp vl m E0 v m ->
       forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       eval_expr le (Ebuiltin ef al) v
@@ -206,6 +207,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       Genv.find_funct_ptr ge b = Some (External ef) ->
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
+      external_call_conds ef ge cp m vl ->
       external_call ef ge cp vl m E0 v m ->
       forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       eval_expr le (Eexternal id sg al) v

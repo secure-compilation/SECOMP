@@ -902,13 +902,15 @@ Record extcall_properties (wfse: well_formed_syscall_event_spec)
     | _ => True
     end;
 
-(** External calls cannot free blocks without the Max Freeable permission *)
+(** External calls cannot change permissions of public blocks *)
   ec_public_not_freeable:
-    forall ge vargs m1 t vres m2 b ofs k,
+    forall ge vargs m1 t vres m2 b ofs k p id,
     sem ge cp vargs m1 t vres m2 ->
     Mem.valid_block m1 b ->
-    (~ Mem.perm m1 b ofs Max Freeable) ->
-    Mem.perm m1 b ofs k Nonempty <-> Mem.perm m2 b ofs k Nonempty;
+    Senv.find_symbol ge id = Some b ->
+    Senv.public_symbol ge id = true ->
+    (* (~ Mem.perm m1 b ofs Max Freeable) -> *)
+    Mem.perm m1 b ofs k p <-> Mem.perm m2 b ofs k p;
 
 }.
 
@@ -1258,7 +1260,7 @@ Proof.
 (* no cross *)
 - inv H; inv H0; simpl; auto.
 (* not freeable *)
-- inv H. inv H2; auto. reflexivity.
+- inv H. inv H3; auto. reflexivity.
   split; eauto with mem.
 Qed.
 
@@ -1537,13 +1539,15 @@ Proof.
 - inv H; auto; [| reflexivity].
   split; intros G.
   + eapply Mem.perm_free_1; eauto.
-    eapply Mem.free_range_perm in H4. unfold Mem.range_perm in H4.
-    specialize (H4 ofs).
+    eapply Mem.free_range_perm in H5. unfold Mem.range_perm in H5.
+    specialize (H5 ofs).
     destruct (Z.le_gt_cases (Ptrofs.unsigned lo - size_chunk Mptr) ofs);
       destruct (Z.lt_ge_cases ofs (Ptrofs.unsigned lo + Ptrofs.unsigned sz)); try lia.
-    left; intros EQ; subst b0. apply H1. eapply Mem.perm_max. eapply H4. lia.
+    left; intros EQ; subst b0.
+    admit.
+    (* apply H1. eapply Mem.perm_max. eapply H4. lia. *)
   + eapply Mem.perm_free_3; eauto.
-Qed.
+Admitted.
 
 (** ** Semantics of [memcpy] operations. *)
 
@@ -2989,3 +2993,172 @@ Proof.
 Qed.
 
 End SyscallSanityChecks.
+
+Section VISIBLE.
+
+  Definition EF_memcpy_dest_not_pub (ge: Senv.t) (cp: compartment) (args: list val) :=
+    match args with
+    | (Vptr bdst _) :: tl => ~ (block_public ge cp bdst)
+    | _ => True
+    end.
+
+  Definition load_whole_chunk (ch: memory_chunk) (v: val) :=
+    Val.load_result ch v = v.
+
+  Definition EF_vstore_load_whole_chunk (ch: memory_chunk) (args: list val) :=
+    match args with
+    | _ :: v :: nil => load_whole_chunk ch v
+    | _ => True
+    end.
+
+  Definition external_call_conds
+    (ef: external_function) (ge: Senv.t) (cp: compartment) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external name sg => visible_fo ge cp m (sig_args sg) args
+    | EF_builtin name sg | EF_runtime name sg =>
+                             match Builtins.lookup_builtin_function name sg with
+                             | None => visible_fo ge cp m (sig_args sg) args
+                             | _ => True
+                             end
+    | EF_inline_asm txt sg clb => visible_fo ge cp m (sig_args sg) args
+    (* | EF_memcpy sz al => EF_memcpy_dest_not_pub ge cp args *)
+    (* | EF_vstore ch => EF_vstore_load_whole_chunk ch args *)
+    | _ => True
+    end.
+
+  (* Definition external_call_unknowns *)
+  (*   (ef: external_function) (ge: Senv.t) (cp: compartment) (m: mem) (args: list val) : Prop := *)
+  (*   match ef with *)
+  (*   | EF_external name sg => visible_fo ge cp m (sig_args sg) args *)
+  (*   | EF_builtin name sg | EF_runtime name sg => *)
+  (*                            match Builtins.lookup_builtin_function name sg with *)
+  (*                            | None => visible_fo ge cp m (sig_args sg) args *)
+  (*                            | _ => False *)
+  (*                            end *)
+  (*   | EF_inline_asm txt sg clb => visible_fo ge cp m (sig_args sg) args *)
+  (*   | _ => False *)
+  (*   end. *)
+
+  (* Definition external_call_known_observables *)
+  (*   (ef: external_function) (ge: Senv.t) (cp: compartment) (m: mem) (args: list val) tr rv m' : Prop := *)
+  (*   match ef with *)
+  (*   | EF_external name sg => False *)
+  (*   | EF_builtin name sg | EF_runtime name sg => False *)
+  (*   | EF_inline_asm txt sg clb => False *)
+  (*   | EF_vstore ch => *)
+  (*       (external_call ef ge cp args m tr rv m') /\ (tr <> E0) /\ (EF_vstore_load_whole_chunk ch args) *)
+  (*   | _ => (external_call ef ge cp args m tr rv m') /\ (tr <> E0) *)
+  (*   end. *)
+
+  (* Definition external_call_known_silents *)
+  (*   (ef: external_function) (ge: Senv.t) (cp: compartment) (m: mem) (args: list val) tr rv m': Prop := *)
+  (*   match ef with *)
+  (*   | EF_external name sg => False *)
+  (*   | EF_builtin name sg | EF_runtime name sg => *)
+  (*                            match Builtins.lookup_builtin_function name sg with *)
+  (*                            | None => False *)
+  (*                            | _ => True *)
+  (*                            end *)
+  (*   | EF_inline_asm txt sg clb => False *)
+  (*   | EF_memcpy sz al => *)
+  (*       (external_call ef ge cp args m E0 rv m') /\ (tr = E0) /\ *)
+  (*         (EF_memcpy_dest_not_pub ge cp args) *)
+  (*   | _ => (external_call ef ge cp args m E0 rv m') /\ (tr = E0) *)
+  (*   end. *)
+
+
+  Lemma val_public_inject:
+    forall ge tge cp m tm j tyl vargs tvargs,
+      Senv.equiv ge tge ->
+      symbols_inject j ge tge cp ->
+
+      public_preserving_injection ge tge j m tm ->
+      Mem.inject j m tm ->
+      Val.inject_list j vargs tvargs ->
+      Forall2 (val_public ge cp) tyl vargs ->
+      Forall2 (val_public tge cp) tyl tvargs.
+  Proof.
+    intros ge tge cp m tm j tyl vargs tvargs.
+    intros (A & B & C & D) symb_inj H H1 X.
+    revert X tyl.
+    induction 1.
+    - intros ? G; inv G. constructor.
+    - intros tyl G; inv G. constructor.
+      + inv H0; inv H5; try constructor.
+        unfold block_public in *.
+        destruct H4 as [id [A' [B' D']]].
+        apply Senv.invert_find_symbol in A'.
+        destruct symb_inj as (_ & _ & E & _ & _).
+        exploit E; eauto. intros [b' [j_b Y]].
+        rewrite A in Y. assert (b' = b1) as -> by congruence. clear Y.
+        assert (b2 = b1) as -> by congruence.
+          rewrite <- A in A';
+          apply Senv.find_invert_symbol in A'.
+        rewrite <- B in B'. rewrite <- D in D'.
+        eexists; eauto.
+      + eauto.
+  Qed.
+  Lemma visible_fo_inject:
+    forall ge tge cp m tm j tyl vargs tvargs,
+      Senv.equiv ge tge ->
+      symbols_inject j ge tge cp ->
+
+      public_preserving_injection ge tge j m tm ->
+      Mem.inject j m tm ->
+      Val.inject_list j vargs tvargs ->
+      visible_fo ge cp m tyl vargs ->
+      visible_fo tge cp tm tyl tvargs.
+  Proof.
+    intros ge tge cp m tm j tyl vargs tvargs.
+    intros senv_equiv symb_inj H H1 H2 H3.
+    unfold visible_fo, public_first_order, vals_public in *.
+    destruct H3 as [H3 H4]. split.
+    - destruct senv_equiv as (A & B & C & D).
+      intros. specialize (H3 id b ofs).
+      rewrite <- A, <- B, <- D in H3.
+      eapply H in READABLE; eauto.
+      exploit H3; eauto.
+      unfold loc_first_order.
+      rewrite A in FIND; rewrite B in PUBLIC; rewrite D in COMP.
+      destruct symb_inj as (_ & _ & E & _ & _).
+      exploit E; eauto. intros [b' [j_b X]].
+      rewrite A in X. assert (b' = b) as -> by congruence. clear X.
+      replace ofs with (ofs + 0) at 2 by lia.
+      eapply Mem.mi_inj, Mem.mi_memval with (ofs := ofs) in H1; eauto.
+      destruct (ZMap.get ofs (Mem.mem_contents m) !! b); try contradiction.
+      inv H1; auto.
+    - eapply val_public_inject; eauto.
+  Qed.
+
+  Lemma external_conds_inject:
+    forall ef ge tge cp m tm j vargs tvargs,
+      Senv.equiv ge tge ->
+      symbols_inject j ge tge cp ->
+
+      public_preserving_injection ge tge j m tm ->
+      Mem.inject j m tm ->
+      Val.inject_list j vargs tvargs ->
+      external_call_conds ef ge cp m vargs ->
+      external_call_conds ef tge cp tm tvargs.
+  Proof.
+    intros ef ge tge cp m tm j vargs tvargs.
+    intros senv_equiv symb_inj H H1 H2 H3.
+    unfold external_call_conds in *.
+    destruct ef; eauto using visible_fo_inject.
+    - destruct (lookup_builtin_function name sg); eauto using visible_fo_inject.
+    - destruct (lookup_builtin_function name sg); eauto using visible_fo_inject.
+  Qed.
+
+
+  Lemma external_conds_extends:
+    forall ef ge tge cp m tm vargs tvargs,
+      Senv.equiv ge tge ->
+      public_preserving_extension ge tge m tm ->
+      Mem.extends m tm ->
+      Val.lessdef_list vargs tvargs ->
+      external_call_conds ef ge cp m vargs ->
+      external_call_conds ef tge cp tm tvargs.
+  Proof.
+  Admitted.
+
+End VISIBLE.

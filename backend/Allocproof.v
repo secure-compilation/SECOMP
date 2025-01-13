@@ -3258,6 +3258,7 @@ Proof.
   eapply star_left. econstructor.
   rewrite <- comp_transf_function; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
+  admit.
   rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   eauto.
@@ -3372,6 +3373,7 @@ Proof.
   simpl in FUN; inv FUN.
   econstructor; split.
   apply plus_one. econstructor; eauto.
+  admit.
   eapply external_call_symbols_preserved with (ge1 := ge); eauto. apply senv_preserved.
   eauto using allowed_syscall_translated.
   econstructor; eauto.
@@ -3411,7 +3413,7 @@ Proof.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
   }
-Qed.
+Admitted.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->

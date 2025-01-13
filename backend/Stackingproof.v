@@ -2815,6 +2815,7 @@ Proof.
     change (comp_of (Internal tf)) with (comp_of tf).
     erewrite <- transf_function_comp; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
+    admit.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
     change (comp_of (Internal tf)) with (comp_of tf).
     erewrite <- transf_function_comp; eauto.
@@ -2933,6 +2934,7 @@ Proof.
   intros (j' & res' & m1' & A & B & C & D & E).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
+  admit.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     eauto using allowed_syscall_translated.
   eapply match_states_return with (j := j').

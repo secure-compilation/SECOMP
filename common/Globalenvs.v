@@ -2965,3 +2965,59 @@ End TRANSFORM_TOTAL.
 End Genv.
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
+
+Section VISIBLE.
+
+  (* Memory location has only sequence of bytes *)
+  Definition loc_first_order (m: mem) (b: block) (ofs: Z) : Prop :=
+    match (ZMap.get ofs (Mem.mem_contents m) !! b) with
+    | Byte _ => True
+    | _ => False
+    end.
+
+  (* Public symbols are visible outside the compilation unit,
+     so when interacting via external calls,
+     limit them to first-order (if Readable). *)
+  Definition public_first_order (ge: Senv.t) (cp: compartment) (m: mem) :=
+    forall id b ofs
+      (PUBLIC: Senv.public_symbol ge id = true)
+      (FIND: Senv.find_symbol ge id = Some b)
+      (COMP: Senv.find_comp ge id ⊆ cp)
+      (READABLE: Mem.perm m b ofs Cur Readable),
+      loc_first_order m b ofs.
+
+  Definition block_public (ge: Senv.t) (cp: compartment) (b: block): Prop :=
+    exists id, Senv.invert_symbol ge b = Some id /\
+            Senv.public_symbol ge id = true /\
+            (Senv.find_comp ge id ⊆ cp).
+
+  Variant val_public (ge: Senv.t) (cp: compartment): typ -> val -> Prop :=
+    | val_public_int: forall i, val_public ge cp Tint (Vint i)
+    | val_public_long: forall i, val_public ge cp Tlong (Vlong i)
+    | val_public_float: forall f, val_public ge cp Tfloat (Vfloat f)
+    | val_public_single: forall f, val_public ge cp Tsingle (Vsingle f)
+    | val_public_ptr: forall b ofs, block_public ge cp b -> val_public ge cp Tptr (Vptr b ofs).
+
+  Definition vals_public (ge: Senv.t) (cp: compartment) (ts: list typ) (vs: list val): Prop :=
+    Forall2 (val_public ge cp) ts vs.
+
+  Definition visible_fo (ge: Senv.t) (cp: compartment) (m: mem) (tys: list typ) (args: list val): Prop :=
+    public_first_order ge cp m /\ vals_public ge cp tys args.
+
+  Definition public_preserving_extension (ge tge: Senv.t) (m tm: mem): Prop :=
+    forall id b ofs
+      (PUBLIC: Senv.public_symbol tge id = true)
+      (FIND: Senv.find_symbol tge id = Some b)
+      (READABLE: Mem.perm tm b ofs Cur Readable),
+      Mem.perm m b ofs Cur Readable.
+
+  Definition public_preserving_injection (ge tge: Senv.t)
+    (j: meminj) (m tm: mem): Prop :=
+    forall id b ofs
+      (PUBLIC: Senv.public_symbol tge id = true)
+      (FIND: Senv.find_symbol tge id = Some b)
+      (* (COMP: Senv.find_comp tge id ⊆ cp) *)
+      (READABLE: Mem.perm tm b ofs Cur Readable),
+      Mem.perm m b ofs Cur Readable.
+
+End VISIBLE.

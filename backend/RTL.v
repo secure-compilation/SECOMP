@@ -280,6 +280,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (comp_of f) (fun r => rs#r) sp m args vargs ->
+      forall (EXT_COND: external_call_conds ef ge (comp_of f) m vargs),
       external_call ef ge (comp_of f) vargs m t vres m' ->
       forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       step (State s f sp pc rs m)
@@ -316,6 +317,7 @@ Inductive step: state -> trace -> state -> Prop :=
                   m')
   | exec_function_external:
       forall s ef args res t m m' cp,
+      forall (EXT_COND: external_call_conds ef ge cp m args),
       external_call ef ge cp args m t res m' ->
       forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       step (Callstate s (External ef) args m cp)

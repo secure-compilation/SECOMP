@@ -1533,6 +1533,8 @@ Inductive step: state -> trace -> state -> Prop :=
         rs PC <> Vnullptr ->
         rs PC <> Vundef ->
         rs PC = asm_parent_dummy_ra st ->
+        forall (FD: forall b ofs, rs PC = Vptr b ofs ->
+                        Genv.find_def ge b = None),
         (* rs PC = Vone -> *)
         (* Cross ret *)
         forall (CROSS_RET: rec_cp <> cp'),
@@ -1560,6 +1562,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_def ge b= Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge (comp_of f) rs (rs SP) m args vargs ->
+      forall (EXT_COND: external_call_conds ef ge (comp_of f) m vargs),
       external_call ef ge (comp_of f) vargs m t vres m' ->
         (* this condition makes explicit the fact a builtin can't modify the PC directly *)
       forall (RES_NOT_PC: exists reg, res = map_builtin_res preg_of reg),
@@ -1580,7 +1583,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NEXT_EXT: Genv.find_def ge b' = Some (Gfun (External ef))),
       forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
 
-
+      forall (EXT_COND: external_call_conds ef ge (comp_of f) m args),
       external_call ef ge (comp_of f) args m' t res m'' ->
       extcall_arguments rs' (rs' # SP) m' (ef_sig ef) args ->
       rs'' = (invalidate_return
@@ -1815,8 +1818,8 @@ intros; constructor; simpl; intros.
   + split. constructor. auto.
   + now destruct i0.
   + split; constructor; auto.
-  + admit.
-  + admit.
+  + eapply FD0 in ATPC. congruence.
+  + rewrite H0 in H3. eapply FD in H3. congruence.
   (* + admit. *)
   (* + admit. *)
   + inv EV; inv EV0; try congruence.
@@ -2192,17 +2195,7 @@ Section ExecSem.
       rewrite <- Genv.find_funct_ptr_iff in H1.
       rewrite H1, H2, H3, H4.
       destruct i; try now inv H4.
-    - replace (negb (Val.eq (rs PC) Vnullptr)) with true.
-      destruct cp_eq_dec; try congruence.
-      destruct Val.eq; try congruence.
-      unfold get_return_trace, Genv.type_of_call.
-      destruct flowsto_dec; auto. rewrite e; auto.
-      unfold get_return_trace, Genv.type_of_call.
-      admit.
-      admit.
-      admit.
-      admit.
-      admit.
+    - admit.
     - admit.
     - admit.
     - admit.
