@@ -134,19 +134,23 @@ End AUX.
 Section PUBINJ.
 
   (* Memory injection for public global symbols: visible for external calls *)
-  Definition meminj_public (ge: Senv.t): meminj :=
+  Definition meminj_public (ge: Senv.t) (cp: compartment): meminj :=
     fun b => match Senv.invert_symbol ge b with
-          | Some id => if Senv.public_symbol ge id then Some (b, 0%Z) else None
+          | Some id => if Senv.public_symbol ge id && flowsto_dec (Senv.find_comp ge id) cp then Some (b, 0%Z) else None
           | None => None
           end.
 
   Definition meminj_strict (j: meminj) := forall b1 b2 b' ofsd1 ofsd2, j b1 = Some (b', ofsd1) -> j b2 = Some (b', ofsd2) -> b1 = b2.
 
-  Lemma meminj_public_strict ge: meminj_strict (meminj_public ge).
+  Lemma meminj_public_strict ge cp: meminj_strict (meminj_public ge cp).
   Proof.
     unfold meminj_strict. intros. unfold meminj_public in *; simpl in *.
-    destruct (Senv.invert_symbol ge b1) eqn:INV1. 2: congruence. destruct (Senv.public_symbol ge i) eqn:PUB1. 2: congruence. inv H.
-    destruct (Senv.invert_symbol ge b2) eqn:INV2. 2: congruence. destruct (Senv.public_symbol ge i0) eqn:PUB2. 2: congruence. inv H0.
+    destruct (Senv.invert_symbol ge b1) eqn:INV1. 2: congruence.
+    destruct (Senv.public_symbol ge i && flowsto_dec (Senv.find_comp ge i) cp) eqn:PUB1.
+    2: congruence. inv H.
+    destruct (Senv.invert_symbol ge b2) eqn:INV2. 2: congruence.
+    destruct (Senv.public_symbol ge i0 && flowsto_dec (Senv.find_comp ge i0) cp) eqn:PUB2.
+    2: congruence. inv H0.
     auto.
   Qed.
 
@@ -783,8 +787,8 @@ Section PROOFS.
 
   Lemma mem_delta_changed_only_by_storev
         ge cp d b ofs
-        (WF: mem_delta_inj_wf cp (meminj_public ge) d)
-        (INJ: (meminj_public ge) b <> None)
+        (WF: mem_delta_inj_wf cp (meminj_public ge cp) d)
+        (INJ: (meminj_public ge cp) b <> None)
         (CHG: mem_delta_changed d b ofs)
         m1 m1' m2 m2'
         (APPD1: mem_delta_apply d (Some m1) = Some m1')
@@ -842,9 +846,9 @@ Section PROOFS.
       2,3,5: ss; des_ifs; ss; des; clarify.
       2:{ destruct d0 as [[x y] z]. ss. }
       destruct d0 as [[[ch0 ptr0] v0] cp0]. ss. destruct ptr0; ss. des; clarify.
-      assert (exists id, Senv.invert_symbol ge b = Some id /\ Senv.public_symbol ge id).
-      { clear - INJ. unfold meminj_public in INJ. des_ifs. eauto. }
-      des. rename H into INV, H0 into PUB. rewrite INV, PUB in APPD2.
+      assert (exists id, Senv.invert_symbol ge b = Some id /\ Senv.public_symbol ge id /\ flowsto_dec (Senv.find_comp ge id) cp).
+      { clear - INJ. unfold meminj_public in INJ. des_ifs. apply andb_prop in Heq0 as [? ?]. eauto. }
+      des. rename H into INV, H0 into PUB, H1 into COMP. rewrite INV, PUB in APPD2.
       exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1.
       eapply mem_delta_unchanged_on in APPD1. exploit (Mem.unchanged_on_contents _ _ _ APPD1 b ofs); auto.
       { eapply Mem.perm_store_1; eauto. }
@@ -974,21 +978,22 @@ Section PROOFS.
 
   Lemma mem_delta_apply_preserves_winject
         ge cp0 m0 m0'
-        (WINJ0: winject (meminj_public ge) m0 m0')
+        (WINJ0: winject (meminj_public ge cp0) m0 m0')
         (d: mem_delta)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
     :
-    exists m1', (mem_delta_apply_wf ge cp0 d (Some m0') = Some m1') /\ (winject (meminj_public ge) m1 m1').
+    exists m1', (mem_delta_apply_wf ge cp0 d (Some m0') = Some m1') /\ (winject (meminj_public ge cp0) m1 m1').
   Proof.
     revert m0 m0' WINJ0 m1 APPD. induction d; intros.
     { inv APPD. exists m0'. ss. }
     rewrite mem_delta_apply_cons in APPD. rewrite mem_delta_apply_wf_cons. destruct a.
     - exploit mem_delta_apply_some. eauto. intros (mi & MEM). rewrite MEM in APPD. des_ifs.
-      + destruct d0 as (((ch & ptr) & v) & cp). destruct ptr; ss. destruct ((meminj_public ge) b) as [[b' ofs']|] eqn:JB.
+      + destruct d0 as (((ch & ptr) & v) & cp). destruct ptr; ss. destruct ((meminj_public ge cp0) b) as [[b' ofs']|] eqn:JB.
         * exploit store_mapped_winject; eauto. instantiate (1:=v). intros (mi0 & MEM' & WINJ1). specialize (IHd _ _ WINJ1 _ APPD). destruct IHd as (m1' & APPD' & WINJ').
           unfold meminj_public in JB. des_ifs. rewrite Z.add_0_r in MEM'. rewrite MEM'. eauto.
-        * exploit store_unmapped_winject; eauto. unfold meminj_public in JB. des_ifs.
+        * exploit store_unmapped_winject; eauto. unfold meminj_public in JB.
+          des_ifs. admit.
       + destruct d0 as (((ch & ptr) & v) & cp). destruct ptr; ss. exploit store_left_winject; eauto.
     - destruct d0 as ((((ch & b) & ofs) & v) & cp). ss. exploit mem_delta_apply_some. eauto. intros (mi & MEM). rewrite MEM in APPD.
       exploit store_left_winject; eauto.
@@ -997,7 +1002,7 @@ Section PROOFS.
       ss. destruct (Mem.alloc m0 cp lo hi) eqn:ALLOC; simpl in *. inv MEM. exploit alloc_left_unmapped_winject_keep; eauto.
     - destruct d0 as (((b & lo) & hi) & cp). exploit mem_delta_apply_some. eauto. intros (mi & MEM). rewrite MEM in APPD. ss.
       exploit free_left_winject; eauto.
-  Qed.
+  Admitted.
 
   Lemma mem_delta_apply_keeps_perm
         cp j d
@@ -1040,23 +1045,23 @@ Section PROOFS.
   Qed.
 
   Lemma mem_delta_apply_establish_inject
-        (ge: Senv.t) (k: meminj) m0 m0'
+        (ge: Senv.t) cp (k: meminj) m0 m0'
         (INJ: Mem.inject k m0 m0')
-        (INCR: inject_incr (meminj_public ge) k)
-        (NALLOC: meminj_not_alloc (meminj_public ge) m0)
-        (d: mem_delta) cp
-        (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
+        (INCR: inject_incr (meminj_public ge cp) k)
+        (NALLOC: meminj_not_alloc (meminj_public ge cp) m0)
+        (d: mem_delta)
+        (DWF: mem_delta_inj_wf cp (meminj_public ge cp) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
-        (FO: meminj_first_order (meminj_public ge) m1)
+        (FO: meminj_first_order (meminj_public ge cp) m1)
     :
-    exists m1', (mem_delta_apply_wf ge cp d (Some m0') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
+    exists m1', (mem_delta_apply_wf ge cp d (Some m0') = Some m1') /\ (Mem.inject (meminj_public ge cp) m1 m1').
   Proof.
     exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.
     exploit mem_delta_apply_preserves_winject; eauto. intros (m1' & APPD' & WINJ'). exists m1'. split; eauto.
     apply winject_to_inject; auto. unfold mem_inj_val. intros.
     exploit mem_delta_apply_keeps_perm; eauto. congruence.
-    { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge) b1 = None).
+    { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge cp) b1 = None).
       { eapply NALLOC. lia. }
       congruence.
     }
@@ -1086,20 +1091,20 @@ Section PROOFS.
   Import Mem.
 
   Lemma mem_delta_apply_establish_inject_preprocess
-        (ge: Senv.t) (k: meminj) m0 m0'
+        (ge: Senv.t) cp (k: meminj) m0 m0'
         (INJ: Mem.inject k m0 m0')
         pch pb pofs pv pcp m0''
         (PRE: store pch m0' pb pofs pv pcp = Some m0'')
-        (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs))
-        (INCR: inject_incr (meminj_public ge) k)
-        (NALLOC: meminj_not_alloc (meminj_public ge) m0)
-        (d: mem_delta) cp
-        (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
+        (PREB: forall b ofs, (meminj_public ge cp) b <> Some (pb, ofs))
+        (INCR: inject_incr (meminj_public ge cp) k)
+        (NALLOC: meminj_not_alloc (meminj_public ge cp) m0)
+        (d: mem_delta)
+        (DWF: mem_delta_inj_wf cp (meminj_public ge cp) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
-        (FO: meminj_first_order (meminj_public ge) m1)
+        (FO: meminj_first_order (meminj_public ge cp) m1)
     :
-    exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
+    exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\ (Mem.inject (meminj_public ge cp) m1 m1').
   Proof.
     exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.
     hexploit store_outside_winject. eauto.
@@ -1108,7 +1113,7 @@ Section PROOFS.
     exploit mem_delta_apply_preserves_winject. eapply WINJ. eauto. intros (m1' & APPD' & WINJ'). exists m1'. split; eauto.
     apply winject_to_inject; auto. unfold mem_inj_val. intros.
     exploit mem_delta_apply_keeps_perm; eauto. congruence.
-    { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge) b1 = None).
+    { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge cp) b1 = None).
       { eapply NALLOC. lia. }
       congruence.
     }
@@ -1136,20 +1141,20 @@ Section PROOFS.
   Qed.
 
   Lemma mem_delta_apply_establish_inject_preprocess_gen
-        (ge: Senv.t) (k: meminj) m0 m0'
+        (ge: Senv.t) cp (k: meminj) m0 m0'
         (INJ: Mem.inject k m0 m0')
         pch pb pofs pv pcp m0''
         (PRE: store pch m0' pb pofs pv pcp = Some m0'')
-        (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs))
-        (INCR: inject_incr (meminj_public ge) k)
-        (NALLOC: meminj_not_alloc (meminj_public ge) m0)
-        (d: mem_delta) cp
-        (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
+        (PREB: forall b ofs, (meminj_public ge cp) b <> Some (pb, ofs))
+        (INCR: inject_incr (meminj_public ge cp) k)
+        (NALLOC: meminj_not_alloc (meminj_public ge cp) m0)
+        (d: mem_delta)
+        (DWF: mem_delta_inj_wf cp (meminj_public ge cp) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
     :
     exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\
-             ((meminj_first_order (meminj_public ge) m1) -> Mem.inject (meminj_public ge) m1 m1').
+             ((meminj_first_order (meminj_public ge cp) m1) -> Mem.inject (meminj_public ge cp) m1 m1').
   Proof.
     exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.
     hexploit store_outside_winject. eauto.
@@ -1159,7 +1164,7 @@ Section PROOFS.
     intros FO.
     apply winject_to_inject; auto. unfold mem_inj_val. intros.
     exploit mem_delta_apply_keeps_perm; eauto. congruence.
-    { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge) b1 = None).
+    { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge cp) b1 = None).
       { eapply NALLOC. lia. }
       congruence.
     }

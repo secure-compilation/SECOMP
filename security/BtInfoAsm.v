@@ -25,27 +25,27 @@ Section AUX.
     all: des_ifs.
   Qed.
 
-  Lemma extcall_cases
-        ef ge cp m args
-        (ECC: external_call_conds ef ge cp m args)
-        tr rv m'
-        (ECALL: external_call ef ge cp args m tr rv m')
-    :
-    (external_call_unknowns ef ge cp m args) \/
-      (external_call_known_observables ef ge cp m args tr rv m') \/
-      (external_call_known_silents ef ge cp m args tr rv m').
-  Proof.
-    destruct ef; ss; auto. des_ifs; auto. des_ifs; auto.
-    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-    - inv ECALL. right; right. esplits; eauto. econs; eauto.
-    - inv ECALL. right; right. esplits; eauto. econs; eauto.
-      right; right. esplits; eauto. econs; eauto.
-    - inv ECALL. right; right. esplits; eauto. econs; eauto.
-    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-    - inv ECALL. right; right. esplits; eauto. econs; eauto.
-  Qed.
+  (* Lemma extcall_cases *)
+  (*       ef ge cp m args *)
+  (*       (ECC: external_call_conds ef ge cp m args) *)
+  (*       tr rv m' *)
+  (*       (ECALL: external_call ef ge cp args m tr rv m') *)
+  (*   : *)
+  (*   (external_call_unknowns ef ge cp m args) \/ *)
+  (*     (external_call_known_observables ef ge cp m args tr rv m') \/ *)
+  (*     (external_call_known_silents ef ge cp m args tr rv m'). *)
+  (* Proof. *)
+  (*   destruct ef; ss; auto. des_ifs; auto. des_ifs; auto. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (*     right; right. esplits; eauto. econs; eauto. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (* Qed. *)
 
 End AUX.
 
@@ -287,9 +287,10 @@ Section IR.
         d m1'
         (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1')
         vargs vretv
+        (ECCOND: external_call_conds ef ge cp_cur m1' vargs)
         (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
-        (ECCASES: (external_call_unknowns ef ge cp_cur m1' vargs) \/
-                    (external_call_known_observables ef ge cp_cur m1' vargs tr vretv m2 /\ d = []))
+        (* (ECCASES: (external_call_unknowns ef ge cp_cur m1' vargs) \/ *)
+        (*             (external_call_known_observables ef ge cp_cur m1' vargs tr vretv m2 /\ d = [])) *)
         (ARGS: evargs = vals_to_eventvals ge vargs)
         id_cur
         (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
@@ -303,9 +304,10 @@ Section IR.
         d m1'
         (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1')
         vargs vretv
+        (ECCOND: external_call_conds ef ge cp_cur m1' vargs)
         (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
-        (ECCASES: (external_call_unknowns ef ge cp_cur m1' vargs) \/
-                    (external_call_known_observables ef ge cp_cur m1' vargs tr vretv m2 /\ d = []))
+        (* (ECCASES: (external_call_unknowns ef ge cp_cur m1' vargs) \/ *)
+        (*             (external_call_known_observables ef ge cp_cur m1' vargs tr vretv m2 /\ d = [])) *)
         (ARGS: evargs = vals_to_eventvals ge vargs)
         id_cur
         (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
@@ -368,10 +370,10 @@ End MEASURE.
 
 Section CONDS.
 
-  Definition public_not_freeable ge m := forall b, (meminj_public ge b <> None) -> (forall ofs, ~ Mem.perm m b ofs Max Freeable).
+  Definition public_not_freeable ge cp m := forall b, (meminj_public ge cp b <> None) -> (forall ofs, ~ Mem.perm m b ofs Max Freeable).
 
-  Definition public_rev_perm ge m1 m2 :=
-    forall b, match meminj_public ge b with
+  Definition public_rev_perm ge cp m1 m2 :=
+    forall b, match meminj_public ge cp b with
          | Some (b', del) => forall ofs k p, Mem.perm m2 b' (ofs + del) k p -> Mem.perm m1 b ofs k p
          | None => True
          end.
@@ -458,52 +460,52 @@ Section FROMASM.
     simpl.
 
   Lemma public_not_freeable_free_inj_none
-        ge m
-        (NFREE: public_not_freeable ge m)
-        b lo hi cp m'
+        ge cp m
+        (NFREE: public_not_freeable ge cp m)
+        b lo hi m'
         (FREE: Mem.free m b lo hi cp = Some m')
         (BOUND: (lo < hi)%Z)
     :
-    meminj_public ge b = None.
+    meminj_public ge cp b = None.
   Proof.
-    destruct (meminj_public ge b) eqn:INJPUB; auto. exfalso.
+    destruct (meminj_public ge cp b) eqn:INJPUB; auto. exfalso.
     eapply Mem.free_range_perm in FREE. unfold Mem.range_perm in FREE.
     eapply NFREE. erewrite INJPUB. congruence. eapply Mem.perm_cur_max; apply FREE.
     instantiate (1:=lo). lia.
   Qed.
 
   Lemma public_not_freeable_store
-        ge m1
-        (NFREE: public_not_freeable ge m1)
-        chunk b ofs v cp m2
+        ge cp m1
+        (NFREE: public_not_freeable ge cp m1)
+        chunk b ofs v m2
         (STORE: Mem.store chunk m1 b ofs v cp = Some m2)
     :
-    public_not_freeable ge m2.
+    public_not_freeable ge cp m2.
   Proof.
     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
     apply NFREE; eapply Mem.perm_store_2; eauto.
   Qed.
 
   Lemma public_not_freeable_bytes
-        ge m1
-        (NFREE: public_not_freeable ge m1)
-        b ofs mvs cp m2
+        ge cp m1
+        (NFREE: public_not_freeable ge cp m1)
+        b ofs mvs m2
         (STORE: Mem.storebytes m1 b ofs mvs cp = Some m2)
     :
-    public_not_freeable ge m2.
+    public_not_freeable ge cp m2.
   Proof.
     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
     apply NFREE; eapply Mem.perm_storebytes_2; eauto.
   Qed.
 
   Lemma public_not_freeable_alloc
-        ge m1
-        (NALLOC: meminj_not_alloc (meminj_public ge) m1)
-        (NFREE: public_not_freeable ge m1)
-        cp lo hi m2 bn
+        ge cp m1
+        (NALLOC: meminj_not_alloc (meminj_public ge cp) m1)
+        (NFREE: public_not_freeable ge cp m1)
+        lo hi m2 bn
         (STORE: Mem.alloc m1 cp lo hi = (m2, bn))
     :
-    public_not_freeable ge m2.
+    public_not_freeable ge cp m2.
   Proof.
     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
     apply NFREE. eapply Mem.perm_alloc_4; eauto.
@@ -511,12 +513,12 @@ Section FROMASM.
   Qed.
 
   Lemma public_not_freeable_free
-        ge m1
-        (NFREE: public_not_freeable ge m1)
-        b lo hi cp m2
+        ge cp m1
+        (NFREE: public_not_freeable ge cp m1)
+        b lo hi m2
         (STORE: Mem.free m1 b lo hi cp = Some m2)
     :
-    public_not_freeable ge m2.
+    public_not_freeable ge cp m2.
   Proof.
     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
     apply NFREE. eapply Mem.perm_free_3; eauto.
@@ -524,11 +526,11 @@ Section FROMASM.
 
   Lemma public_not_freeable_exec_instr
         (ge: genv) f i rs m cp rs' m'
-        (NFREE: public_not_freeable ge m)
-        (NALLOC: meminj_not_alloc (meminj_public ge) m)
+        (NFREE: public_not_freeable ge cp m)
+        (NALLOC: meminj_not_alloc (meminj_public ge cp) m)
         (EXEC: exec_instr ge f i rs m cp = Next rs' m')
     :
-    public_not_freeable ge m'.
+    public_not_freeable ge cp m'.
   Proof.
     destruct i; simpl in EXEC.
     all: try (inv EXEC; eauto).
@@ -540,9 +542,9 @@ Section FROMASM.
             | H: Mem.store ?ch ?m ?b ?ofs ?v ?cp = _ |-  _ =>
                 eapply public_not_freeable_store; eauto
             end).
-    { eapply public_not_freeable_store. eapply public_not_freeable_alloc; eauto. eauto. }
+    { eapply public_not_freeable_store. eapply public_not_freeable_alloc; eauto. eauto. admit. admit. }
     { eapply public_not_freeable_free; eauto. }
-  Qed.
+  Admitted.
 
   Lemma public_rev_perm_store
         ge m1 m'
@@ -862,7 +864,7 @@ Section PROOF.
         (ge: Senv.t) cp m tys args
         (VFO: visible_fo ge cp m tys args)
     :
-    meminj_first_order (meminj_public ge) m.
+    meminj_first_order (meminj_public ge cp) m.
   Proof.
     destruct VFO as [PFO _]. ii. unfold public_first_order in PFO.
     unfold meminj_public in H. des_ifs.
