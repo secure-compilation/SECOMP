@@ -80,7 +80,7 @@ let coqZ p n =
 (* Coq strings *)
 
 let coqstring p s =
-  fprintf p "\"%s\"" (camlstring_of_coqstring s)
+  fprintf p "\"%s\"" s
 
 (* Identifiers *)
 
@@ -158,15 +158,25 @@ let asttype p t =
       | AST.Tany32 -> "AST.Tany32"
       | AST.Tany64 -> "AST.Tany64")
 
-let astrettype p = function
-  | AST.Tret t -> asttype p t
-  | AST.Tvoid -> fprintf p "AST.Tvoid"
-  | AST.Tint8signed -> fprintf p "AST.Tint8signed"
-  | AST.Tint8unsigned -> fprintf p "AST.Tint8unsigned"
-  | AST.Tint16signed -> fprintf p "AST.Tint16signed"
-  | AST.Tint16unsigned -> fprintf p "AST.Tint16unsigned"
+let astxtype p t =
+  fprintf p "%s"
+     (match t with
+      | AST.Xbool -> "AST.Xbool"
+      | AST.Xint8signed -> "AST.Xint8signed"
+      | AST.Xint8unsigned -> "AST.Xint8unsigned"
+      | AST.Xint16signed -> "AST.Xint16signed"
+      | AST.Xint16unsigned -> "AST.Xint16unsigned"
+      | AST.Xint -> "AST.Xint"
+      | AST.Xfloat -> "AST.Xfloat"
+      | AST.Xlong -> "AST.Xlong"
+      | AST.Xsingle -> "AST.Xsingle"
+      | AST.Xptr -> "AST.Xptr"
+      | AST.Xany32 -> "AST.Xany32"
+      | AST.Xany64 -> "AST.Xany64"
+      | AST.Xvoid -> "AST.Xvoid")
 
 let name_of_chunk = function
+  | Mbool -> "Mbool"
   | Mint8signed -> "Mint8signed"
   | Mint8unsigned -> "Mint8unsigned"
   | Mint16signed -> "Mint16signed"
@@ -186,8 +196,8 @@ let callconv p cc =
 
 let signatur p sg =
   fprintf p "@[<hov 2>(mksignature@ %a@ %a@ %a)@]"
-     (print_list asttype) sg.sig_args
-     astrettype sg.sig_res
+     (print_list astxtype) sg.sig_args
+     astxtype sg.sig_res
      callconv sg.sig_cc
 
 let external_function p = function

@@ -13,15 +13,9 @@
 (** Recognition of combined operations, addressing modes and conditions
   during the [CSE] phase. *)
 
-Require Import FunInd.
-Require Import Coqlib.
-Require Import AST.
-Require Import Integers.
-Require Import Values.
-Require Import Memory.
-Require Import Op.
-Require Import Registers.
-Require Import RTL.
+From Coq Require Import FunInd.
+Require Import Coqlib AST Integers Values Memory.
+Require Import Op Registers RTL.
 Require Import CSEdomain.
 Require Import CombineOp.
 
@@ -121,6 +115,20 @@ Proof.
   - simpl; eapply combine_compimm_eq_1_sound; eauto.
 Qed.
 
+Theorem combine_cond'_sound:
+  forall cond args res res',
+  combine_cond' cond args = Some res' ->
+  eval_condition cond (map valu args) m = Some res ->
+  res = res'.
+Proof.
+  intros.  unfold combine_cond' in *.
+  destruct cond; inv H; destruct args; inv H2; destruct args; inv H1; destruct args; inv H2.
+  apply (combine_comparison_cmp_sound valu c v v0 res res'); auto.
+  apply (combine_comparison_cmpu_sound valu m c v v0 res res'); auto.
+  apply (combine_comparison_cmpl_sound valu c v v0 res res'); auto.
+  apply (combine_comparison_cmplu_sound valu m c v v0 res res'); auto.
+Qed.
+
 Theorem combine_addr_sound:
   forall addr args addr' args',
   combine_addr get addr args = Some(addr', args') ->
@@ -136,39 +144,45 @@ Proof.
 Qed.
 
 Theorem combine_op_sound:
-  forall op args op' args',
+  forall op args op' args' r,
   combine_op get op args = Some(op', args') ->
-  eval_operation ge cp sp op' (map valu args') m = eval_operation ge cp sp op (map valu args) m.
+  eval_operation ge cp sp op (map valu args) m = Some r ->
+  exists r', eval_operation ge cp sp op' (map valu args') m = Some r' /\ Val.lessdef r r'.
 Proof.
   intros. functional inversion H; subst.
   (* addimm - addimm *)
-  - UseGetSound. FuncInv. simpl.
-    rewrite <- H0. rewrite Val.add_assoc. auto.
+  - UseGetSound. exists r; split; auto.
+    rewrite <- H0. simpl. rewrite <- H1. rewrite Val.add_assoc. auto.
   (* andimm - andimm *)
-  - UseGetSound; simpl.
-    generalize (Int.eq_spec p m0); rewrite H7; intros.
-    rewrite <- H0. rewrite Val.and_assoc. simpl. fold p. rewrite H1. auto.
-  - UseGetSound; simpl.
-    rewrite <- H0. rewrite Val.and_assoc. auto.
+  - UseGetSound. exists r; split; auto.
+    generalize (Int.eq_spec p m0); rewrite H8; intros.
+    rewrite <- H0. simpl. rewrite <- H1. rewrite Val.and_assoc. simpl. fold p. rewrite H2. auto.
+  - UseGetSound. exists r; split; auto.
+    rewrite <- H0. simpl. rewrite <- H1. rewrite Val.and_assoc. auto.
   (* orimm - orimm *)
-  - UseGetSound. simpl. rewrite <- H0. rewrite Val.or_assoc. auto.
+  - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.or_assoc. auto.
   (* xorimm - xorimm *)
-  - UseGetSound. simpl. rewrite <- H0. rewrite Val.xor_assoc. auto.
+  - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.xor_assoc. auto.
   (* addlimm - addlimm *)
-  - UseGetSound. FuncInv. simpl.
-    rewrite <- H0. rewrite Val.addl_assoc. auto.
+  - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.addl_assoc. auto.
   (* andlimm - andlimm *)
-  - UseGetSound; simpl.
-    generalize (Int64.eq_spec p m0); rewrite H7; intros.
-    rewrite <- H0. rewrite Val.andl_assoc. simpl. fold p. rewrite H1. auto.
-  - UseGetSound; simpl.
-    rewrite <- H0. rewrite Val.andl_assoc. auto.
+  - UseGetSound. exists r; split; auto.
+    generalize (Int64.eq_spec p m0); rewrite H8; intros.
+    rewrite <- H0. simpl. rewrite <- H1. rewrite Val.andl_assoc. simpl. fold p. rewrite H2. auto.
+  - UseGetSound. exists r; split; auto.
+    rewrite <- H0. simpl. rewrite <- H1. rewrite Val.andl_assoc. auto.
   (* orlimm - orlimm *)
-  - UseGetSound. simpl. rewrite <- H0. rewrite Val.orl_assoc. auto.
+  - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.orl_assoc. auto.
   (* xorlimm - xorlimm *)
-  - UseGetSound. simpl. rewrite <- H0. rewrite Val.xorl_assoc. auto.
-  (* cmp *)
-  - simpl. decEq; decEq. eapply combine_cond_sound; eauto.
+  - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.xorl_assoc. auto.
+  (* cmp true *)
+  - exists Vtrue; split; auto. inv H0. destruct (eval_condition cond (map valu args) m) eqn:?; auto.
+    rewrite (combine_cond'_sound cond args b true); eauto.
+  (* cmp false *)
+  - exists Vfalse; split; auto. inv H0. destruct (eval_condition cond (map valu args) m) eqn:?; auto.
+    rewrite (combine_cond'_sound cond args b false); eauto.
+  (* cmp reduce *)
+  - exists r; split; auto. decEq; decEq. simpl. erewrite combine_cond_sound; eauto.
 Qed.
 
 End COMBINE.

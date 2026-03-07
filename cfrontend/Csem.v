@@ -192,12 +192,12 @@ Fixpoint seq_of_labeled_statement (sl: labeled_statements) : statement :=
 
 (** Extract the values from a list of function arguments *)
 
-Inductive cast_arguments (m: mem): exprlist -> typelist -> list val -> Prop :=
+Inductive cast_arguments (m: mem): exprlist -> list type -> list val -> Prop :=
   | cast_args_nil:
-      cast_arguments m Enil Tnil nil
+      cast_arguments m Enil nil nil
   | cast_args_cons: forall v ty el targ1 targs v1 vl,
       sem_cast v ty targ1 m = Some v1 -> cast_arguments m el targs vl ->
-      cast_arguments m (Econs (Eval v ty) el) (Tcons targ1 targs) (v1 :: vl).
+      cast_arguments m (Econs (Eval v ty) el) (targ1 :: targs) (v1 :: vl).
 
 (** ** Reduction semantics for expressions *)
 
@@ -334,7 +334,7 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> trace -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge cp vf),
       forall (NO_CROSS_PTR: Genv.type_of_call cp (comp_of fd) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
-      forall (EV: call_trace ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs) t),
+      forall (EV: call_trace ge cp (comp_of fd) vf vargs (List.map typ_of_type tyargs) t),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty t.
 
@@ -441,10 +441,13 @@ Inductive imm_safe: kind -> expr -> mem -> Prop :=
       rred e m t e' m' ->
       context RV to C ->
       imm_safe to (C e) m
-  | imm_safe_callred: forall to C e m fd args ty t,
-      callred e m fd args ty t ->
+  | imm_safe_callred: forall to C a m fd args ty t m',
+      callred a m fd args ty t ->
       context RV to C ->
-      imm_safe to (C e) m.
+      (if cp_eq_dec cp (comp_of fd) then m' = m
+       else if cp_eq_dec (comp_of fd) bottom then m' = m
+       else Mem.set_perm_list m (blocks_of_env e) Readable = Some m') ->
+      imm_safe to (C a) m.
 
 Definition not_stuck (e: expr) (m: mem) : Prop :=
   forall k C e' ,
@@ -467,9 +470,10 @@ Lemma red_selection:
 Proof.
   intros. unfold Eselection.
   set (t := typ_of_type ty).
-  set (sg := mksignature (AST.Tint :: t :: t :: nil) t cc_default).
+  set (x := inj_type t).
+  set (sg := [Xint; x; x ---> x]%asttyp).
   assert (LK: lookup_builtin_function "__builtin_sel"%string sg = Some (BI_standard (BI_select t))).
-  { unfold sg, t; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
+  { unfold sg, x, t; destruct ty as [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
     simpl; unfold Tptr; destruct Archi.ptr64; reflexivity. }
   set (v' := if b then v2' else v3').
   assert (C: val_casted v' ty).
@@ -596,7 +600,7 @@ Inductive state: Type :=
       (res: val)
       (k: cont)
       (m: mem)
-      (ty: rettype)
+      (ty: xtype)
       (cp: compartment): state
   | Stuckstate.                         (**r undefined behavior occurred *)
 
@@ -668,11 +672,15 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
-  | step_call: forall C f a k e m fd vargs ty t,
+  | step_call: forall C f a k e m m' fd vargs ty t,
       callred (comp_of f) a m fd vargs ty t ->
       context RV RV C ->
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m
+        else if cp_eq_dec (comp_of fd) bottom then m' = m
+        else Mem.set_perm_list m (blocks_of_env e) Readable = Some m'),
       estep (ExprState f (C a) k e m)
-         t (Callstate fd vargs (Kcall f e C ty k) m)
+         t (Callstate fd vargs (Kcall f e C ty k) m')
 
   | step_stuck: forall C f a k e m K,
       context K RV C -> ~(imm_safe e (comp_of f) K a m) ->
@@ -829,13 +837,17 @@ Inductive sstep: state -> trace -> state -> Prop :=
           t (Returnstate vres k m' (rettype_of_type tres) bottom)
           (* sig_res (ef_sig ef) *)
 
-  | step_returnstate: forall v f e C ty ty' k m cp t,
+  | step_returnstate: forall v f e C ty ty' k m m' cp t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty' t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) cp then m' = m
+        else if cp_eq_dec cp bottom then m' = m
+        else Mem.set_perm_list m (blocks_of_env e) Freeable = Some m'),
         (* TODO: figure out whether this should be the same [ty] or not *)
       sstep (Returnstate v (Kcall f e C ty k) m ty' cp)
-         t (ExprState f (C (Eval v ty)) k e m).
+         t (ExprState f (C (Eval v ty)) k e m').
 
 Definition step (S: state) (t: trace) (S': state) : Prop :=
   estep S t S' \/ sstep S t S'.
@@ -855,7 +867,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
-      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      type_of_fundef (Internal f) = Tfunction nil type_int32s cc_default ->
       initial_state p (Callstate (Internal f) nil Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)

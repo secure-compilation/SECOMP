@@ -17,8 +17,8 @@
 
 (** Architecture-dependent parameters for ARM *)
 
+From Coq Require Import ZArith List.
 From Flocq Require Import Binary Bits.
-Require Import ZArith List.
 
 Definition ptr64 := false.
 
@@ -100,3 +100,6 @@ Parameter abi: abi_kind.
 (** Whether instructions added with Thumb2 are supported. True for ARMv6T2
   and above. *)
 Parameter thumb2_support: bool.
+
+(** Whether the hardware supports sdiv and udiv *)
+Parameter hardware_idiv : unit -> bool.

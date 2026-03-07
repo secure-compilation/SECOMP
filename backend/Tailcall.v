@@ -109,7 +109,7 @@ Definition transf_instr (ce: compenv) (f: function) (pc: node) (instr: instructi
   | Icall sig ros args res s =>
       if is_return niter f s res
       && tailcall_is_possible sig
-      && rettype_eq sig.(sig_res) f.(fn_sig).(sig_res)
+      && xtype_eq sig.(sig_res) f.(fn_sig).(sig_res)
       && intra_compartment_call ce ros (comp_of f)
       then Itailcall sig ros args
       else instr
@@ -121,6 +121,7 @@ Definition transf_instr (ce: compenv) (f: function) (pc: node) (instr: instructi
 
 Definition transf_function (ce: compenv) (f: function) : function :=
   if zeq f.(fn_stacksize) 0
+  && option_eq zeq f.(fn_sig).(sig_cc).(cc_vararg) None
   then RTL.transf_function (transf_instr ce f) f
   else f.
 
@@ -131,7 +132,8 @@ Definition transf_fundef (ce: compenv) (fd: fundef) : fundef :=
 Proof.
   unfold transf_function, RTL.transf_function.
   intros f; simpl; trivial.
-  now destruct zeq.
+  destruct zeq; simpl; trivial.
+  destruct option_eq; simpl; trivial.
 Qed.
 
 Definition transf_program (p: program) : program :=

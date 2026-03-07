@@ -24,12 +24,8 @@
 - [free]: invalidate a memory block.
 *)
 
-Require Import Coqlib.
-Require Import AST.
-Require Import Integers.
-Require Import Floats.
-Require Import Values.
-Require Import Memdata.
+Require Import Coqlib Integers Floats.
+Require Import AST Values Memdata.
 
 (** Memory states are accessed by addresses [b, ofs]: pairs of a block
   identifier [b] and a byte offset [ofs] within that block.
@@ -334,10 +330,10 @@ Axiom load_type:
   load chunk m b ofs cp = Some v ->
   Val.has_type v (type_of_chunk chunk).
 
-Axiom load_rettype:
+Axiom load_xtype:
   forall m chunk b ofs cp v,
   load chunk m b ofs cp = Some v ->
-  Val.has_rettype v (rettype_of_chunk chunk).
+  Val.has_rettype v (xtype_of_chunk chunk).
 
 (** For a small integer or float type, the value returned by [load]
   is invariant under the corresponding cast. *)
@@ -345,12 +341,17 @@ Axiom load_cast:
   forall m chunk b ofs cp v,
   load chunk m b ofs cp = Some v ->
   match chunk with
+  | Mbool => v = Val.norm_bool v
   | Mint8signed => v = Val.sign_ext 8 v
   | Mint8unsigned => v = Val.zero_ext 8 v
   | Mint16signed => v = Val.sign_ext 16 v
   | Mint16unsigned => v = Val.zero_ext 16 v
   | _ => True
   end.
+
+Axiom load_bool_int8_unsigned:
+  forall m b ofs cp,
+  load Mbool m b ofs cp = option_map Val.norm_bool (load Mint8unsigned m b ofs cp).
 
 Axiom load_int8_signed_unsigned:
   forall m b ofs cp,
@@ -530,6 +531,9 @@ Axiom loadbytes_store_other:
 (** [store] is insensitive to the signedness or the high bits of
   small integer quantities. *)
 
+Axiom store_bool_unsigned_8:
+  forall m b ofs v cp,
+  store Mbool m b ofs v cp = store Mint8unsigned m b ofs v cp.
 Axiom store_signed_unsigned_8:
   forall m b ofs v cp,
   store Mint8signed m b ofs v cp = store Mint8unsigned m b ofs v cp.

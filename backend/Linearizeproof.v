@@ -12,7 +12,7 @@
 
 (** Correctness proof for code linearization *)
 
-Require Import FSets.
+From Coq Require Import FSets.
 Require Import Coqlib Maps Ordered Errors Lattice Kildall Integers.
 Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
@@ -682,7 +682,6 @@ Proof.
   (* Lgetstack *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
-  intros ?. subst sl. admit.
   econstructor; eauto.
 
   (* Lsetstack *)
@@ -717,6 +716,7 @@ Proof.
   {
     rewrite <- (comp_transl_partial _ TRF). rewrite <- (comp_transl_partial _ B).
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
+  rewrite <- (comp_transl_partial _ TRF). rewrite <- (comp_transl_partial _ B). exact SET_PERM.
   rewrite <- comp_transf_fundef; eauto.
   econstructor; eauto. constructor; auto.
   econstructor; eauto.
@@ -838,8 +838,9 @@ Proof.
   erewrite comp_preserved; eauto.
   erewrite comp_preserved; eauto.
   eapply return_trace_eq; eauto using senv_preserved.
+  erewrite comp_preserved; eauto.
   econstructor; eauto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, LTL.initial_state prog st1 ->

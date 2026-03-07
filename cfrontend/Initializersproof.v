@@ -12,7 +12,8 @@
 
 (** Compile-time evaluation of initializers for global C variables. *)
 
-Require Import Zwf Coqlib Maps.
+From Coq Require Import Zwf.
+Require Import Coqlib Maps.
 Require Import Errors Integers Floats Values AST Memory Globalenvs Events Smallstep.
 Require Import Ctypes Cop Csyntax Csem.
 Require Import Initializers.
@@ -515,7 +516,7 @@ Qed.
 Corollary boidl_rev_cons: forall i il,
   boidl (rev il ++ i :: nil) = boidl (rev il) ++ boid i.
 Proof.
-  intros. rewrite boidl_app. simpl. rewrite <- app_nil_end. auto.
+  intros. rewrite boidl_app. simpl. rewrite app_nil_r. auto.
 Qed. 
 
 Definition byte_of_int (n: int) := Byte.repr (Int.unsigned n).
@@ -1193,7 +1194,7 @@ Proof.
   destruct s; simpl in A; inv A. rewrite <- Mem.store_signed_unsigned_8; auto. auto.
   destruct s; simpl in A; inv A. rewrite <- Mem.store_signed_unsigned_16; auto. auto.
   simpl in A; inv A. auto.
-  simpl in A; inv A. auto.
+  simpl in A; inv A. rewrite <- Mem.store_bool_unsigned_8; auto.
 + destruct ptr64; inv EQ0. simpl in A; unfold Mptr in A; rewrite <- Heqptr64 in A; inv A. auto.
 - (* Long *)
   remember Archi.ptr64 as ptr64. destruct ty; monadInv EQ0.

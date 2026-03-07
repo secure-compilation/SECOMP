@@ -133,9 +133,9 @@ Definition bind2 {A B C: Type} (f: mon (A * B)) (g: A -> B -> mon C) : mon C :=
   bind f (fun xy => g (fst xy) (snd xy)).
 
 Notation "'do' X <- A ; B" := (bind A (fun X => B))
-   (at level 200, X ident, A at level 100, B at level 200).
+   (at level 200, X name, A at level 100, B at level 200).
 Notation "'do' ( X , Y ) <- A ; B" := (bind2 A (fun X Y => B))
-   (at level 200, X ident, Y ident, A at level 100, B at level 200).
+   (at level 200, X name, Y name, A at level 100, B at level 200).
 
 Definition handle_error {A: Type} (f g: mon A) : mon A :=
   fun (s: state) =>
@@ -410,10 +410,10 @@ Fixpoint convert_builtin_args {A: Type} (al: list (builtin_arg expr)) (rl: list 
       a1' :: convert_builtin_args al rl1
   end.
 
-Definition convert_builtin_res (map: mapping) (ty: rettype) (r: builtin_res ident) : mon (builtin_res reg) :=
+Definition convert_builtin_res (map: mapping) (ty: xtype) (r: builtin_res ident) : mon (builtin_res reg) :=
   match r with
   | BR id => do r <- find_var map id; ret (BR r)
-  | BR_none => if rettype_eq ty Tvoid then ret BR_none else (do r <- new_reg; ret (BR r))
+  | BR_none => if xtype_eq ty Xvoid then ret BR_none else (do r <- new_reg; ret (BR r))
   | _ => error (Errors.msg "RTLgen: bad builtin_res")
   end.
 
@@ -665,7 +665,7 @@ Fixpoint reserve_labels (s: stmt) (lm: labelmap)
 (** Translation of a CminorSel function. *)
 
 Definition ret_reg (sig: signature) (rd: reg) : option reg :=
-  if rettype_eq sig.(sig_res) Tvoid then None else Some rd.
+  if xtype_eq sig.(sig_res) Xvoid then None else Some rd.
 
 Definition transl_fun (f: CminorSel.function): mon (node * list reg) :=
   do ngoto <- reserve_labels f.(fn_body) (PTree.empty node);

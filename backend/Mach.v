@@ -560,26 +560,41 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall ->
                        List.Forall not_ptr args),
       forall (SIG: sig = funsig fd),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) (Vptr f' Ptrofs.zero) args (sig_args sig) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) (Vptr f' Ptrofs.zero) args (proj_sig_args sig) t),
       forall (allc: match fd with
-               | Internal _ => let (m', dummy_ra) := Mem.alloc m (comp_of fd) 0 0 in
-                              let (m'', dummy_sp) := Mem.alloc m' (comp_of fd) 0 0 in
-                              match sp with
-                              | Vptr bsp osp =>
-                                  match Genv.find_def ge bsp with
-                                  | Some _ => False
-                                  | None =>
-                                      if Mem.perm_dec m'' bsp 0 Max Freeable then
-                                        match Mem.set_perm m'' bsp Readable with
-                                        | Some m''' =>
-                                            m_res = m''' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp
-                                        | None => False
-                                        end
-                                      else False
-                                  end
-                              | _ => m_res = m'' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp
-                              end
-               | External _ => m_res = m /\ dra = None /\ dsp = None
+               | Internal _ =>
+                   if cp_eq_dec (comp_of fd) bottom then
+                     m_res = m /\ dra = None /\ dsp = None
+                   else
+                     let (m', dummy_ra) := Mem.alloc m (comp_of fd) 0 0 in
+                     let (m'', dummy_sp) := Mem.alloc m' (comp_of fd) 0 0 in
+                     match sp with
+                     | Vptr bsp osp =>
+                         match Genv.find_def ge bsp with
+                         | Some _ => False
+                         | None =>
+                             if Mem.perm_dec m'' bsp 0 Max Freeable then
+                               match Mem.set_perm m'' bsp Readable with
+                               | Some m''' =>
+                                   m_res = m''' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp
+                               | None => False
+                               end
+                             else False
+                         end
+                     | _ => m_res = m'' /\ dra = Some dummy_ra /\ dsp = Some dummy_sp
+                     end
+               | External _ =>
+                   if cp_eq_dec (comp_of fd) bottom then
+                     m_res = m /\ dra = None /\ dsp = None
+                   else
+                     match sp with
+                     | Vptr bsp _ =>
+                         match Mem.set_perm m bsp Readable with
+                         | Some m''' => m_res = m''' /\ dra = None /\ dsp = Some bsp
+                         | None => False
+                         end
+                     | _ => m_res = m /\ dra = None /\ dsp = None
+                     end
                end),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         t (Callstate (Stackframe fb sig sp ra c dra dsp :: s)
@@ -682,7 +697,9 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (SET_PERM: match dsp with
                    | Some _ => match sp with
                               | Vptr bsp _ =>
-                                  if cp_eq_dec cp' cp then m = m' else Mem.set_perm m bsp Freeable = Some m'
+                                  if cp_eq_dec cp' cp then m = m'
+                                  else if cp_eq_dec cp bottom then m = m'
+                                  else Mem.set_perm m bsp Freeable = Some m'
                               | _ => False
                               end
                    | None => m = m'

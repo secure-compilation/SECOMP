@@ -13,8 +13,7 @@
 (** Correctness proof for the [Allocation] pass (validated translation from
   RTL to LTL). *)
 
-Require Import FunInd.
-Require Import FSets.
+From Coq Require Import FunInd FSets.
 Require Import Coqlib Ordered Maps Errors Integers Floats.
 Require Import AST Linking Lattice Kildall.
 Require Import Values Memory Globalenvs Events Smallstep.
@@ -2607,7 +2606,7 @@ Qed.
 
 Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signature -> Prop :=
   | match_stackframes_nil: forall sg,
-      sg.(sig_res) = Tint ->
+      sg.(sig_res) = Xint ->
       match_stackframes nil nil sg
   | match_stackframes_cons:
       forall res f sp pc rs s tf bb ls ts sg sg' an e env
@@ -2635,7 +2634,7 @@ Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signa
 Definition ty_of_stack (stk: list RTL.stackframe) :=
   match stk with
   | RTL.Stackframe _ ty _ _ _ _ :: _ => ty
-  | _ => Tret Tint
+  | _ => Xint
   end.
 
 Inductive match_states: RTL.state -> LTL.state -> Prop :=
@@ -2658,7 +2657,7 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
         (ARGS: Val.lessdef_list args (map (fun p => Locmap.getpair p ls) (loc_arguments (funsig tf))))
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
-        (WTARGS: Val.has_type_list args (sig_args (funsig tf))),
+        (WTARGS: Val.has_type_list args (proj_sig_args (funsig tf))),
       match_states (RTL.Callstate s f args m cp)
                    (LTL.Callstate ts tf (funsig tf) ls m' cp)
   | match_states_return:
@@ -2710,7 +2709,7 @@ Remark addressing_not_long:
 Proof.
   intros. inv H.
   assert (A: forall ty, In ty (type_of_addressing addr) -> ty = Tptr).
-  { intros. destruct addr; simpl in H; intuition. }
+  { intros. try (apply diff_false_true in H0). destruct addr; simpl in H; intuition auto. }
   assert (B: In (env r) (type_of_addressing addr)).
   { rewrite <- H5. apply in_map; auto. }
   assert (C: env r = Tint).
@@ -3058,6 +3057,19 @@ Proof.
   assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
   exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros G.
+  assert (EXT_SET: exists tm', (if cp_eq_dec (comp_of tf) (comp_of tfd) then tm' = m'0
+    else if cp_eq_dec (comp_of tfd) bottom then tm' = m'0
+    else match sp with Vptr bsp _ => Mem.set_perm m'0 bsp Readable = Some tm' | _ => tm' = m'0 end)
+    /\ Mem.extends m' tm').
+  { rewrite <- (comp_transl_partial _ FUN), <- (comp_transl_partial _ F).
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [destruct sp; reflexivity | eauto].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + destruct sp; try (subst m'; eexists; split; [reflexivity | eauto]).
+        exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm' & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
@@ -3068,7 +3080,7 @@ Proof.
     { rewrite comp_transf_function; eauto.
       rewrite (comp_transl_partial _ F); auto. }
     specialize (NO_CROSS_PTR X).
-    assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
+    assert (Htype_list: Val.has_type_list rs ## args (proj_sig_args sg)).
     { inv WTI. rewrite <- H7.
       clear -WTRS. eapply wt_regset_list. eauto. }
     clear -Heqo2 B1 NO_CROSS_PTR Htype_list.
@@ -3123,7 +3135,7 @@ Proof.
     (* [call_regs_ext] is like [call_regs] with additional undefined registers *)
     eapply Val.lessdef_list_not_ptr; eauto. }
   { instantiate (1 := t).
-    assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
+    assert (Htype_list: Val.has_type_list rs ## args (proj_sig_args sg)).
     { inv WTI. rewrite <- H7.
       clear -WTRS. eapply wt_regset_list. eauto. }
     rewrite <- comp_transf_function; eauto.
@@ -3348,10 +3360,10 @@ Proof.
 (* internal function *)
 - monadInv FUN. simpl in *.
   destruct (transf_function_inv _ _ EQ).
-  exploit Mem.alloc_extends; eauto. apply Z.le_refl. rewrite H8; apply Z.le_refl.
+  exploit Mem.alloc_extends; eauto. apply Z.le_refl. rewrite H9; apply Z.le_refl.
   intros [m'' [U V]].
   assert (WTRS: wt_regset env (init_regs args (fn_params f))).
-  { apply wt_init_regs. inv H0. rewrite wt_params. rewrite H9. auto. }
+  { apply wt_init_regs. inv H1. rewrite wt_params. rewrite H10. auto. }
   { (* new case *)
   exploit (exec_moves mv). eauto. eauto.
     eapply can_undef_satisf; eauto. eapply compat_entry_satisf; eauto.
@@ -3396,6 +3408,19 @@ Proof.
 - inv STACKS.
   simpl in AG.
   { (* new case, now identical to the others *)
+  assert (EXT_SET: exists tm', (if cp_eq_dec (comp_of tf) cp then tm' = m'0
+    else if cp_eq_dec cp bottom then tm' = m'0
+    else match sp with Vptr bsp _ => Mem.set_perm m'0 bsp Freeable = Some tm' | _ => False end)
+    /\ Mem.extends m' tm').
+  { rewrite <- (comp_transl_partial _ FUN).
+    destruct (cp_eq_dec (comp_of f) cp).
+    - subst m'. eexists; split; [reflexivity | eauto].
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + destruct sp; try contradiction.
+        exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm' & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   exploit STEPS; eauto. rewrite WTRES0; auto. intros [ls2 [A B]].
   econstructor; split.
   eapply plus_left. constructor.
@@ -3407,6 +3432,7 @@ Proof.
   destruct (transf_function_inv _ _ FUN).
   unfold loc_result, proj_sig_res in *. rewrite SIG in *.
   rewrite <- COMP. eapply return_trace_lessdef; eauto using senv_preserved.
+  exact SET_T.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.

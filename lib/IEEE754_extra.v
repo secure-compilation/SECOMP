@@ -18,14 +18,10 @@
 (** Additional operations and proofs about IEEE-754 binary
     floating-point numbers, on top of the Flocq library. *)
 
-Require Import Reals.
-Require Import SpecFloat.
+From Coq Require Import Reals SpecFloat ZArith Psatz Bool Eqdep_dec.
+From Coq Require Znumtheory.
 From Flocq Require Import Core Digits Operations Round Bracket Sterbenz
                           BinarySingleNaN Binary Round_odd.
-Require Import ZArith.
-Require Import Psatz.
-Require Import Bool.
-Require Import Eqdep_dec.
 
 Local Open Scope Z_scope.
 
@@ -1036,7 +1032,7 @@ Proof with (try discriminate).
   rewrite <- ! bpow_plus.
   replace (prec - 1 + e') with (- (prec - 1 + e)) by (unfold e'; lia).
   rewrite bpow_opp. unfold cond_Ropp; destruct s; auto.
-  rewrite Ropp_inv_permute. auto. apply Rgt_not_eq. apply bpow_gt_0.
+  field. apply Rgt_not_eq. apply bpow_gt_0.
   split. simpl. apply F2R_neq_0. destruct s; simpl in H; discriminate.
   auto.
 Qed.

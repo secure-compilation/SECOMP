@@ -113,39 +113,6 @@ Proof.
   rewrite PC'. econstructor; eauto.
 Qed.
 
-(** The [find_label] function returns the code tail starting at the
-  given label.  A connection with [code_tail] is then established. *)
-
-Fixpoint find_label (lbl: label) (c: code) {struct c} : option code :=
-  match c with
-  | nil => None
-  | instr :: c' =>
-      if is_label lbl instr then Some c' else find_label lbl c'
-  end.
-
-Lemma label_pos_code_tail:
-  forall lbl c pos c',
-  find_label lbl c = Some c' ->
-  exists pos',
-  label_pos lbl pos c = Some pos'
-  /\ code_tail (pos' - pos) c c'
-  /\ pos < pos' <= pos + list_length_z c.
-Proof.
-  induction c.
-  simpl; intros. discriminate.
-  simpl; intros until c'.
-  case (is_label lbl a).
-  intro EQ; injection EQ; intro; subst c'.
-  exists (pos + 1). split. auto. split.
-  replace (pos + 1 - pos) with (0 + 1) by lia. constructor. constructor.
-  rewrite list_length_z_cons. generalize (list_length_z_pos c). lia.
-  intros. generalize (IHc (pos + 1) c' H). intros [pos' [A [B C]]].
-  exists pos'. split. auto. split.
-  replace (pos' - pos) with ((pos' - (pos + 1)) + 1) by lia.
-  constructor. auto.
-  rewrite list_length_z_cons. lia.
-Qed.
-
 (** The following lemmas show that the translation from Mach to ARM
   preserves labels, in the sense that the following diagram commutes:
 <<
@@ -285,7 +252,11 @@ Opaque Int.eq.
   destruct Archi.thumb2_support; TailNoLabel.
   eapply tail_nolabel_trans; TailNoLabel.
   eapply tail_nolabel_trans. eapply transl_cond_label; eauto. TailNoLabel.
-  destruct (preg_of r); monadInv H; (eapply tail_nolabel_trans; [eapply transl_cond_label; eauto|TailNoLabel]).
+  destruct (preg_of r); monadInv H.
+  destruct (ireg_eq x x0); [TailNoLabel|].
+  eapply tail_nolabel_trans; [eapply transl_cond_label; eauto|TailNoLabel].
+  destruct (freg_eq x x0); [TailNoLabel|].
+  eapply tail_nolabel_trans; [eapply transl_cond_label; eauto|TailNoLabel].
 Qed.
 
 Remark transl_memory_access_label:

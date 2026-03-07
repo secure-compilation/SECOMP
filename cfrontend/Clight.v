@@ -100,7 +100,7 @@ Inductive statement : Type :=
   | Sassign : expr -> expr -> statement (**r assignment [lvalue = rvalue] *)
   | Sset : ident -> expr -> statement   (**r assignment [tempvar = rvalue] *)
   | Scall: option ident -> expr -> list expr -> statement (**r function call *)
-  | Sbuiltin: option ident -> external_function -> typelist -> list expr -> statement (**r builtin invocation *)
+  | Sbuiltin: option ident -> external_function -> list type -> list expr -> statement (**r builtin invocation *)
   | Ssequence : statement -> statement -> statement  (**r sequence *)
   | Sifthenelse : expr  -> statement -> statement -> statement (**r conditional *)
   | Sloop: statement -> statement -> statement (**r infinite loop *)
@@ -370,7 +370,7 @@ Variable cp: compartment.
 Variable le: temp_env.
 Variable m: mem.
 
-(** [eval_expr ge e m a v] defines the evaluation of expression [a]
+(** [eval_expr ge e le m a v] defines the evaluation of expression [a]
   in r-value position.  [v] is the value of the expression.
   [e] is the current environment and [m] is the current memory state. *)
 
@@ -450,14 +450,14 @@ Combined Scheme eval_expr_lvalue_ind from eval_expr_ind2, eval_lvalue_ind2.
   and produces the list of cast values [vl].  It is used to
   evaluate the arguments of function calls. *)
 
-Inductive eval_exprlist: list expr -> typelist -> list val -> Prop :=
+Inductive eval_exprlist: list expr -> list type -> list val -> Prop :=
   | eval_Enil:
-      eval_exprlist nil Tnil nil
+      eval_exprlist nil nil nil
   | eval_Econs:   forall a bl ty tyl v1 v2 vl,
       eval_expr a v1 ->
       sem_cast v1 (typeof a) ty m = Some v2 ->
       eval_exprlist bl tyl vl ->
-      eval_exprlist (a :: bl) (Tcons ty tyl) (v2 :: vl).
+      eval_exprlist (a :: bl) (ty :: tyl) (v2 :: vl).
 
 End EXPR.
 
@@ -520,7 +520,7 @@ Inductive state: Type :=
       (res: val)
       (k: cont)
       (m: mem)
-      (ty: rettype)
+      (ty: xtype)
       (cp: compartment): state.
 
 (** Find the statement and manufacture the continuation
@@ -589,7 +589,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sset id a) k e le m)
         E0 (State f Sskip k e (PTree.set id v le) m)
 
-  | step_call:   forall f optid a al k e le m tyargs tyres cconv vf vargs fd t,
+  | step_call:   forall f optid a al k e le m m' tyargs tyres cconv vf vargs fd t,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr e (comp_of f) le m a vf ->
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
@@ -597,9 +597,13 @@ Inductive step: state -> trace -> state -> Prop :=
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (typlist_of_typelist tyargs) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (List.map typ_of_type tyargs) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m
+        else if cp_eq_dec (comp_of fd) bottom then m' = m
+        else Mem.set_perm_list m (blocks_of_env e) Readable = Some m'),
       step (State f (Scall optid a al) k e le m)
-        t (Callstate fd vargs (Kcall optid f e le k) m)
+        t (Callstate fd vargs (Kcall optid f e le k) m')
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
@@ -693,12 +697,16 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m' (rettype_of_type tres) bottom)
 
-  | step_returnstate: forall v optid f e le ty cp k m t,
+  | step_returnstate: forall v optid f e le ty cp k m m' t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) cp then m' = m
+        else if cp_eq_dec cp bottom then m' = m
+        else Mem.set_perm_list m (blocks_of_env e) Freeable = Some m'),
       step (Returnstate v (Kcall optid f e le k) m ty cp)
-        t (State f Sskip k e (set_opttemp optid v le) m).
+        t (State f Sskip k e (set_opttemp optid v le) m').
 
 (** ** Whole-program semantics *)
 
@@ -713,7 +721,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
-      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      type_of_fundef (Internal f) = Tfunction nil type_int32s cc_default ->
       initial_state p (Callstate (Internal f) nil Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
@@ -1064,7 +1072,9 @@ Proof.
     parallel_eval_expr.
     parallel_eval_exprlist.
     parallel_find_funct.
-    reflexivity.
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst; reflexivity|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst; reflexivity|].
+    rewrite SET_PERM in SET_PERM0. congruence.
   - parallel_eval_exprlist.
     destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H0 H13) as (_ & EQ).
     specialize (EQ eq_refl) as [<- <-].
@@ -1090,6 +1100,9 @@ Proof.
   - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H H9) as (_ & EQ).
     specialize (EQ eq_refl) as [<- <-].
     reflexivity.
+  - destruct (cp_eq_dec (comp_of f) cp); [subst; reflexivity|].
+    destruct (cp_eq_dec cp bottom); [subst; reflexivity|].
+    rewrite SET_PERM in SET_PERM0. congruence.
 Qed.
 
 (* Related to old [state_determinism'] *)
@@ -1104,7 +1117,9 @@ Proof.
     assert (fd = fd0) as <- by congruence.
     rewrite H3 in H18. injection H18 as <- <- <-.
     destruct (eval_exprlist_determ H1 H16).
-    reflexivity.
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst; reflexivity|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst; reflexivity|].
+    rewrite SET_PERM in SET_PERM0. congruence.
   - destruct (eval_exprlist_determ H H12).
     destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H0 H13) as [_ EQ].
     specialize (EQ eq_refl) as [<- <-].
@@ -1112,7 +1127,9 @@ Proof.
   - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H H9) as [_ EQ].
     specialize (EQ eq_refl) as [<- <-].
     reflexivity.
-  - reflexivity.
+  - destruct (cp_eq_dec (comp_of f) cp); [subst; reflexivity|].
+    destruct (cp_eq_dec cp bottom); [subst; reflexivity|].
+    rewrite SET_PERM in SET_PERM0. congruence.
 Qed.
 
 Lemma step1_determ: forall {p s s1 s2 t},

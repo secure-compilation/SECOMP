@@ -57,10 +57,10 @@ Definition bind2 {A B C: Type} (x: mon (A * B)) (f: A -> B -> mon C) : mon C :=
 
 Declare Scope gensym_monad_scope.
 Notation "'do' X <- A ; B" := (bind A (fun X => B))
-   (at level 200, X ident, A at level 100, B at level 200)
+   (at level 200, X name, A at level 100, B at level 200)
    : gensym_monad_scope.
 Notation "'do' ( X , Y ) <- A ; B" := (bind2 A (fun X Y => B))
-   (at level 200, X ident, Y ident, A at level 100, B at level 200)
+   (at level 200, X name, Y name, A at level 100, B at level 200)
    : gensym_monad_scope.
 
 Parameter first_unused_ident: unit -> ident.
@@ -201,7 +201,7 @@ Definition make_set (cp: compartment) (bf: bitfield) (id: ident) (l: expr) : sta
   | None => Sset id l
   | Some chunk =>
       let typtr := Tpointer (typeof l) noattr in
-      Sbuiltin (Some id) (EF_vload chunk) (Tcons typtr Tnil) ((Eaddrof l typtr):: nil)
+      Sbuiltin (Some id) (EF_vload chunk) (typtr :: nil) ((Eaddrof l typtr):: nil)
   end.
 
 (** Translation of a "valof" operation.
@@ -223,7 +223,7 @@ Definition make_assign (cp: compartment) (bf: bitfield) (l r: expr) : statement 
   | Some chunk =>
       let ty := typeof l in
       let typtr := Tpointer ty noattr in
-      Sbuiltin None (EF_vstore chunk) (Tcons typtr (Tcons ty Tnil))
+      Sbuiltin None (EF_vstore chunk) (typtr :: ty :: nil)
                     (Eaddrof l typtr :: r :: nil)
   end.
 

@@ -12,7 +12,8 @@
 
 (** Register allocation by external oracle and a posteriori validation. *)
 
-Require Import FSets FSetAVLplus.
+From Coq Require Import FSets.
+Require Import FSetAVLplus.
 Require Import Coqlib Ordered Maps Errors Integers Floats.
 Require Import AST Lattice Kildall Memdata.
 Require Archi.
@@ -170,7 +171,7 @@ Definition check_succ (s: node) (b: LTL.bblock) : bool :=
 Declare Scope option_monad_scope.
 
 Notation "'do' X <- A ; B" := (match A with Some X => B | None => None end)
-         (at level 200, X ident, A at level 100, B at level 200)
+         (at level 200, X name, A at level 100, B at level 200)
          : option_monad_scope.
 
 Notation "'assertion' A ; B" := (if A then B else None)
@@ -1112,15 +1113,15 @@ Definition transfer_aux (f: RTL.function) (env: regenv)
       (* assertion (no_caller_saves e2); *)
       assertion (no_caller_saves_ext e2);
       do e3 <- add_equation_ros ros ros' e2;
-      do e4 <- add_equations_args args (sig_args sg) args' e3;
+      do e4 <- add_equations_args args (proj_sig_args sg) args' e3;
       track_moves env mv1 e4
   | BStailcall sg ros args mv1 ros' =>
       let args' := loc_arguments sg in
       assertion (tailcall_is_possible sg);
-      assertion (rettype_eq sg.(sig_res) f.(RTL.fn_sig).(sig_res));
+      assertion (xtype_eq sg.(sig_res) f.(RTL.fn_sig).(sig_res));
       assertion (ros_compatible_tailcall ros');
       do e1 <- add_equation_ros ros ros' empty_eqs;
-      do e2 <- add_equations_args args (sig_args sg) args' e1;
+      do e2 <- add_equations_args args (proj_sig_args sg) args' e1;
       track_moves env mv1 e2
   | BSbuiltin ef args res mv1 args' res' mv2 s =>
       do e1 <- track_moves env mv2 e;

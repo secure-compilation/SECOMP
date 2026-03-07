@@ -28,7 +28,7 @@ let mnemonic_names = StringSet.of_list
       "Pflid_lbl"; "Pflis_lbl"; "Pdmb"; "Pdsb"; "Peor"; "Pfabsd"; "Pfabss";
       "Pfaddd"; "Pfadds"; "Pfcmpd"; "Pfcmps"; "Pfcmpzd"; "Pfcmpzs"; "Pfcpyd";
       "Pfcpy_fs"; "Pfcpy_if";"Pfcvtds"; "Pfcvtsd"; "Pfdivd"; "Pfdivs"; "Pfldd";
-      "Pflid"; "Pflds"; "Pflid_imm"; "Pflis_imm"; "Pfmuld"; "Pfmuls"; "Pfnegd";
+      "Pflds"; "Pflid_imm"; "Pflis_imm"; "Pfmuld"; "Pfmuls"; "Pfnegd";
       "Pfnegs"; "Pfsitod"; "Pfsitos"; "Pfsqrt"; "Pfstd"; "Pfsts"; "Pfsubd";
       "Pfsubs"; "Pftosizd"; "Pftosizs"; "Pftouizd"; "Pftouizs"; "Pfuitod";
       "Pfuitos"; "Pinlineasm"; "Pisb"; "Plabel"; "Pldr"; "Ploadsymbol_lbl";
@@ -138,7 +138,7 @@ let pp_instructions pp ic =
         begin match ef with
           | EF_inline_asm _ -> true
           | EF_annot  (kind,txt,targs) ->
-            P.to_int kind = 2 && AisAnnot.json_ais_annot TargetPrinter.preg_annot "r13" (camlstring_of_coqstring txt) args <> []
+            P.to_int kind = 2 && AisAnnot.json_ais_annot TargetPrinter.preg_annot "r13" txt args <> []
           | _ -> false
         end
       (* Only debug relevant *)
@@ -164,7 +164,7 @@ let pp_instructions pp ic =
 
           begin match P.to_int kind with
           | 2 ->
-            let annots = AisAnnot.json_ais_annot TargetPrinter.preg_annot "r13" (camlstring_of_coqstring txt) args in
+            let annots = AisAnnot.json_ais_annot TargetPrinter.preg_annot "r13" txt args in
             let annots = List.map (function
                 | AisAnnot.String s -> String s
                 | AisAnnot.Symbol s -> Atom s
@@ -193,6 +193,7 @@ let pp_instructions pp ic =
     | Pcfi_rel_offset _ -> assert false
     (* Should be eliminated in constant expansion step *)
     | Pflis(r1, f) -> assert false
+    | Pflid(r1, f) -> assert false
     | Ploadsymbol(r1, id, ofs) -> assert false
     (* ARM instructions *)
     | Padc(r1, r2, so) -> instruction pp "Padc" [Ireg r1; Ireg r2; Shift so]
@@ -230,7 +231,6 @@ let pp_instructions pp ic =
     | Pfdivs(r1, r2, r3) -> instruction pp "Pfdivs" [SFreg r1; SFreg r2; SFreg r3]
     | Pfldd(r1, r2, n) | Pfldd_a(r1, r2, n) -> instruction pp "Pfldd" [DFreg r1; Ireg r2; Long n]
     | Pflds(r1, r2, n) -> instruction pp "Pflds" [SFreg r1; Ireg r2; Long n]
-    | Pflid(r1, f) -> instruction pp "Pflid" [DFreg r1; Float64 f]
     | Pfmuld(r1, r2, r3) -> instruction pp "Pfmuld" [DFreg r1; DFreg r2; DFreg r3]
     | Pfmuls(r1, r2, r3) -> instruction pp "Pfmuls" [SFreg r1; SFreg r2; SFreg r3]
     | Pfnegd(r1, r2) -> instruction pp "Pfnegd" [DFreg r1; DFreg r2]
@@ -278,7 +278,7 @@ let pp_instructions pp ic =
     | Prsc(r1, r2, so) -> instruction pp "Prsc" [Ireg r1; Ireg r2; Shift so]
     | Psbc(r1, r2, so) -> instruction pp "Psbc" [Ireg r1; Ireg r2; Shift so]
     | Psbfx(r1, r2, lsb, sz) -> instruction pp "Psbfx" [Ireg r1; Ireg r2; Long lsb; Long sz]
-    | Psdiv -> instruction pp "Psdiv" [Ireg IR0; Ireg IR0; Ireg IR1]
+    | Psdiv (r1, r2, r3) -> instruction pp "Psdiv" [Ireg r1; Ireg r2; Ireg r3]
     | Psmull(r1, r2, r3, r4) -> instruction pp "Psmull" [Ireg r1; Ireg r2; Ireg r3; Ireg r4]
     | Pstr(r1, r2, so) | Pstr_a(r1, r2, so) -> instruction pp "Pstr" [Ireg r1; Ireg r2; Shift so]
     | Pstr_p(r1, r2, so) -> instruction pp "Pstr_p" [Ireg r1; Ireg r2; Shift so]
@@ -288,7 +288,7 @@ let pp_instructions pp ic =
     | Pstrh_p(r1, r2, so) -> instruction pp "Pstrh_p" [Ireg r1; Ireg r2; Shift so]
     | Psub(r1, r2, so) -> instruction pp "Psub" [Ireg r1; Ireg r2; Shift so]
     | Psubs(r1, r2, so) -> instruction pp "Psubs" [Ireg r1; Ireg r2; Shift so]
-    | Pudiv -> instruction pp "Pudiv" [Ireg IR0; Ireg IR0; Ireg IR1]
+    | Pudiv (r1, r2, r3) -> instruction pp "Pudiv" [Ireg r1; Ireg r2; Ireg r3]
     | Pumull(r1, r2, r3, r4) -> instruction pp "Pumull" [Ireg r1; Ireg r2; Ireg r3; Ireg r4]
     (* Fixup instructions for calling conventions *)
     | Pfcpy_fs(r1, r2) -> instruction pp "Pfcpy_fs" [SFreg r1; SPreg r2]

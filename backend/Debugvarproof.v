@@ -500,7 +500,6 @@ Proof.
 - (* getstack *)
   econstructor; split.
   eapply plus_left. constructor; auto.
-  inv STACKS; eauto. inv H0. eapply H.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* setstack *)
@@ -557,8 +556,9 @@ Proof.
     inv TRF; unfold comp_of; simpl.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved. }
   replace (comp_of tf) with (comp_of f) by now inv TRF.
-  constructor; auto. constructor; auto.
-  constructor; auto.
+  rewrite <- (comp_transl_partial _ B). exact SET_PERM.
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
+  econstructor; eauto. constructor; [econstructor; eauto | exact STACKS].
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
@@ -657,11 +657,17 @@ Proof.
   eapply plus_left. econstructor.
   auto.
   eapply return_trace_eq; eauto using senv_preserved.
+  exact SET_PERM.
   replace (fn_comp f) with
     (fn_comp {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c0 |})
     by reflexivity.
   apply eval_add_delta_ranges. traceEq.
-  constructor; auto. simpl. constructor; auto.
+  change
+    (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c0 |})
+    with (comp_of f).
+  change (fn_comp {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c0 |})
+    with (fn_comp f).
+  constructor; auto. apply match_function_intro. exact H.
 Qed.
 
 Lemma transf_initial_states:

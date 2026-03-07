@@ -20,12 +20,8 @@
   the one-step transition relations that are used to specify
   operational semantics in small-step style. *)
 
-Require Import Relations.
-Require Import Wellfounded.
-Require Import Coqlib.
-Require Import Events.
-Require Import Globalenvs.
-Require Import Integers.
+From Coq Require Import Relations Wellfounded.
+Require Import Coqlib Events Globalenvs Integers.
 
 Set Implicit Arguments.
 
@@ -973,7 +969,7 @@ Proof.
 (* base case *)
   exploit fsim_simulation'; eauto. intros [A | [i' A]].
   left; auto.
-  right; exists i'; intuition.
+  right; exists i'; intuition auto with sets.
 (* inductive case *)
   exploit fsim_simulation'; eauto. intros [[i' [s2' [A B]]] | [i' [A [B C]]]].
   exploit simulation_star. apply plus_star; eauto. eauto.
@@ -1461,7 +1457,7 @@ Proof.
 - (* base case *)
   exploit bsim_simulation'; eauto. intros [[i' [s1' [A B]]] | [i' [A [B C]]]].
 + left; exists i'; exists s1'; auto.
-+ right; exists i'; intuition.
++ right; exists i'; intuition auto with sets.
 - (* inductive case *)
   exploit Eapp_E0_inv; eauto. intros [EQ1 EQ2]; subst.
   exploit bsim_simulation'; eauto. intros [[i' [s1' [A B]]] | [i' [A [B C]]]].

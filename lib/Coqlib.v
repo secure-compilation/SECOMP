@@ -18,12 +18,7 @@
     used throughout the development.  It complements the Coq standard
     library. *)
 
-Require Export String.
-Require Export ZArith.
-Require Export Znumtheory.
-Require Export List.
-Require Export Bool.
-Require Export Lia.
+From Coq Require Export String ZArith Znumtheory List Bool Lia.
 
 (** * Useful tactics *)
 
@@ -368,6 +363,16 @@ Proof.
   rewrite <- two_p_S. decEq. lia. lia.
 Qed.
 
+Lemma two_p_is_exp_2:
+  forall x y, 0 <= x <= y -> two_p (y - x) = two_p y / two_p x.
+Proof.
+  intros. replace y with (y - x + x) by lia.
+  rewrite two_p_is_exp by lia.
+  rewrite Z_div_mult_full.
+  replace (y - x + x) with y by lia. reflexivity.
+  exploit (two_p_gt_ZERO x); lia.
+Qed.
+
 (** Properties of [Zmin] and [Zmax] *)
 
 Lemma Zmin_spec:
@@ -405,6 +410,12 @@ Proof.
 Qed.
 
 (** Properties of Euclidean division and modulus. *)
+
+Lemma Z_div_mod_eq: forall a b,
+  b > 0 -> a = (b * (a / b) + a mod b).
+Proof.
+  intros. apply Z.div_mod. lia.
+Qed.
 
 Lemma Zmod_unique:
   forall x y a b,
@@ -827,6 +838,12 @@ Qed.
 
 (** Properties of [List.app] (concatenation) *)
 
+Lemma app_ass:
+  forall (A: Type) (l1 l2 l3: list A), (l1 ++ l2) ++ l3 = l1 ++ (l2 ++ l3).
+Proof.
+  intros; symmetry; apply app_assoc.
+Qed.
+
 Lemma list_append_injective_l:
   forall (A: Type) (l1 l2 l1' l2': list A),
   l1 ++ l2 = l1' ++ l2' -> List.length l1 = List.length l1' -> l1 = l1' /\ l2 = l2'.
@@ -1046,7 +1063,7 @@ Proof.
     elim H4. apply in_or_app. tauto.
     auto.
   induction a; simpl; intros.
-  rewrite <- app_nil_end. auto.
+  rewrite app_nil_r. auto.
   inversion H0. apply H. auto.
   red; intro; elim H3. apply in_or_app. tauto.
   red; intro; elim H3. apply in_or_app. tauto.
@@ -1339,7 +1356,7 @@ End DECIDABLE_PREDICATE.
 
 (** * Well-founded orderings *)
 
-Require Import Relations.
+From Coq Require Import Relations.
 
 (** A non-dependent version of lexicographic ordering. *)
 

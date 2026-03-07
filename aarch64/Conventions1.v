@@ -83,6 +83,23 @@ Definition is_float_reg (r: mreg): bool :=
   | F24 | F25 | F26 | F27 | F28 | F29 | F30 | F31 => true
   end.
 
+(** How to use registers for register allocation.
+    We favor the use of caller-save registers, using callee-save registers
+    only when no caller-save is available. *)
+
+Record alloc_regs := mk_alloc_regs {
+  preferred_int_regs: list mreg;
+  remaining_int_regs: list mreg;
+  preferred_float_regs: list mreg;
+  remaining_float_regs: list mreg
+}.
+
+Definition allocatable_registers (_: unit) :=
+  {| preferred_int_regs := int_caller_save_regs;
+     remaining_int_regs := int_callee_save_regs;
+     preferred_float_regs := float_caller_save_regs;
+     remaining_float_regs := float_callee_save_regs |}.
+
 (** * Function calling conventions *)
 
 (** The functions in this section determine the locations (machine registers
@@ -246,7 +263,7 @@ Definition fixed_arguments (s: signature) : Z :=
   when calling a function with signature [s].  *)
 
 Definition loc_arguments (s: signature) : list (rpair loc) :=
-  loc_arguments_rec s.(sig_args) (fixed_arguments s) 0 0 0.
+  loc_arguments_rec (proj_sig_args s) (fixed_arguments s) 0 0 0.
 
 (** Argument locations are either caller-save registers or [Outgoing]
   stack slots at nonnegative offsets. *)
@@ -358,12 +375,12 @@ Qed.
     normalization is needed.
  *)
 
-Definition return_value_needs_normalization (t: rettype) : bool :=
+Definition return_value_needs_normalization (t: xtype) : bool :=
   match Archi.abi with
   | Archi.Apple => false
   | Archi.AAPCS64 =>
       match t with
-      | Tint8signed | Tint8unsigned | Tint16signed | Tint16unsigned => true
+      | Xbool | Xint8signed | Xint8unsigned | Xint16signed | Xint16unsigned => true
       | _ => false
       end
   end.

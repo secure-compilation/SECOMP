@@ -36,6 +36,8 @@
 
 #if defined(SYS_linux) || defined(SYS_bsd)
 
+	.section .note.GNU-stack,"",%progbits
+
 #define GLOB(x) x
 #define FUNCTION(f) \
 	.text; \
@@ -45,6 +47,8 @@ f:
 
 #define ENDFUNCTION(f) \
 	.type f, @function; .size f, . - f
+
+#define RODATA .section .rodata
 
 #endif
 
@@ -59,6 +63,8 @@ _##f:
 
 #define ENDFUNCTION(f)
 
+#define RODATA .text
+
 #endif
 
 #if defined(SYS_cygwin)
@@ -71,6 +77,8 @@ _##f:
 f:
 
 #define ENDFUNCTION(f)
+
+#define RODATA .text
 
 #endif
 

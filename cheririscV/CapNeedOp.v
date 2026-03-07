@@ -87,6 +87,7 @@ Definition needs_of_operation (op: operation) (nv: nval): list nval :=
   | Ointofsingle | Ointuofsingle | Osingleofint | Osingleofintu => op1 (default nv)
   | Olongofsingle | Olonguofsingle | Osingleoflong | Osingleoflongu => op1 (default nv)
   | Ocmp c => needs_of_condition c
+  | Osel c ty => needs_of_condition c
   end.
 
 Definition operation_is_redundant (op: operation) (nv: nval): bool :=

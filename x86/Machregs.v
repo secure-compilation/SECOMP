@@ -10,13 +10,9 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-Require Import String.
-Require Import Coqlib.
-Require Import Decidableplus.
-Require Import Maps.
-Require Import AST.
-Require Import Integers.
-Require Import Op.
+From Coq Require Import String.
+Require Import Coqlib Decidableplus Maps.
+Require Import AST Integers Op.
 
 (** ** Machine registers *)
 
@@ -149,7 +145,7 @@ Definition destroyed_by_load (chunk: memory_chunk) (addr: addressing): list mreg
 
 Definition destroyed_by_store (chunk: memory_chunk) (addr: addressing): list mreg :=
   match chunk with
-  | Mint8signed | Mint8unsigned => if Archi.ptr64 then nil else AX :: CX :: nil
+  | Mbool | Mint8signed | Mint8unsigned => if Archi.ptr64 then nil else AX :: CX :: nil
   | _ => nil
   end.
 

@@ -12,7 +12,8 @@
 
 (** Correctness proof for RTL generation. *)
 
-Require Import Wellfounded Coqlib Maps AST Linking.
+From Coq Require Import Wellfounded.
+Require Import Coqlib Maps AST Linking.
 Require Import Integers Values Memory Events Smallstep Globalenvs.
 Require Import Switch Registers Cminor Op CminorSel RTL.
 Require Import RTLgen RTLgenspec.
@@ -53,11 +54,11 @@ Proof.
   intros until r0. repeat rewrite PTree.gsspec.
   destruct (peq id1 name); destruct (peq id2 name).
   congruence.
-  intros. inv H. elimtype False.
+  intros. inv H. exfalso.
   apply valid_fresh_absurd with r0 s1.
   apply H1. left; exists id2; auto.
   eauto with rtlg.
-  intros. inv H2. elimtype False.
+  intros. inv H2. exfalso.
   apply valid_fresh_absurd with r0 s1.
   apply H1. left; exists id1; auto.
   eauto with rtlg.
@@ -863,6 +864,10 @@ Proof.
   intros contra. simpl in contra.
   destruct (flowsto_dec bottom (comp_of f)); try congruence.
   pose proof (bottom_flowsto (comp_of f)). contradiction.
+  (* SET_PERM for exec_Icall: bottom compartment *)
+  simpl.
+  destruct (cp_eq_dec (comp_of f) bottom); [reflexivity|].
+  destruct (cp_eq_dec bottom bottom); [reflexivity|congruence].
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   clear H3; subst cp. eauto.
@@ -874,7 +879,10 @@ Proof.
   econstructor. simpl.
   destruct (flowsto_dec bottom (comp_of f)); try congruence.
   pose proof (bottom_flowsto (comp_of f)). contradiction.
-  reflexivity. reflexivity. reflexivity.
+  (* SET_PERM for exec_return: bottom compartment *)
+  destruct (cp_eq_dec (comp_of f) bottom).
+  reflexivity. destruct (cp_eq_dec bottom bottom); [reflexivity|congruence].
+  all: try reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
 (* Result reg *)
@@ -1322,7 +1330,7 @@ Inductive tr_fun (tf: function) (map: mapping) (f: CminorSel.function)
       tr_fun tf map f ngoto nret rret.
 
 Inductive tr_cont:
-  rettype ->
+  xtype ->
   RTL.code -> mapping ->
   CminorSel.cont -> node -> list node -> labelmap -> node -> option reg ->
   list RTL.stackframe -> Prop :=
@@ -1342,7 +1350,7 @@ Inductive tr_cont:
       match_stacks ty (Kcall optid f sp e k) cs ->
       tr_cont ty c map (Kcall optid f sp e k) nret nil ngoto nret rret cs
 
-with match_stacks: rettype -> CminorSel.cont -> list RTL.stackframe -> Prop :=
+with match_stacks: xtype -> CminorSel.cont -> list RTL.stackframe -> Prop :=
   | match_stacks_stop: forall ty,
       match_stacks ty Kstop nil
   | match_stacks_call: forall ty optid f sp e k r tf n rs cs map nexits ngoto nret rret,
@@ -1516,6 +1524,19 @@ Proof.
   exploit transl_exprlist_correct; eauto.
   intros [rs'' [tm'' [E [F [G [J Y]]]]]].
   exploit functions_translated; eauto. intros [tf' [P Q]].
+  assert (EXT_SET: exists tm_set, (if cp_eq_dec (comp_of tf) (comp_of tf') then tm_set = tm''
+    else if cp_eq_dec (comp_of tf') bottom then tm_set = tm''
+    else match sp with Vptr bsp _ => Mem.set_perm tm'' bsp Readable = Some tm_set | _ => tm_set = tm'' end)
+    /\ Mem.extends m' tm_set).
+  { rewrite <- COMP, <- (comp_transl_partial _ Q).
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [destruct sp; reflexivity | eauto].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + destruct sp; try (subst m'; eexists; split; [reflexivity | eauto]).
+        exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm_s & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET as (tm_set & SET_T & EXT').
   econstructor; split.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
   eapply exec_Icall; eauto. unfold find_function. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
@@ -1537,20 +1558,33 @@ Proof.
   econstructor; eauto.
   (* direct *)
   exploit transl_exprlist_correct; eauto.
-  intros [rs'' [tm'' [E [F [G [J Y]]]]]].
-  exploit functions_translated; eauto. intros [tf' [P Q]].
+  intros [rs2 [tm2 [E2 [F2 [G2 [J2 Y2]]]]]].
+  exploit functions_translated; eauto. intros [tf2 [P2 Q2]].
+  assert (EXT_SET2: exists tm_set, (if cp_eq_dec (comp_of tf) (comp_of tf2) then tm_set = tm2
+    else if cp_eq_dec (comp_of tf2) bottom then tm_set = tm2
+    else match sp with Vptr bsp _ => Mem.set_perm tm2 bsp Readable = Some tm_set | _ => tm_set = tm2 end)
+    /\ Mem.extends m' tm_set).
+  { rewrite <- COMP, <- (comp_transl_partial _ Q2).
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [destruct sp; reflexivity | eauto].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + destruct sp; try (subst m'; eexists; split; [reflexivity | eauto]).
+        exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm_s & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET2 as (tm_set2 & SET_T2 & EXT2').
   econstructor; split.
-  left; eapply plus_right. eexact E.
+  left; eapply plus_right. eexact E2.
   eapply exec_Icall; eauto. unfold find_function. simpl. rewrite symbols_preserved. rewrite H4.
-  rewrite Genv.find_funct_find_funct_ptr in P. eauto.
+  rewrite Genv.find_funct_find_funct_ptr in P2. eauto.
   apply sig_transl_function; auto.
   simpl. rewrite symbols_preserved. rewrite H4. eauto.
   eapply allowed_call_translated_same. now rewrite <- COMP.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
-  rewrite COMP, (comp_transl_partial _ Q); eauto.
-  { rewrite <- COMP, <- (comp_transl_partial _ Q).
+  rewrite COMP, (comp_transl_partial _ Q2); eauto.
+  { rewrite <- COMP, <- (comp_transl_partial _ Q2).
     eapply call_trace_translated with (vf := (Vptr b Ptrofs.zero)); eauto. }
   traceEq.
   rewrite COMP.
@@ -1730,7 +1764,7 @@ Proof.
     eapply add_vars_wf; eauto. eapply add_vars_wf; eauto. apply init_mapping_wf.
   edestruct Mem.alloc_extends as [tm' []]; eauto; try apply Z.le_refl.
   econstructor; split.
-  left; apply plus_one. eapply exec_function_internal; simpl; eauto.
+  left; apply plus_one. eapply exec_function_internal; simpl; eauto using Val.has_argtype_list_lessdef.
   simpl. econstructor; eauto.
   econstructor; eauto.
   inversion MS; subst; econstructor; eauto.
@@ -1746,15 +1780,29 @@ Proof.
 
   (* return *)
   inv MS.
-  econstructor; split.
   assert (COMP: comp_of tf = comp_of f).
   { inv H7. congruence. }
+  assert (EXT_SET_RET: exists tm_set, (if cp_eq_dec (comp_of tf) cp then tm_set = tm
+    else if cp_eq_dec cp bottom then tm_set = tm
+    else match sp with Vptr bsp _ => Mem.set_perm tm bsp Freeable = Some tm_set | _ => False end)
+    /\ Mem.extends m' tm_set).
+  { rewrite COMP.
+    destruct (cp_eq_dec (comp_of f) cp).
+    - subst m'. eexists; split; [reflexivity | eauto].
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + destruct sp; try contradiction.
+        exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm_s & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET_RET as (tm_set_ret & SET_T_RET & EXT_RET).
+  econstructor; split.
   left; apply plus_one; constructor.
   inv H8.
   rewrite COMP.
   intros G. specialize (NO_CROSS_PTR G). inv LD; auto; contradiction.
   inv H8. rewrite COMP.
   eapply return_trace_lessdef; eauto using senv_preserved.
+  exact SET_T_RET.
   econstructor; eauto. constructor.
   eapply match_env_update_dest; eauto.
 Qed.

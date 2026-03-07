@@ -187,7 +187,6 @@ Definition parent_signature (stack: list stackframe) : signature :=
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Lgetstack:
       forall s f sp sl ofs ty dst b rs m rs',
-      (sl = Incoming -> is_valid_param_loc (parent_signature s) (Ptrofs.unsigned (Ptrofs.repr (offset_arg ofs))) ty) ->
       rs' = Locmap.set (R dst) (rs (S sl ofs ty)) (undef_regs (destroyed_by_getstack sl) rs) ->
       step (State s f sp (Lgetstack sl ofs ty dst :: b) rs m)
         E0 (State s f sp b rs' m)
@@ -217,7 +216,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
-      forall s f sp sig ros b rs m f' vf callrs args t,
+      forall s f sp sig ros b rs m m' f' vf callrs args t,
       find_function ros rs = Some f' ->
       find_function_ptr ros rs = Some vf ->
       sig = funsig f' ->
@@ -229,9 +228,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) (comp_of f') = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (comp_of f') vf args (sig_args sig) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of f') vf args (proj_sig_args sig) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of f') then m' = m
+        else if cp_eq_dec (comp_of f') bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Readable = Some m'
+             | _ => m' = m end),
       step (State s f sp (Lcall sig ros :: b) rs m)
-        t (Callstate (Stackframe f sig sp rs b:: s) f' sig rs m (comp_of f))
+        t (Callstate (Stackframe f sig sp rs b:: s) f' sig rs m' (comp_of f))
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m',
       rs' = return_regs (parent_locset s) rs ->
@@ -307,13 +311,18 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s (External ef) sig rs1 m cp)
          t (Returnstate s rs2 m' bottom)
   | exec_return:
-      forall s f sp rs0 c rs m sg cp t,
+      forall s f sp rs0 c rs m m' sg cp t,
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sg)) rs)),
       forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sg)) rs) (sig_res sg) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) cp then m' = m
+        else if cp_eq_dec cp bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Freeable = Some m'
+             | _ => False end),
       step (Returnstate (Stackframe f sg sp rs0 c :: s) rs m cp)
-        t (State s f sp c rs m).
+        t (State s f sp c rs m').
 
 End RELSEM.
 

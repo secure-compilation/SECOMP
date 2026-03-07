@@ -282,6 +282,7 @@ Proof.
     eauto.
     rewrite comp_transf_function, comp_preserved.
     eapply call_trace_translated; eauto.
+    rewrite comp_transf_function, comp_preserved. exact SET_PERM.
 
   constructor. constructor; auto.
   constructor. eapply reach_succ; eauto. simpl; auto.

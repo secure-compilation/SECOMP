@@ -461,6 +461,7 @@ let alignof_ikind = function
   | ILongLong | IULongLong -> !config.alignof_longlong
 
 let alignof_fkind = function
+  | FFloat16 -> 2
   | FFloat -> !config.alignof_float
   | FDouble -> !config.alignof_double
   | FLongDouble -> !config.alignof_longdouble
@@ -515,6 +516,7 @@ let sizeof_ikind = function
   | ILongLong | IULongLong -> !config.sizeof_longlong
 
 let sizeof_fkind = function
+  | FFloat16 -> 2
   | FFloat -> !config.sizeof_float
   | FDouble -> !config.sizeof_double
   | FLongDouble -> !config.sizeof_longdouble
@@ -865,6 +867,7 @@ let integer_rank = function
 (* Ranking of float kinds *)
 
 let float_rank = function
+  | FFloat16 -> 0
   | FFloat -> 1
   | FDouble -> 2
   | FLongDouble -> 3
@@ -922,7 +925,9 @@ let binary_conversion env t1 t2 =
   | TFloat(FDouble, _), (TInt _ | TFloat _)     -> t1
   | (TInt _ | TFloat _), TFloat(FDouble, _)     -> t2
   | TFloat(FFloat, _), (TInt _ | TFloat _)      -> t1
-  | (TInt _), TFloat(FFloat, _)      -> t2
+  | (TInt _ | TFloat _), TFloat(FFloat, _)      -> t2
+  | TFloat(FFloat16, _), (TInt _ | TFloat _)    -> t1
+  | (TInt _), TFloat(FFloat16, _)               -> t2
   | TInt(k1, _), TInt(k2, _)  ->
       if k1 = k2 then t1 else begin
         match is_signed_ikind k1, is_signed_ikind k2 with
@@ -1008,10 +1013,7 @@ let find_matching_signed_ikind sz =
   else if sz = !config.sizeof_longlong then ILongLong
   else assert false
 
-let wchar_ikind () =
-  if !config.wchar_signed
-  then find_matching_signed_ikind !config.sizeof_wchar
-  else find_matching_unsigned_ikind !config.sizeof_wchar
+let wchar_ikind () = !config.wchar_ikind
 let size_t_ikind () = find_matching_unsigned_ikind !config.sizeof_size_t
 let ptr_t_ikind () = find_matching_unsigned_ikind !config.sizeof_ptr
 let ptrdiff_t_ikind () = find_matching_signed_ikind !config.sizeof_ptrdiff_t

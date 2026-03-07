@@ -23,6 +23,8 @@ Section AUX.
     all: try (rewrite Int.sign_ext_idem; auto; lia).
     all: try (rewrite Int.zero_ext_idem; auto; lia).
     all: des_ifs.
+    all: unfold Val.norm_bool, Val.is_bool in *; des_ifs.
+    all: rewrite Int.zero_ext_idem in * by lia; congruence.
   Qed.
 
   Lemma extcall_cases
@@ -148,9 +150,9 @@ Section EVENT.
       (tr = Event_call cp cp' i vl :: nil) ->
       call_trace_cross ge cp cp' b vargs ty tr i vl.
 
-  Inductive return_trace_cross {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> eventval -> Prop :=
-  | return_trace_cross_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype) tr,
-      Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_rettype ty) v ->
+  Inductive return_trace_cross {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> xtype -> trace -> eventval -> Prop :=
+  | return_trace_cross_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : xtype) tr,
+      Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_xtype ty) v ->
       (tr = Event_return cp cp' res :: nil) ->
       return_trace_cross ge cp cp' v ty tr res.
 
@@ -231,7 +233,7 @@ Section IR.
         (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
         (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
         (SIG: sg = Asm.fn_sig f_next)
-        (TR: call_trace_cross ge cp cp' b vargs (sig_args sg) tr id evargs)
+        (TR: call_trace_cross ge cp cp' b vargs (proj_sig_args sg) tr id evargs)
         d m2
         (DELTA: mem_delta_apply_wf ge cp d (Some m1) = Some m2)
         (PUB: public_first_order ge m2)
@@ -311,7 +313,7 @@ Section IR.
 (*         (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)) *)
 (*         (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs) *)
 (*         (SIG: sg = ef_sig ef) *)
-(*         (TR: call_trace_cross ge cp cp' b vargs (sig_args sg) tr id evargs) *)
+(*         (TR: call_trace_cross ge cp cp' b vargs (proj_sig_args sg) tr id evargs) *)
 (*         id_cur *)
 (*         (IDCUR: Genv.invert_symbol ge cur = Some id_cur) *)
 (*       : *)
@@ -2325,7 +2327,7 @@ Section PROOF.
         (*       - setoid_rewrite MTST1. rewrite H0. ss. unfold Genv.find_comp. setoid_rewrite H1. clear - NEQCP. *)
         (*         unfold Genv.type_of_call. rewrite <- Pos.eqb_neq in NEQCP. setoid_rewrite NEQCP. auto. *)
         (*       - instantiate (1:=res0). rewrite RES in H2, NO_CROSS_PTR0. exploit NO_CROSS_PTR0; auto. intros NPTR. *)
-        (*         clear - H2 NPTR VAL. destruct VAL as [VAL | VAL]; subst; auto. remember (proj_rettype (sig_res (ef_sig ef))) as ty. clear dependent ef. *)
+        (*         clear - H2 NPTR VAL. destruct VAL as [VAL | VAL]; subst; auto. remember (proj_xtype (sig_res (ef_sig ef))) as ty. clear dependent ef. *)
         (*         inv VAL; ss; eauto. *)
         (*       - f_equal. f_equal. rewrite Heq0, RSX. rewrite MTST1, H0. ss. rewrite NEXTPC. ss. *)
         (*     } *)

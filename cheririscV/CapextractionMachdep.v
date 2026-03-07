@@ -21,4 +21,4 @@ Require Archi Asm.
 (* Archi *)
 
 Extract Constant Archi.ptr64 => " Configuration.model = ""64"" ".
-Extract Constant Archi.pic_code => "fun () -> false".  (* for the time being *)
+Extract Constant CapArchi.pic_code => "fun () -> false".  (* for the time being *)

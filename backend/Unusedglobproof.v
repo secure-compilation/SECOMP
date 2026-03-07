@@ -12,7 +12,8 @@
 
 (** Elimination of unreferenced static definitions *)
 
-Require Import FSets Coqlib Maps Ordered Iteration Errors.
+From Coq Require Import FSets.
+Require Import Coqlib Maps Ordered Iteration Errors.
 Require Import AST Linking.
 Require Import Integers Values Memory Globalenvs Events Smallstep.
 Require Import Op Registers RTL.
@@ -730,6 +731,7 @@ Inductive match_stacks (j: meminj):
          (STACKS: match_stacks j s ts sp tsp)
          (KEPT: forall id, ref_function f id -> kept id)
          (SPINJ: j sp = Some(tsp, 0))
+         (SP_NO_OVERLAP: forall b1 b1' delta', sp <> b1 -> j b1 = Some(b1', delta') -> tsp <> b1')
          (REGINJ: regset_inject j rs trs)
          (BELOW: Plt sp bound)
          (TBELOW: Plt tsp tbound),
@@ -786,10 +788,16 @@ Proof.
   + eapply defs_rev_inject; eauto. apply SAME'; auto.
     eapply Genv.genv_defs_range; eauto.
 - econstructor; eauto.
-  apply IHmatch_stacks.
-  intros. exploit H1; eauto. intros [A B]. split; eapply Ple_trans; eauto.
-  apply Plt_Ple; auto. apply Plt_Ple; auto.
-  apply regset_inject_incr with j; auto.
+  + apply IHmatch_stacks.
+    intros. exploit H1; eauto. intros [A B]. split; eapply Ple_trans; eauto.
+    apply Plt_Ple; auto. apply Plt_Ple; auto.
+  + intros b1 b1' delta' NEQ Hj'.
+    destruct (j b1) as [[b1'' delta''] | ] eqn:Jb1.
+    * assert (j' b1 = Some(b1'', delta'')) by (eapply H; eauto).
+      rewrite Hj' in H2. inv H2. eapply SP_NO_OVERLAP; eauto.
+    * exploit H1; eauto. intros [_ B].
+      intro; subst b1'. eapply Plt_strict. eapply Plt_Ple_trans; eauto.
+  + apply regset_inject_incr with j; auto.
 Qed.
 
 Lemma match_stacks_bound:
@@ -808,6 +816,7 @@ Inductive match_states: state -> state -> Prop :=
          (STACKS: match_stacks j s ts sp tsp)
          (KEPT: forall id, ref_function f id -> kept id)
          (SPINJ: j sp = Some(tsp, 0))
+         (SP_NO_OVERLAP: forall b1 b1' delta', sp <> b1 -> j b1 = Some(b1', delta') -> tsp <> b1')
          (REGINJ: regset_inject j rs trs)
          (MEMINJ: Mem.inject j m tm),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
@@ -1165,6 +1174,20 @@ Proof.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
 
   intros (tvf & C & D & F & G).
+  assert (INJ_SET: exists tm', (if cp_eq_dec (comp_of f) (comp_of fd) then tm' = tm
+    else if cp_eq_dec (comp_of fd) bottom then tm' = tm
+    else Mem.set_perm tm tsp Readable = Some tm')
+    /\ Mem.inject j m' tm').
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [reflexivity | eauto].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + simpl in SET_PERM.
+        exploit Mem.set_parallel_inject. eauto. eauto.
+        { exact SP_NO_OVERLAP. }
+        eauto.
+        intros (tm' & SP & INJ). eexists; split; eauto. }
+  destruct INJ_SET as (tm' & SET_T & INJ').
   econstructor; split. eapply exec_Icall; eauto.
   intros CROSS.
   (* TODO: write a lemma *)
@@ -1186,8 +1209,8 @@ Proof.
   eapply match_stacks_preserves_globals; eauto.
   econstructor; eauto.
   econstructor; eauto.
-  change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.
-  change (Mem.valid_block tm tsp). eapply Mem.valid_block_inject_2; eauto.
+  change (Mem.valid_block m' sp0). eapply Mem.valid_block_inject_1; eauto.
+  change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.
 
 - (* tailcall *)
@@ -1223,6 +1246,13 @@ Proof.
   assert (Mem.valid_block m sp0) by (eapply Mem.valid_block_inject_1; eauto).
   assert (Mem.valid_block tm tsp) by (eapply Mem.valid_block_inject_2; eauto).
   unfold Mem.valid_block in *; extlia.
+  { intros b1 b1' delta' NEQ Hj'.
+    destruct (j b1) as [[b1'' delta''] | ] eqn:Jb1.
+    - assert (j' b1 = Some(b1'', delta'')) by (eapply F; eauto).
+      rewrite Hj' in H2; inv H2. eapply SP_NO_OVERLAP; eauto.
+    - exploit G; eauto. intros [_ TINV].
+      intro EQ; subst b1'. apply TINV.
+      eapply Mem.valid_block_inject_2. eexact SPINJ. exact MEMINJ. }
   apply set_res_inject; auto. apply regset_inject_incr with j; auto.
 
 - (* cond *)
@@ -1259,11 +1289,17 @@ Proof.
   { rewrite STK, TSTK.
     apply match_stacks_incr with j; auto.
     intros. destruct (eq_block b1 stk).
-    subst b1. rewrite F in H1; inv H1. split; apply Ple_refl.
-    rewrite G in H1 by auto. congruence. }
+    subst b1. rewrite F in H2; inv H2. split; apply Ple_refl.
+    rewrite G in H2 by auto. congruence. }
   econstructor; split.
-  eapply exec_function_internal; eauto.
+  eapply exec_function_internal; eauto using Val.has_argtype_list_inject.
   eapply match_states_regular with (j := j'); eauto.
+  { intros b1 b1' delta' NEQ Hj'.
+    assert (Hj: j b1 = Some(b1', delta')) by (rewrite G in Hj'; auto).
+    intro EQ; subst b1'.
+    assert (HV: Mem.valid_block tm tstk).
+    { eapply Mem.valid_block_inject_2. eexact Hj. exact MEMINJ. }
+    rewrite TSTK in HV. unfold Mem.valid_block in HV. extlia. }
   apply init_regs_inject; auto. apply val_inject_list_incr with j; auto.
 
 - (* external function *)
@@ -1282,10 +1318,26 @@ Proof.
   eapply external_call_nextblock; eauto.
 
 - (* return *)
-  inv STACKS. econstructor; split.
+  inv STACKS.
+  assert (INJ_SET: exists tm', (if cp_eq_dec (comp_of f) cp then tm' = tm
+    else if cp_eq_dec cp bottom then tm' = tm
+    else Mem.set_perm tm tsp Freeable = Some tm')
+    /\ Mem.inject j m' tm').
+  { destruct (cp_eq_dec (comp_of f) cp).
+    - subst m'. eexists; split; [reflexivity | eauto].
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + simpl in SET_PERM.
+        exploit Mem.set_parallel_inject. eauto. eauto.
+        { exact SP_NO_OVERLAP. }
+        eauto.
+        intros (tm' & SP & INJ). eexists; split; eauto. }
+  destruct INJ_SET as (tm' & SET_T & INJ').
+  econstructor; split.
   eapply exec_return.
   intros G; specialize (NO_CROSS_PTR G); inv RESINJ; auto; contradiction.
   eapply return_trace_inj; eauto.
+  exact SET_T.
   econstructor; eauto. apply set_reg_inject; auto.
 Qed.
 

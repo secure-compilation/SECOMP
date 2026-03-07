@@ -29,6 +29,7 @@ has_standard_headers=true
 clightgen=false
 install_coqdev=false
 ignore_coq_version=false
+ignore_ocaml_version=false
 library_Flocq=local
 library_MenhirLib=local
 
@@ -43,16 +44,13 @@ Supported targets:
   ppc-eabi-diab        (PowerPC, EABI with Diab tools)
   ppc-linux            (PowerPC, Linux)
   arm-eabi             (ARM, EABI, little endian)
-  arm-linux            (ARM, EABI, little endian)
   arm-eabihf           (ARM, EABI using hardware FP registers, little endian)
-  arm-hardfloat        (ARM, EABI using hardware FP registers, little endian)
+  arm-linux            (ARM, EABI using hardware FP registers, little endian)
   armeb-eabi           (ARM, EABI, big endian)
-  armeb-linux          (ARM, EABI, big endian)
   armeb-eabihf         (ARM, EABI using hardware FP registers, big endian)
-  armeb-hardfloat      (ARM, EABI using hardware FP registers, big endian)
+  armeb-linux          (ARM, EABI using hardware FP registers, big endian)
   x86_32-linux         (x86 32 bits, Linux)
   x86_32-bsd           (x86 32 bits, BSD)
-  x86_32-cygwin        (x86 32 bits, Cygwin environment under Windows)
   x86_64-linux         (x86 64 bits, Linux)
   x86_64-bsd           (x86 64 bits, BSD)
   x86_64-macos         (x86 64 bits, MacOS X)
@@ -100,6 +98,7 @@ Options:
   -clightgen           Also compile and install the clightgen tool
   -install-coqdev      Also install the Coq development (implied by -clightgen)
   -ignore-coq-version  Accept to use experimental or unsupported versions of Coq
+  -ignore-ocaml-version Accept to use experimental or unsupported versions of OCaml
 '
 
 #
@@ -137,6 +136,8 @@ while : ; do
         install_coqdev=true;;
     -ignore-coq-version|--ignore-coq-version)
         ignore_coq_version=true;;
+    -ignore-ocaml-version|--ignore-ocaml-version)
+        ignore_ocaml_version=true;;
     -install-coqdev|--install-coqdev|-install-coq-dev|--install-coq-dev)
         install_coqdev=true;;
     -use-external-Flocq|--use-external-Flocq)
@@ -228,11 +229,13 @@ casmruntime=""
 clinker="${toolprefix}gcc"
 clinker_options=""
 clinker_needs_no_pie=true
+clinker_needs_nobtcfi=false
 cprepro="${toolprefix}gcc"
 cprepro_options="-E"
 archiver="${toolprefix}ar rcs"
 libmath="-lm"
 responsefile="gnu"
+pic_supported=false
 
 #
 # ARM Target Configuration
@@ -240,10 +243,10 @@ responsefile="gnu"
 if test "$arch" = "arm"; then
 
   case "$target" in
-    eabi|linux)
+    eabi)
         abi="eabi"
         ;;
-    eabihf|hf|hardfloat)
+    eabihf|linux|hf|hardfloat)
         abi="hardfloat"
         ;;
     *)
@@ -312,19 +315,15 @@ if test "$arch" = "x86" -a "$bitsize" = "32"; then
   case "$target" in
     bsd)
         abi="standard"
+        cc="${toolprefix}cc"
         cc_options="-m32"
+        casm="${toolprefix}cc"
         casm_options="-m32 -c"
+        clinker="${toolprefix}cc"
         clinker_options="-m32"
+        cprepro="${toolprefix}cc"
         cprepro_options="-m32 -U__GNUC__ -E"
         system="bsd"
-        ;;
-    cygwin)
-        abi="standard"
-        cc_options="-m32"
-        casm_options="-m32 -c"
-        clinker_options="-m32"
-        cprepro_options="-m32 -U__GNUC__ '-D__attribute__(x)=' -E"
-        system="cygwin"
         ;;
     linux)
         abi="standard"
@@ -349,19 +348,28 @@ if test "$arch" = "x86" -a "$bitsize" = "64"; then
   case "$target" in
     bsd)
         abi="standard"
+        cc="${toolprefix}cc"
         cc_options="-m64"
+        casm="${toolprefix}cc"
         casm_options="-m64 -c"
+        clinker="${toolprefix}cc"
         clinker_options="-m64"
+        clinker_needs_no_pie=false
+        cprepro="${toolprefix}cc"
         cprepro_options="-m64 -U__GNUC__ -U__SIZEOF_INT128__ -E"
         system="bsd"
+        pic_supported=true
+        clinker_needs_nobtcfi=true
         ;;
     linux)
         abi="standard"
         cc_options="-m64"
         casm_options="-m64 -c"
         clinker_options="-m64"
+        clinker_needs_no_pie=false
         cprepro_options="-m64 -U__GNUC__ -U__SIZEOF_INT128__ -E"
         system="linux"
+        pic_supported=true
         ;;
     macos|macosx)
         abi="macos"
@@ -372,6 +380,7 @@ if test "$arch" = "x86" -a "$bitsize" = "64"; then
         cprepro_options="-arch x86_64 -U__GNUC__ -U__SIZEOF_INT128__ -U__clang__ -U__BLOCKS__ '-D__attribute__(x)=' '-D__asm(x)=' '-D_Nullable=' '-D_Nonnull=' '-D__DARWIN_OS_INLINE=static inline' -Wno-\\#warnings -E"
         libmath=""
         system="macos"
+        pic_supported=true
         ;;
     cygwin)
         abi="standard"
@@ -394,16 +403,18 @@ fi
 #
 if test "$arch" = "riscV"; then
   if test "$model" = "64"; then
-    model_options="-march=rv64imafd -mabi=lp64d"
+    model_options="-mabi=lp64d"
   else
-    model_options="-march=rv32imafd -mabi=ilp32d"
+    model_options="-mabi=ilp32d"
   fi
   abi="standard"
   cc_options="$model_options"
   casm_options="$model_options -c"
   clinker_options="$model_options"
+  clinker_needs_no_pie=false
   cprepro_options="$model_options -U__GNUC__ -E"
   system="linux"
+  pic_supported=true
 fi
 
 #
@@ -414,7 +425,9 @@ if test "$arch" = "aarch64"; then
     linux)
         abi="standard"
         cprepro_options="-U__GNUC__ -E"
-        system="linux";;
+        system="linux"
+        pic_supported=true
+        ;;
     macos|macosx)
         abi="apple"
         casm="${toolprefix}cc"
@@ -423,9 +436,10 @@ if test "$arch" = "aarch64"; then
         clinker="${toolprefix}cc"
         clinker_needs_no_pie=false
         cprepro="${toolprefix}cc"
-        cprepro_options="-arch arm64 -U__GNUC__ -U__clang__ -U__BLOCKS__ '-D__attribute__(x)=' '-D__asm(x)=' '-D_Nullable=' '-D_Nonnull=' '-D__DARWIN_OS_INLINE=static inline' -Wno-\\#warnings -E"
+        cprepro_options="-arch arm64 -U__GNUC__ -U__clang__ -U__BLOCKS__ '-D__attribute__(x)=' '-D__asm(x)=' '-D_Nullable=' '-D_Nonnull=' '-D__DARWIN_OS_INLINE=static inline' -Wno-\\#warnings -Wno-builtin-macro-redefined -E"
         libmath=""
         system="macos"
+        pic_supported=true
         ;;
     *)
         echo "Error: invalid eabi/system '$target' for architecture AArch64." 1>&2
@@ -455,7 +469,7 @@ int main (void)
 EOF
     errout=$("$@" -o "$tmpout" "$tmpsrc" 2>&1 >/dev/null)
     retcode=$?
-    errcount=$(echo "${errout}" | grep -ciE "(unknown|unsupported|unrecognized).*(option|argument)")
+    errcount=$(echo "${errout}" | grep -ciE "(unknown|unsupported|unrecognized|ignored)")
     rm -f "$tmpsrc" "$tmpout"
     # Test failed or error is logged to stderr
     if [ "${retcode}" != "0" ] || [ "${errcount}" != "0" ]; then return 1; fi
@@ -500,6 +514,18 @@ if ($clinker_needs_no_pie) then
   fi
 fi
 
+#
+# Test Availability of Option '-z nobtcfi' or '-Wl,-z,nobtcfi'
+#
+if ($clinker_needs_nobtcfi) then
+  echo "Testing linker support for 'nobtcfi' option... " | tr -d '\n'
+  if testcompiler ${cc} -z nobtcfi;
+  then echo "yes, '-z nobtcfi'"; clinker_options="${clinker_options} -z nobtcfi"
+  elif testcompiler ${cc} -Wl,-z,nobtcfi;
+  then echo "yes, '-Wl,-z,nobtcfi'"; clinker_options="${clinker_options} -Wl,-z,nobtcfi"
+  else echo "no"
+  fi
+fi
 
 #
 # Test Availability of Required Tools
@@ -507,40 +533,44 @@ fi
 missingtools=false
 
 echo "Testing Coq... " | tr -d '\n'
-coq_ver=$(${COQBIN}coqc -v 2>/dev/null | tr -d '\r' | sed -n -e 's/The Coq Proof Assistant, version \([^ ]*\).*$/\1/p')
+coq_ver=$(${COQBIN}coqc --print-version 2>/dev/null | tr -d '\r' | cut -d' ' -f1)
 case "$coq_ver" in
-  8.12.0|8.12.1|8.12.2|8.13.0|8.13.1|8.13.2|8.14.0|8.14.1|8.15.0|8.15.1|8.15.2)
+  8.15.0|8.15.1|8.15.2|8.16.0|8.16.1|8.17.0|8.17.1|8.18.0|8.19.0|8.19.1|8.19.2|8.20.0|8.20.1|9.0.0|9.1.0)
         echo "version $coq_ver -- good!";;
   ?*)
         echo "version $coq_ver -- UNSUPPORTED"
         if $ignore_coq_version; then
             echo "Warning: this version of Coq is unsupported, proceed at your own risks."
         else
-            echo "Error: CompCert requires a version of Coq between 8.12.0 and 8.15.2"
+            echo "Error: CompCert requires a version of Coq between 8.15 and 9.1"
             missingtools=true
         fi;;
   "")
         echo "NOT FOUND"
-        echo "Error: make sure Coq version 8.13.2 is installed."
+        rocq_ver=$(${COQBIN}rocq --print-version 2>/dev/null | tr -d '\r' | cut -d' ' -f1)
+        case "$rocq_ver" in
+            "") echo "Error: make sure Coq is installed.";;
+             *) echo "Rocq prover version $rocq_ver found."
+                echo "Please install the Coq wrapper for this version of Rocq.";;
+        esac
         missingtools=true;;
 esac
 
 echo "Testing OCaml... " | tr -d '\n'
 ocaml_ver=`ocamlc -version 2>/dev/null | tr -d '\r'`
 case "$ocaml_ver" in
-  4.00.*|4.01.*| 4.02.*|4.03.*|4.04.*)
-        echo "version $ocaml_ver -- UNSUPPORTED"
-        echo "Error: CompCert requires OCaml version 4.05 or later."
-        missingtools=true;;
-  4.*)
+  4.0[5-9].*|4.1?.*)
         echo "version $ocaml_ver -- good!";;
   ?.*)
         echo "version $ocaml_ver -- UNSUPPORTED"
-        echo "Error: CompCert requires OCaml version 4.05 or later."
-        missingtools=true;;
+        if $ignore_ocaml_version; then
+            echo "Warning: this version of OCaml is unsupported, proceed at your own risks."
+        else
+            echo "Error: make sure OCaml version 4.05 to 4.14 is installed."
+            missingtools=true
+        fi;;
   *)
         echo "NOT FOUND"
-        echo "Error: make sure OCaml version 4.05 or later is installed."
         missingtools=true;;
 esac
 
@@ -564,7 +594,7 @@ else
   ocaml_opt_comp=false
 fi
 
-MENHIR_REQUIRED=20190626
+MENHIR_REQUIRED=20200624
 echo "Testing Menhir... " | tr -d '\n'
 menhir_ver=`menhir --version 2>/dev/null | sed -n -e 's/^.*version \([0-9]*\).*$/\1/p'`
 case "$menhir_ver" in
@@ -642,6 +672,16 @@ else
 fi
 
 #
+# See if $libdir can be accessed with a relative path from $sharedir
+#
+parentdir=$(dirname "$sharedir")
+if test "$libdir" = "$parentdir/lib/compcert"; then
+  rellibdir="../lib/compcert"
+else
+  rellibdir="$libdir"
+fi
+
+#
 # Generate Makefile.config
 #
 
@@ -650,6 +690,7 @@ cat > Makefile.config <<EOF
 PREFIX=$prefix
 BINDIR=$bindir
 LIBDIR=$libdir
+RELLIBDIR=$rellibdir
 MANDIR=$mandir
 SHAREDIR=$sharedir
 COQDEVDIR=$coqdevdir
@@ -681,6 +722,7 @@ HAS_STANDARD_HEADERS=$has_standard_headers
 INSTALL_COQDEV=$install_coqdev
 LIBMATH=$libmath
 MODEL=$model
+PIC_SUPPORTED=$pic_supported
 SYSTEM=$system
 RESPONSEFILE=$responsefile
 LIBRARY_FLOCQ=$library_Flocq
@@ -743,6 +785,10 @@ ENDIANNESS=
 # SYSTEM=macos
 # SYSTEM=cygwin
 SYSTEM=
+
+# Are we able to produce position-independent code (with the `-fpic` option)?
+#PIC_SUPPORTED=true
+PIC_SUPPORTED=false
 
 # C compiler (for testing only)
 CC=cc
@@ -844,6 +890,7 @@ CompCert configuration:
     Hardware model................ $model
     Application binary interface.. $abi
     Endianness.................... $endianness
+    PIC generation supported...... $pic_supported
     OS and development env........ $system
     C compiler.................... $cc $cc_options
     C preprocessor................ $cprepro $cprepro_options
@@ -857,10 +904,19 @@ CompCert configuration:
     Menhir API library............ $menhir_dir
     The Flocq library............. $library_Flocq
     The MenhirLib library......... $library_MenhirLib
-    Binaries installed in......... $(expandprefix $bindir)
-    Shared config installed in.... $(expandprefix $sharedir)
+    Binaries installed in......... $(expandprefix "$bindir")
+    Shared config installed in.... $(expandprefix "$sharedir")
     Runtime library provided...... $has_runtime_lib
-    Library files installed in.... $(expandprefix $libdir)
+    Library files installed in.... $(expandprefix "$libdir")
+EOF
+
+if test "$rellibdir" = "$libdir"; then :; else
+cat <<EOF
+                                   ($rellibdir relative to compcert.ini)
+EOF
+fi
+
+cat <<EOF
     Man pages installed in........ $(expandprefix $mandir)
     Standard headers provided..... $has_standard_headers
     Standard headers installed in. $(expandprefix $libdir)/include

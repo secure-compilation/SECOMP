@@ -13,7 +13,7 @@
 (** Recognition of combined operations, addressing modes and conditions
   during the [CSE] phase. *)
 
-Require Import FunInd.
+From Coq Require Import FunInd.
 Require Import Coqlib.
 Require Import Integers Values Memory.
 Require Import Op RTL CSEdomain.
@@ -53,6 +53,9 @@ Proof.
   (* of and *)
   UseGetSound. rewrite <- H.
   destruct v; simpl; auto.
+  (* of xorimm *)
+  UseGetSound. rewrite <- H.
+  destruct v; simpl; auto. rewrite Int.xor_is_zero; auto.
 Qed.
 
 Lemma combine_compimm_eq_0_sound:
@@ -68,6 +71,9 @@ Proof.
   destruct (eval_condition c (map valu args) m); simpl; auto. destruct b; auto.
   (* of and *)
   UseGetSound. rewrite <- H. destruct v; auto.
+  (* of xorimm *)
+  UseGetSound. rewrite <- H.
+  destruct v; simpl; auto. rewrite Int.xor_is_zero; auto.
 Qed.
 
 Lemma combine_compimm_eq_1_sound:
@@ -119,6 +125,20 @@ Proof.
   simpl; eapply combine_compimm_eq_1_sound; eauto.
 Qed.
 
+Theorem combine_cond'_sound:
+  forall cond args res res',
+  combine_cond' cond args = Some res' ->
+  eval_condition cond (map valu args) m = Some res ->
+  res = res'.
+Proof.
+  intros.  unfold combine_cond' in *.
+  destruct cond; inv H; destruct args; inv H2; destruct args; inv H1; destruct args; inv H2.
+  apply (combine_comparison_cmp_sound valu c v v0 res res'); auto.
+  apply (combine_comparison_cmpu_sound valu m c v v0 res res'); auto.
+  apply (combine_comparison_cmpl_sound valu c v v0 res res'); auto.
+  apply (combine_comparison_cmplu_sound valu m c v v0 res res'); auto.
+Qed.
+
 Theorem combine_addr_32_sound:
   forall addr args addr' args',
   combine_addr_32 get addr args = Some(addr', args') ->
@@ -152,29 +172,49 @@ Proof.
 Qed.
 
 Theorem combine_op_sound:
-  forall op args op' args',
+  forall op args op' args' r,
   combine_op get op args = Some(op', args') ->
-  eval_operation ge sp op' (map valu args') m = eval_operation ge sp op (map valu args) m.
+  eval_operation ge sp op (map valu args) m = Some r ->
+  exists r', eval_operation ge sp op' (map valu args') m = Some r' /\ Val.lessdef r r'.
 Proof.
   intros. functional inversion H; subst.
 (* lea-lea *)
-  simpl. eapply combine_addr_32_sound; eauto.
+ - exists r; split; auto. rewrite <- H0. eapply combine_addr_32_sound; eauto.
 (* leal-leal *)
-  simpl. eapply combine_addr_64_sound; eauto.
+ - exists r; split; auto.  rewrite <- H0. eapply combine_addr_64_sound; eauto.
 (* andimm - andimm *)
-  UseGetSound; simpl. rewrite <- H0. rewrite Val.and_assoc. auto.
+ - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.and_assoc. auto.
 (* orimm - orimm *)
-  UseGetSound; simpl. rewrite <- H0. rewrite Val.or_assoc. auto.
+ - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.or_assoc. auto.
 (* xorimm - xorimm *)
-  UseGetSound; simpl. rewrite <- H0. rewrite Val.xor_assoc. auto.
+ - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.xor_assoc. auto.
 (* andimm - andimm *)
-  UseGetSound; simpl. rewrite <- H0. rewrite Val.andl_assoc. auto.
+ - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.andl_assoc. auto.
 (* orimm - orimm *)
-  UseGetSound; simpl. rewrite <- H0. rewrite Val.orl_assoc. auto.
+ - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.orl_assoc. auto.
 (* xorimm - xorimm *)
-  UseGetSound; simpl. rewrite <- H0. rewrite Val.xorl_assoc. auto.
-(* cmp *)
-  simpl. decEq; decEq. eapply combine_cond_sound; eauto.
+ - UseGetSound. exists r; split; auto. rewrite <- H0. simpl. rewrite <- H1. rewrite Val.xorl_assoc. auto.
+ (* cmp true *)
+ - exists Vtrue; split; auto. inv H0. destruct (eval_condition cond (map valu args) m) eqn:?; auto.
+   rewrite (combine_cond'_sound cond args b true); eauto.
+ (* cmp false *)
+ - exists Vfalse; split; auto. inv H0. destruct (eval_condition cond (map valu args) m) eqn:?; auto.
+   rewrite (combine_cond'_sound cond args b false); eauto.
+ (* cmp reduce *)
+ - exists r; split; auto. decEq; decEq. simpl. erewrite combine_cond_sound; eauto.
+ (* sel cond true *)
+ - exists (valu x). simpl in H0.
+   destruct (eval_condition cond (map valu args1) m) eqn:?; simpl; split; auto; inv H0; auto.
+   rewrite (combine_cond'_sound cond args1 b true); eauto.  destruct (valu x), ty; auto.
+ (* sel cond false *)
+ - exists (valu y). simpl in H0.
+   destruct (eval_condition cond (map valu args1) m) eqn:?; simpl; split; auto; inv H0; auto.
+   rewrite (combine_cond'_sound cond args1 b false); eauto.  destruct (valu y), ty; auto.
+ (* sel cond same *)
+ - exists (valu y); split; auto. inv H0. destruct (eval_condition cond (map valu args1) m); auto.
+   simpl. destruct b, (valu y), ty; auto.
+ - exists r; split; auto. rewrite <- H0.
+   simpl. erewrite combine_cond_sound; eauto.
 Qed.
 
 End COMBINE.

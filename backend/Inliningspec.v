@@ -41,19 +41,19 @@ Proof.
     discriminate.
     rewrite PTree.gso; auto.
   }
-  assert (ADD: forall io dm fenv idg,
+  assert (ADD: forall io dm dm' fenv idg,
              P dm fenv ->
-             P (PTree.set (fst idg) (snd idg) dm) (add_globdef io fenv idg)).
-  { intros io dm fenv [id g]; simpl; intros.
+             P (PTree.set (fst idg) (snd idg) dm) (add_globdef io dm' fenv idg)).
+  { intros io dm dm' fenv [id g]; simpl; intros.
     destruct g as [[f|ef] | v]; auto.
-    destruct (should_inline io id f); auto.
+    destruct (should_inline io id f && no_cross_calls dm' f); auto.
     red; intros. rewrite ! PTree.gsspec in *.
     destruct (peq id0 id); auto. inv H0; eauto.
   }
-  assert (REC: forall p l dm fenv,
+  assert (REC: forall io dm' l dm fenv,
             P dm fenv ->
             P (fold_left (fun x idg => PTree.set (fst idg) (snd idg) x) l dm)
-              (fold_left (add_globdef p) l fenv)).
+              (fold_left (add_globdef io dm') l fenv)).
   { induction l; simpl; intros.
   - auto.
   - apply IHl. apply ADD; auto.
@@ -68,6 +68,128 @@ Proof.
   intros; red; intros. apply H0 in H1.
   destruct (prog_defmap_linkorder _ _ _ _ H H1) as (gd' & P & Q).
   inv Q. inv H3. eauto.
+Qed.
+
+(** ** No cross-compartment calls in inlineable functions *)
+
+(** Functions in the inlining environment have no cross-compartment calls:
+    any [Icall] or [Itailcall] in their code is either to the same compartment
+    or to the bottom compartment. For indirect calls ([inl r]), the function
+    is not in the environment at all, so [False] is vacuously satisfied. *)
+
+Definition fenv_no_cross_calls (p: program) (fenv: funenv) : Prop :=
+  forall id f pc sig ros args res s,
+    fenv!id = Some f ->
+    (fn_code f)!pc = Some (Icall sig ros args res s) ->
+    match ros with
+    | inl _ => False
+    | inr callee_id =>
+      match (prog_defmap p)!callee_id with
+      | Some (Gfun (Internal f')) => comp_of f = comp_of f'
+      | Some (Gfun (External ef)) =>
+        match ef with EF_external _ _ => False | _ => True end
+      | _ => False
+      end
+    end.
+
+Definition fenv_no_cross_tailcalls (p: program) (fenv: funenv) : Prop :=
+  forall id f pc sig ros args,
+    fenv!id = Some f ->
+    (fn_code f)!pc = Some (Itailcall sig ros args) ->
+    match ros with
+    | inl _ => False
+    | inr callee_id =>
+      match (prog_defmap p)!callee_id with
+      | Some (Gfun (Internal f')) => comp_of f = comp_of f'
+      | Some (Gfun (External ef)) =>
+        match ef with EF_external _ _ => False | _ => True end
+      | _ => False
+      end
+    end.
+
+Remark fold_andb_negb_true:
+  forall {A: Type} (check: A -> bool) l b,
+  fold_left (fun acc (p: positive * A) => acc && negb (check (snd p))) l b = true ->
+  b = true /\ forall k v, In (k, v) l -> check v = false.
+Proof.
+  induction l; simpl; intros.
+  - split; auto. intros; contradiction.
+  - destruct a as [k' v']. simpl in H.
+    apply IHl in H. destruct H as [H1 H2].
+    apply andb_true_iff in H1. destruct H1 as [H1 H3].
+    apply negb_true_iff in H3.
+    split; auto. intros k v [E | IN].
+    + inv E; auto.
+    + eauto.
+Qed.
+
+Lemma no_cross_calls_spec:
+  forall dm f,
+    no_cross_calls dm f = true ->
+    forall pc i, (fn_code f)!pc = Some i -> is_cross_call dm (comp_of f) i = false.
+Proof.
+  unfold no_cross_calls. intros dm f H pc i Hi.
+  rewrite PTree.fold_spec in H.
+  apply fold_andb_negb_true in H. destruct H as [_ H].
+  apply (H pc). apply PTree.elements_correct; auto.
+Qed.
+
+Remark funenv_program_ncc_aux:
+  forall io dm l fenv,
+  (forall id f, fenv!id = Some f -> no_cross_calls dm f = true) ->
+  forall id f, (fold_left (add_globdef io dm) l fenv)!id = Some f ->
+               no_cross_calls dm f = true.
+Proof.
+  induction l as [|[id' g'] l IHl]; simpl; intros.
+  - eauto.
+  - eapply IHl. 2: eauto.
+    intros id0 f0 H1. simpl in H1.
+    destruct g' as [[f'|ef'] | v'].
+    + destruct (should_inline io id' f' && no_cross_calls dm f') eqn:E.
+      * rewrite PTree.gsspec in H1. destruct (peq id0 id').
+        -- inv H1. apply andb_true_iff in E. destruct E; auto.
+        -- eauto.
+      * rewrite PTree.grspec in H1. destruct (PTree.elt_eq id0 id'); [discriminate|]. eauto.
+    + rewrite PTree.grspec in H1. destruct (PTree.elt_eq id0 id'); [discriminate|]. eauto.
+    + rewrite PTree.grspec in H1. destruct (PTree.elt_eq id0 id'); [discriminate|]. eauto.
+Qed.
+
+Lemma funenv_program_no_cross_calls:
+  forall p, fenv_no_cross_calls p (funenv_program p).
+Proof.
+  intros p. red; intros id f pc sig ros args res s FENV CODE.
+  set (dm := prog_defmap p) in *.
+  set (io := inlining_analysis p) in *.
+  assert (NCC: no_cross_calls dm f = true).
+  { unfold funenv_program in FENV. fold io in FENV. fold dm in FENV.
+    eapply funenv_program_ncc_aux; eauto.
+    intros. rewrite PTree.gempty in H; discriminate.
+  }
+  exploit no_cross_calls_spec; eauto.
+  simpl. destruct ros as [r | callee_id].
+  - intro H. discriminate.
+  - destruct (dm ! callee_id) as [[[f0|e]|]|] eqn:E; intro H; try discriminate.
+    + destruct (cp_eq_dec (comp_of f) (comp_of f0)); auto. discriminate.
+    + destruct e; auto; discriminate.
+Qed.
+
+Lemma funenv_program_no_cross_tailcalls:
+  forall p, fenv_no_cross_tailcalls p (funenv_program p).
+Proof.
+  intros p. red; intros id f pc sig ros args FENV CODE.
+  set (dm := prog_defmap p) in *.
+  set (io := inlining_analysis p) in *.
+  assert (NCC: no_cross_calls dm f = true).
+  { unfold funenv_program in FENV. fold io in FENV. fold dm in FENV.
+    eapply funenv_program_ncc_aux; eauto.
+    intros. rewrite PTree.gempty in H; discriminate.
+  }
+  exploit no_cross_calls_spec; eauto.
+  simpl. destruct ros as [r | callee_id].
+  - intro H. discriminate.
+  - destruct (dm ! callee_id) as [[[f0|e]|]|] eqn:E; intro H; try discriminate.
+    + destruct (cp_eq_dec (comp_of f) (comp_of f0)); auto. discriminate.
+    + destruct e; auto; discriminate.
 Qed.
 
 (** ** Properties of shifting *)
@@ -686,11 +808,64 @@ End INLINING_BODY_SPEC.
 
 End INLINING_SPEC.
 
+(** ** Stack size preservation with empty funenv *)
+
+Lemma set_instr_stksize:
+  forall pc i s x s' inc,
+  set_instr pc i s = R x s' inc ->
+  st_stksize s' = st_stksize s.
+Proof.
+  intros. unfold set_instr in H. inv H. reflexivity.
+Qed.
+
+Lemma expand_instr_empty_stksize:
+  forall rec ctx cp pc i s x s' inc,
+  expand_instr (PTree.empty _) rec ctx cp pc i s = R x s' inc ->
+  st_stksize s' = st_stksize s.
+Proof.
+  unfold expand_instr. intros rec ctx cp pc i.
+  destruct i; intros; try (eapply set_instr_stksize; eauto; fail).
+  - (* Icall *)
+    destruct s0 as [r0 | id0]; cbn [can_inline] in H; simpl in H;
+      eapply set_instr_stksize; eauto.
+  - (* Itailcall *)
+    destruct s0 as [r0 | id0]; cbn [can_inline] in H; simpl in H;
+      destruct (retinfo ctx) as [[rpc rreg]|]; eapply set_instr_stksize; eauto.
+  - (* Ireturn *)
+    destruct (retinfo ctx); eapply set_instr_stksize; eauto.
+Qed.
+
+Lemma ptree_mfold_stksize:
+  forall {A: Type} (f: positive -> A -> mon unit) t s,
+  (forall k v s0 x s0' inc, f k v s0 = R x s0' inc -> st_stksize s0' = st_stksize s0) ->
+  st_stksize (PTree.fold (fun s1 k v => match f k v s1 return _ with R _ s2 _ => s2 end) t s) = st_stksize s.
+Proof.
+  intros. apply PTree_Properties.fold_rec.
+  - auto.
+  - reflexivity.
+  - intros. destruct (f k v a) eqn:Hfkv.
+    rewrite (H _ _ _ _ _ _ Hfkv). auto.
+Qed.
+
+Lemma expand_cfg_empty_stksize:
+  forall ctx f s x s' inc,
+  expand_cfg (PTree.empty _) ctx f s = R x s' inc ->
+  st_stksize s' = Z.max (st_stksize s) (dstk ctx + mstk ctx).
+Proof.
+  intros. unfold expand_cfg in H. rewrite unroll_Fixm in H.
+  unfold expand_cfg_rec in H. simpl in H. monadInv H.
+  unfold ptree_mfold in EQ0. inv EQ0.
+  unfold request_stack in EQ. inv EQ. simpl.
+  rewrite ptree_mfold_stksize. reflexivity.
+  intros. eapply expand_instr_empty_stksize; eauto.
+Qed.
+
 (** ** Relational specification of the translation of a function *)
 
 Inductive tr_function: program -> function -> function -> Prop :=
   | tr_function_intro: forall p fenv f f' ctx,
       fenv_compat p fenv ->
+      fenv_no_cross_calls p fenv ->
       tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code) ->
       ctx.(dstk) = 0 ->
       ctx.(retinfo) = None ->
@@ -699,7 +874,72 @@ Inductive tr_function: program -> function -> function -> Prop :=
       f'.(fn_params) = sregs ctx f.(fn_params) ->
       f'.(fn_entrypoint) = spc ctx f.(fn_entrypoint) ->
       0 <= fn_stacksize f' < Ptrofs.max_unsigned ->
+      (no_cross_calls (prog_defmap p) f = true \/
+       (fenv = PTree.empty _ /\ fn_stacksize f' = ctx.(dstk) + ctx.(mstk))) ->
       tr_function p f f'.
+
+Lemma is_cross_call_linkorder:
+  forall cunit prog cp i,
+  linkorder cunit prog ->
+  is_cross_call (prog_defmap cunit) cp i = false ->
+  is_cross_call (prog_defmap prog) cp i = false.
+Proof.
+  intros cunit prog cp i LO H. unfold is_cross_call in *.
+  destruct i; auto; destruct s0 as [?r|?id]; auto;
+  destruct ((prog_defmap cunit) ! id) as [[[?|[]]|]|] eqn:E; try discriminate;
+  destruct (prog_defmap_linkorder _ _ _ _ LO E) as (gd2 & P & Q);
+  rewrite P; inv Q; try inv H1; try inv H0; auto.
+Qed.
+
+Lemma fenv_no_cross_calls_linkorder:
+  forall cunit prog fenv,
+  linkorder cunit prog ->
+  fenv_no_cross_calls cunit fenv ->
+  fenv_no_cross_calls prog fenv.
+Proof.
+  intros cunit prog fenv LO NCC.
+  red; intros id f pc sig ros args res s FENV CODE.
+  specialize (NCC _ _ _ _ _ _ _ _ FENV CODE).
+  destruct ros as [r | callee_id]; auto.
+  destruct ((prog_defmap cunit) ! callee_id) as [[[fi|ef]|]|] eqn:E.
+  - destruct (prog_defmap_linkorder _ _ _ _ LO E) as (gd2 & P & Q).
+    rewrite P. inv Q. inv H0. auto.
+  - destruct (prog_defmap_linkorder _ _ _ _ LO E) as (gd2 & P & Q).
+    rewrite P. inv Q. inv H0; try contradiction; auto.
+  - contradiction.
+  - contradiction.
+Qed.
+
+Lemma no_cross_calls_from_spec:
+  forall dm f,
+  (forall pc i, (fn_code f)!pc = Some i -> is_cross_call dm (comp_of f) i = false) ->
+  no_cross_calls dm f = true.
+Proof.
+  intros dm f SPEC. unfold no_cross_calls. rewrite PTree.fold_spec.
+  assert (forall l b, b = true ->
+    (forall k v, In (k, v) l -> (fn_code f)!k = Some v) ->
+    fold_left (fun acc p => acc && negb (is_cross_call dm (comp_of f) (snd p))) l b = true).
+  { induction l as [|[k v] l IHl]; simpl; intros.
+    - auto.
+    - apply IHl.
+      + subst b. simpl. rewrite (SPEC k v); auto.
+      + intros. apply H0. right; auto. }
+  apply H; auto.
+  intros. apply PTree.elements_complete; auto.
+Qed.
+
+Lemma no_cross_calls_linkorder:
+  forall cunit prog f,
+  linkorder cunit prog ->
+  no_cross_calls (prog_defmap cunit) f = true ->
+  no_cross_calls (prog_defmap prog) f = true.
+Proof.
+  intros cunit prog f LO NCC.
+  apply no_cross_calls_from_spec.
+  intros pc i Hi.
+  eapply is_cross_call_linkorder; eauto.
+  eapply no_cross_calls_spec; eauto.
+Qed.
 
 Lemma tr_function_linkorder:
   forall cunit prog f f',
@@ -707,31 +947,72 @@ Lemma tr_function_linkorder:
   tr_function cunit f f' ->
   tr_function prog f f'.
 Proof.
-  intros. inv H0. econstructor; eauto. eapply fenv_compat_linkorder; eauto.
+  intros. inv H0. econstructor; eauto.
+  eapply fenv_compat_linkorder; eauto.
+  eapply fenv_no_cross_calls_linkorder; eauto.
+  destruct H11 as [NCC | [EMPTY SZEQ]].
+  - left. eapply no_cross_calls_linkorder; eauto.
+  - right. split; auto.
+Qed.
+
+Lemma fenv_no_cross_calls_empty:
+  forall p, fenv_no_cross_calls p (PTree.empty _).
+Proof.
+  intros p. red; intros. rewrite PTree.gempty in H. discriminate.
 Qed.
 
 Lemma transf_function_spec:
   forall cunit f f',
-  transf_function (funenv_program cunit) f = OK f' ->
+  transf_function (funenv_program cunit) (prog_defmap cunit) f = OK f' ->
   tr_function cunit f f'.
 Proof.
   intros. unfold transf_function in H.
   set (fenv := funenv_program cunit) in *.
-  destruct (expand_function fenv f initstate) as [ctx s i] eqn:?.
-  destruct (zlt (st_stksize s) Ptrofs.max_unsigned); inv H.
-  monadInv Heqr. set (ctx := initcontext x x0 (max_reg_function f) (fn_stacksize f)) in *.
-Opaque initstate.
-  destruct INCR3. inversion EQ1. inversion EQ.
-  apply tr_function_intro with fenv ctx; auto.
-  apply funenv_program_compat.
-  eapply expand_cfg_spec with (fe := fenv); eauto.
-    red; auto.
-    unfold ctx; rewrite <- H1; rewrite <- H2; rewrite <- H3; simpl. extlia.
-    unfold ctx; rewrite <- H0; rewrite <- H1; simpl. extlia.
-    simpl. extlia.
-    simpl. apply Z.divide_0_r.
+  destruct (no_cross_calls (prog_defmap cunit) f) eqn:NCC_EQ.
+  - (* no_cross_calls = true: use normal funenv *)
+    destruct (expand_function fenv f initstate) as [ctx s i] eqn:?.
+    destruct (zlt (st_stksize s) Ptrofs.max_unsigned); inv H.
+    monadInv Heqr. set (ctx := initcontext x x0 (max_reg_function f) (fn_stacksize f)) in *.
+  Opaque initstate.
+    destruct INCR3. inversion EQ1. inversion EQ.
+    apply tr_function_intro with fenv ctx; auto.
+    apply funenv_program_compat.
+    apply funenv_program_no_cross_calls.
+    eapply expand_cfg_spec with (fe := fenv); eauto.
+      red; auto.
+      unfold ctx; rewrite <- H1; rewrite <- H2; rewrite <- H3; simpl. extlia.
+      unfold ctx; rewrite <- H0; rewrite <- H1; simpl. extlia.
+      simpl. extlia.
+      simpl. apply Z.divide_0_r.
+      simpl. lia.
     simpl. lia.
-  simpl. lia.
-  simpl. split; auto. destruct INCR2. destruct INCR1. destruct INCR0. destruct INCR.
-  simpl. change 0 with (st_stksize initstate). lia.
+    simpl. split; auto. destruct INCR2. destruct INCR1. destruct INCR0. destruct INCR.
+    simpl. change 0 with (st_stksize initstate). lia.
+  - (* no_cross_calls = false: use empty funenv *)
+    set (fenv' := PTree.empty function) in *.
+    destruct (expand_function fenv' f initstate) as [ctx s i] eqn:?.
+    destruct (zlt (st_stksize s) Ptrofs.max_unsigned); inv H.
+    monadInv Heqr. set (ctx := initcontext x x0 (max_reg_function f) (fn_stacksize f)) in *.
+  Opaque initstate.
+    destruct INCR3. inversion EQ1. inversion EQ.
+    apply tr_function_intro with fenv' ctx; auto.
+    { red. intros. rewrite PTree.gempty in H. discriminate. }
+    apply fenv_no_cross_calls_empty.
+    eapply expand_cfg_spec with (fe := fenv'); eauto.
+      red; auto.
+      unfold ctx; rewrite <- H1; rewrite <- H2; rewrite <- H3; simpl. extlia.
+      unfold ctx; rewrite <- H0; rewrite <- H1; simpl. extlia.
+      simpl. extlia.
+      simpl. apply Z.divide_0_r.
+      simpl. lia.
+    simpl. lia.
+    simpl. split; auto. destruct INCR2. destruct INCR1. destruct INCR0. destruct INCR.
+    simpl. change 0 with (st_stksize initstate). lia.
+    right. split; auto.
+    (* fn_stacksize f' = dstk ctx + mstk ctx: with empty fenv, expand_cfg doesn't
+       increase st_stksize beyond request_stack(dstk + mstk). *)
+    simpl.
+    exploit expand_cfg_empty_stksize; eauto.
+    subst s0 s1. simpl. change (st_stksize initstate) with 0.
+    intro. rewrite H. apply Z.max_case_strong; intros; apply Z.max_case_strong; lia.
 Qed.

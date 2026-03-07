@@ -82,6 +82,23 @@ Definition dummy_float_reg := X0.   (**r Used in [Regalloc]. *)
 
 Definition callee_save_type := mreg_type.
 
+(** How to use registers for register allocation.
+    We favor the use of caller-save registers, using callee-save registers
+    only when no caller-save is available. *)
+
+Record alloc_regs := mk_alloc_regs {
+  preferred_int_regs: list mreg;
+  remaining_int_regs: list mreg;
+  preferred_float_regs: list mreg;
+  remaining_float_regs: list mreg
+}.
+
+Definition allocatable_registers (_: unit) :=
+  {| preferred_int_regs := int_caller_save_regs;
+     remaining_int_regs := int_callee_save_regs;
+     preferred_float_regs := float_caller_save_regs;
+     remaining_float_regs := float_callee_save_regs |}.
+
 (** * Function calling conventions *)
 
 (** The functions in this section determine the locations (machine registers
@@ -263,9 +280,9 @@ Fixpoint loc_arguments_win64
 Definition loc_arguments (s: signature) : list (rpair loc) :=
   if Archi.ptr64
   then if Archi.win64
-       then loc_arguments_win64 s.(sig_args) 0 0
-       else loc_arguments_elf64 s.(sig_args) 0 0 0
-  else loc_arguments_32 s.(sig_args) 0.
+       then loc_arguments_win64 (proj_sig_args s) 0 0
+       else loc_arguments_elf64 (proj_sig_args s) 0 0 0
+  else loc_arguments_32 (proj_sig_args s) 0.
 
 (** Argument locations are either caller-save registers or [Outgoing]
   stack slots at nonnegative offsets. *)
@@ -439,13 +456,13 @@ Qed.
     AH, leaving the top 16 bits of EAX unspecified.  Hence, return
     values of small integer types need re-normalization after calls. *)
 
-Definition return_value_needs_normalization (t: rettype) : bool :=
+Definition return_value_needs_normalization (t: xtype) : bool :=
   match t with
-  | Tint8signed | Tint8unsigned | Tint16signed | Tint16unsigned => true
+  | Xint8signed | Xint8unsigned | Xint16signed | Xint16unsigned => true
   | _ => false
   end.
 
 (** Function parameters are passed in normalized form and do not need
     to be re-normalized at function entry. *)
 
-Definition parameter_needs_normalization (t: rettype) := false.
+Definition parameter_needs_normalization (t: xtype) := false.

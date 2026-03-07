@@ -12,7 +12,7 @@
 
 (** Correctness proof for expression simplification. *)
 
-Require Import FunInd.
+From Coq Require Import FunInd.
 Require Import Coqlib Maps Errors Integers.
 Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
@@ -561,8 +561,8 @@ Ltac UNCHANGED :=
   apply leftcontext_leftcontextlist_ind; intros.
 
 - (* base *)
-  TR. rewrite <- app_nil_end; auto. red; auto.
-  intros. rewrite <- app_nil_end; auto.
+  TR. rewrite app_nil_r; auto. red; auto.
+  intros. rewrite app_nil_r; auto.
 - (* deref *)
   inv H1.
   exploit H0; eauto. intros [dst' [sl1' [sl2' [a' [tmp' [P [Q [R S]]]]]]]].
@@ -912,7 +912,7 @@ Proof.
   split. apply tr_top_val_val; eauto.
   split. instantiate (1 := nil); auto.
   split. apply incl_refl.
-  intros. rewrite <- app_nil_end. constructor; auto.
+  intros. rewrite app_nil_r. constructor; auto.
 (* base *)
   subst r. exploit tr_expr_leftcontext; eauto.
   intros [dst' [sl1 [sl2 [a' [tmp' [P [Q [R S]]]]]]]].
@@ -1619,6 +1619,14 @@ Proof.
   intros. destruct dst; simpl; econstructor; auto.
 Qed.
 
+Lemma blocks_of_env_preserved:
+  forall e, blocks_of_env tge e = Csem.blocks_of_env ge e.
+Proof.
+  intros; unfold blocks_of_env, Csem.blocks_of_env.
+  unfold block_of_binding, Csem.block_of_binding.
+  rewrite comp_env_preserved. auto.
+Qed.
+
 Lemma estep_simulation:
   forall S1 t S2, Cstrategy.estep ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -2112,7 +2120,7 @@ Ltac NOTIN :=
   exploit tr_simple_rvalue; eauto. simpl; intro SL1.
   subst sl0; simpl Kseqlist.
   econstructor; split.
-  right; split. apply star_refl. simpl. apply plus_lt_compat_r.
+  right; split. apply star_refl. simpl. apply Nat.add_lt_mono_r.
   apply (leftcontext_size _ _ _ H). simpl. lia.
   econstructor; eauto. apply S.
   eapply tr_expr_monotone; eauto.
@@ -2135,7 +2143,7 @@ Ltac NOTIN :=
   auto.
 + (* for effects *)
   econstructor; split.
-  right; split. apply star_refl. simpl. apply plus_lt_compat_r.
+  right; split. apply star_refl. simpl. apply Nat.add_lt_mono_r.
   apply (leftcontext_size _ _ _ H). simpl. lia.
   econstructor; eauto.
   exploit tr_simple_rvalue; eauto. simpl. intros A. subst sl1.
@@ -2170,6 +2178,7 @@ Ltac NOTIN :=
   eapply allowed_call_translated; eauto.
   rewrite CO, <- comp_tr_fundef; eauto.
   rewrite CO, <- comp_tr_fundef; eauto; eapply call_trace_translated; eauto.
+  rewrite CO, <- (comp_tr_fundef _ _ _ K), blocks_of_env_preserved; exact SET_PERM.
   traceEq.
   econstructor. eexact L. eauto. econstructor. eexact LINK. auto. auto.
   (* rewrite <- find_comp_translated. *)
@@ -2190,6 +2199,7 @@ Ltac NOTIN :=
   eapply allowed_call_translated; eauto. rewrite CO; eauto.
   rewrite CO, <- comp_tr_fundef; eauto.
   rewrite CO, <- comp_tr_fundef; eauto; eapply call_trace_translated; eauto.
+  rewrite CO, <- (comp_tr_fundef _ _ _ K), blocks_of_env_preserved; exact SET_PERM.
   traceEq.
   econstructor. eexact L. eauto. econstructor. eexact LINK. auto. auto.
   (* rewrite <- find_comp_translated. *)
@@ -2265,14 +2275,6 @@ Proof.
 - eapply assign_loc_value; eauto.
 - inv H4. eapply assign_loc_value; eauto.
 - rewrite <- comp_env_preserved in *. eapply assign_loc_copy; eauto.
-Qed.
-
-Lemma blocks_of_env_preserved:
-  forall e, blocks_of_env tge e = Csem.blocks_of_env ge e.
-Proof.
-  intros; unfold blocks_of_env, Csem.blocks_of_env.
-  unfold block_of_binding, Csem.block_of_binding.
-  rewrite comp_env_preserved. auto.
 Qed.
 
 Lemma sstep_simulation:
@@ -2566,6 +2568,7 @@ Proof.
   left; apply plus_one. constructor.
   now rewrite CO.
   rewrite CO. eapply return_trace_eq; eauto using senv_preserved.
+  rewrite CO, blocks_of_env_preserved; exact SET_PERM.
   econstructor; eauto.
 Qed.
 

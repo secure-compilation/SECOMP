@@ -92,6 +92,14 @@ let is_signed env ty =
   | TEnum(_, _) -> is_signed_ikind enum_ikind
   | _ -> false
 
+let int_bit_size env ty =
+  let byte_size =
+    match unroll env ty with
+    | TInt(ik, _) -> sizeof_ikind ik
+    | TEnum(_, _) -> sizeof_ikind enum_ikind
+    | _ -> 0 in
+  Int64.of_int (byte_size * 8)
+
 let cast env ty_to v =
   match unroll env ty_to, v with
   | TInt(IBool, _), _ ->
@@ -119,12 +127,13 @@ let unop env op tyres ty v =
    | Olognot, _, _ -> if boolean_value v then I 0L else I 1L
    | Onot, _, I n -> I (Int64.lognot n)
    | _ -> raise Notconst
-  in cast env ty res
+  in cast env tyres res
 
 let comparison env direction ptraction tyop v1 v2 =
-  (* tyop = type at which the comparison is done *)
+  (* tyop = type at which the comparison is done.
+     v1, v2 have been converted to tyop already. *)
   let b =
-    match cast env tyop v1, cast env tyop v2 with
+    match v1, v2 with
     | I n1, I n2 ->
         if is_signed env tyop
         then direction (compare n1 n2) 0
@@ -140,29 +149,31 @@ let comparison env direction ptraction tyop v1 v2 =
 let binop env op tyop tyres ty1 v1 ty2 v2 =
   (* tyop = type at which the computation is done
      tyres = expected result type *)
+  let v1 = cast env tyop v1
+  and v2 = cast env tyop v2 in
   let res =
     match op with
     | Oadd ->
         if is_arith_type env ty1 && is_arith_type env ty2 then begin
-          match cast env tyop v1, cast env tyop v2 with
+          match v1, v2 with
           | I n1, I n2 -> I (Int64.add n1 n2)
           | _, _ -> raise Notconst
         end else
           raise Notconst
     | Osub ->
         if is_arith_type env ty1 && is_arith_type env ty2 then begin
-          match cast env tyop v1, cast env tyop v2 with
+          match v1, v2 with
           | I n1, I n2 -> I (Int64.sub n1 n2)
           | _, _ -> raise Notconst
         end else
           raise Notconst
     | Omul ->
-        begin match cast env tyop v1, cast env tyop v2 with
+        begin match v1, v2 with
           | I n1, I n2 -> I (Int64.mul n1 n2)
           | _, _ -> raise Notconst
         end
     | Odiv ->
-        begin match cast env tyop v1, cast env tyop v2 with
+        begin match v1, v2 with
           | I n1, I n2 ->
               if n2 = 0L then raise Notconst else
               if is_signed env tyop then I (Int64.div n1 n2)
@@ -194,13 +205,13 @@ let binop env op tyop tyres ty1 v1 ty2 v2 =
         end
     | Oshl ->
         begin match v1, v2 with
-          | I n1, I n2 when n2 >= 0L && n2 < 64L ->
+          | I n1, I n2 when n2 >= 0L && n2 < int_bit_size env tyop ->
                I (Int64.shift_left n1 (Int64.to_int n2))
           | _, _ -> raise Notconst
         end
     | Oshr ->
         begin match v1, v2 with
-          | I n1, I n2 when n2 >= 0L && n2 < 64L ->
+          | I n1, I n2 when n2 >= 0L && n2 < int_bit_size env tyop ->
               if is_signed env tyop
               then I (Int64.shift_right n1 (Int64.to_int n2))
               else I (Int64.shift_right_logical n1 (Int64.to_int n2))

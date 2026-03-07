@@ -14,7 +14,7 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-Require Import BinPos.
+From Coq Require Import BinPos.
 
 (* OCaml's string type. *)
 Parameter string : Type.
@@ -48,6 +48,7 @@ Inductive typeSpecifier := (* Merge all specifiers into one type *)
   | Tint
   | Tlong
   | Tfloat
+  | Tfloat16
   | Tdouble
   | Tsigned
   | Tunsigned
@@ -89,7 +90,8 @@ with spec_elem :=
  * declared type) *)
 with decl_type :=
  | JUSTBASE
- | ARRAY : decl_type -> list cvspec -> option expression -> decl_type
+(* The bool is true for 'static' array declarators *)
+ | ARRAY : decl_type -> list cvspec -> bool -> option expression -> decl_type
  | PTR : list cvspec -> decl_type -> decl_type
 (* The bool is true for variable length parameters. *)
  | PROTO : decl_type -> list parameter * bool -> decl_type

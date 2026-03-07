@@ -51,6 +51,14 @@ let predefined_macros =
 
 (* From C to preprocessed C *)
 
+(* We define the type wchar_t since it is dependent on the system and
+   we want to avoid more ifdefs in the stddef header file. *)
+let abi_macros () =
+  let wchar_typ = Cprint.name_of_ikind (Cutil.wchar_ikind()) in
+  [
+    sprintf "-D__COMPCERT_WCHAR_TYPE__=%s" wchar_typ
+  ]
+
 let preprocess ifile ofile =
   Diagnostics.raise_on_errors ();
   let output =
@@ -61,6 +69,7 @@ let preprocess ifile ofile =
      then ["-std=" ^ !option_std]
      else []);
     predefined_macros;
+    abi_macros ();
     (if !Clflags.use_standard_headers
      then ["-I" ^ Filename.concat !Clflags.stdlib_path "include" ]
      else []);
@@ -150,6 +159,8 @@ let gnu_prepro_actions = [
   Exact "-MP", Self gnu_prepro_opt;
   Exact "-MT", String (gnu_prepro_opt_key "-MT");
   Exact "-MQ", String (gnu_prepro_opt_key "-MQ");
+  Exact "-MD", Self gnu_prepro_opt;
+  Exact "-MMD", Self gnu_prepro_opt;
   Exact "-nostdinc", Self (fun s -> gnu_prepro_opt s; use_standard_headers := false);
   Exact "-imacros", String (gnu_prepro_opt_key "-imacros");
   Exact "-idirafter", String (gnu_prepro_opt_key "-idirafter");
@@ -181,6 +192,9 @@ let gnu_prepro_help =
 {|  -M            Output a rule suitable for make describing the
                  dependencies of the main source file
   -MM            Like -M but do not mention system header files
+  -MD            Like -M but writes output to a .d file as a side-
+                 effect of compilation
+  -MMD           Like -MD but do not mention system header files
   -MF <file>     Specifies file <file> as output file for -M or -MM
   -MG            Assumes missing header files are generated for -M
   -MP            Add a phony target for each dependency other than

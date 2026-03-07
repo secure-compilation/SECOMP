@@ -13,7 +13,7 @@
 (** Elimination of unneeded computations over RTL. *)
 
 Require Import Coqlib Maps Errors Integers Floats Lattice Kildall.
-Require Import AST Linking.
+Require Import AST Linking Builtins.
 Require Import Memory Registers Op RTL.
 Require Import ValueDomain ValueAnalysis NeedDomain NeedOp.
 
@@ -81,6 +81,12 @@ Definition kill_builtin_res (res: builtin_res reg) (ne: NE.t) : NE.t :=
   | _    => ne
   end.
 
+Definition builtin_res_dead (res: builtin_res reg) (ne: NE.t) :=
+  match res with
+  | BR r => is_dead (nreg ne r)
+  | _ => false
+  end.
+
 Function transfer_builtin (app: VA.t) (ef: external_function)
                           (args: list (builtin_arg reg)) (res: builtin_res reg)
                           (ne: NE.t) (nm: nmem) : NA.t :=
@@ -106,11 +112,20 @@ Function transfer_builtin (app: VA.t) (ef: external_function)
       transfer_builtin_args (kill_builtin_res res ne, nm) args
   | EF_debug _ _ _, _ =>
       (kill_builtin_res res ne, nm)
+  | EF_builtin name sg, args =>
+      match lookup_builtin_function name sg with
+      | Some bf =>
+           if builtin_res_dead res ne
+           then (ne, nm)
+           else transfer_builtin_args (kill_builtin_res res ne, nm) args
+      | _ =>
+           transfer_builtin_args (kill_builtin_res res ne, nmem_all) args
+      end
   | _, _ =>
       transfer_builtin_args (kill_builtin_res res ne, nmem_all) args
   end.
 
-Definition transfer (f: function) (approx: PMap.t VA.t)
+Definition transfer (f: function) (dm: defmap) (approx: PMap.t VA.t)
                     (pc: node) (after: NA.t) : NA.t :=
   let (ne, nm) := after in
   match f.(fn_code)!pc with
@@ -136,7 +151,15 @@ Definition transfer (f: function) (approx: PMap.t VA.t)
             nmem_remove nm p (size_chunk chunk))
       else after
   | Some(Icall sig ros args res s) =>
-      (add_needs_all args (add_ros_need_all ros (kill res ne)), nmem_all)
+      match is_known_runtime_function dm ros with
+      | None =>
+          (add_needs_all args (add_ros_need_all ros (kill res ne)), nmem_all)
+      | Some bf =>
+        let nres := nreg ne res in
+        if is_dead nres
+        then after
+        else (add_needs_all args (add_ros_need_all ros (kill res ne)), nm)
+      end
   | Some(Itailcall sig ros args) =>
       (add_needs_all args (add_ros_need_all ros NE.bot),
        nmem_dead_stack f.(fn_stacksize))
@@ -153,13 +176,13 @@ Definition transfer (f: function) (approx: PMap.t VA.t)
 
 Module DS := Backward_Dataflow_Solver(NA)(NodeSetBackward).
 
-Definition analyze (approx: PMap.t VA.t) (f: function): option (PMap.t NA.t) :=
+Definition analyze (f: function) (dm: defmap) (approx: PMap.t VA.t): option (PMap.t NA.t) :=
   DS.fixpoint f.(fn_code) successors_instr
-              (transfer f approx).
+              (transfer f dm approx).
 
 (** * Part 2: the code transformation *)
 
-Definition transf_instr (approx: PMap.t VA.t) (an: PMap.t NA.t)
+Definition transf_instr (dm: defmap) (approx: PMap.t VA.t) (an: PMap.t NA.t)
                         (pc: node) (instr: instruction) :=
   match instr with
   | Iop op args res s =>
@@ -188,31 +211,44 @@ Definition transf_instr (approx: PMap.t VA.t) (an: PMap.t NA.t)
       if nmem_contains (snd an!!pc) p (size_chunk chunk)
       then instr
       else Inop s
+  | Icall sig ros args res s =>
+      match is_known_runtime_function dm ros with
+      | None =>
+          instr
+      | Some bf =>
+          let nres := nreg (fst an!!pc) res in
+          if is_dead nres then Inop s else instr
+      end
   | Ibuiltin (EF_memcpy sz al) (dst :: src :: nil) res s =>
       if nmem_contains (snd an!!pc) (aaddr_arg approx!!pc dst) sz
       then instr
       else Inop s
+  | Ibuiltin (EF_builtin name sg) args res s =>
+      match lookup_builtin_function name sg, builtin_res_dead res (fst an!!pc) with
+      | Some bf, true => Inop s
+      | _, _ => instr
+      end
   | Icond cond args s1 s2 =>
       if peq s1 s2 then Inop s1 else instr
   | _ =>
       instr
   end.
 
-Definition transf_function (rm: romem) (f: function) : res function :=
+Definition transf_function (dm: defmap) (rm: romem) (f: function) : res function :=
   let approx := ValueAnalysis.analyze rm f in
-  match analyze approx f with
+  match analyze f dm approx with
   | Some an =>
       OK {| fn_comp := f.(fn_comp);
             fn_sig := f.(fn_sig);
             fn_params := f.(fn_params);
             fn_stacksize := f.(fn_stacksize);
-            fn_code := PTree.map (transf_instr approx an) f.(fn_code);
+            fn_code := PTree.map (transf_instr dm approx an) f.(fn_code);
             fn_entrypoint := f.(fn_entrypoint) |}
   | None =>
       Error (msg "Neededness analysis failed")
   end.
 
-#[global] Instance comp_transf_function rm: has_comp_transl_partial (transf_function rm).
+#[global] Instance comp_transf_function dm rm: has_comp_transl_partial (transf_function dm rm).
 Proof.
   unfold transf_function.
   intros f ? H.
@@ -220,9 +256,9 @@ Proof.
   now inv H.
 Qed.
 
-Definition transf_fundef (rm: romem) (fd: fundef) : res fundef :=
-  AST.transf_partial_fundef (transf_function rm) fd.
+Definition transf_fundef (dm: defmap) (rm: romem) (fd: fundef) : res fundef :=
+  AST.transf_partial_fundef (transf_function dm rm) fd.
 
 Definition transf_program (p: program) : res program :=
-  transform_partial_program (transf_fundef (romem_for p)) p.
+  transform_partial_program (transf_fundef (prog_defmap p) (romem_for p)) p.
 

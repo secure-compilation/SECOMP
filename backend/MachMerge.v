@@ -109,7 +109,7 @@ Proof.
   intros. eapply C; eauto.
 Qed.
 
-Lemma semantics_determinate: determinate (semantics return_address_offset prog).
+Lemma semantics_determinate: determinate (Mach.semantics return_address_offset prog).
 Proof.
 Ltac Equalities :=
   match goal with
@@ -149,47 +149,64 @@ intros; constructor; simpl; intros.
       do 2 rewrite Ptrofs.repr_unsigned in H0. auto. }
     assert (args0 = args) by (eapply call_arguments_determ; eauto). subst.
     destruct fd0.
-    { destruct Mem.alloc; destruct Mem.alloc; destruct sp.
-      * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+    { (* Internal callee *)
+      assert (UNFOLD_COMP: forall P Q : Prop,
+        (if cp_eq_dec (comp_of (Internal f)) bottom then P else Q) ->
+        (if cp_eq_dec (fn_comp f) bottom then P else Q)).
+      { intros P Q. unfold comp_of, has_comp_fundef, has_comp_function. auto. }
+      apply UNFOLD_COMP in allc. apply UNFOLD_COMP in allc0. clear UNFOLD_COMP.
+      destruct (cp_eq_dec (fn_comp f) bottom) as [e|n];
+        simpl in allc, allc0.
+      - destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
         split; auto.
         inv EV; inv EV0; try congruence.
         constructor. Equalities.
         assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
         eapply match_traces_call.
-      * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
-        split; auto.
-        inv EV; inv EV0; try congruence.
-        constructor. Equalities.
-        assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
-        eapply match_traces_call.
-      * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
-        split; auto.
-        inv EV; inv EV0; try congruence.
-        constructor. Equalities.
-        assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
-        eapply match_traces_call.
-      * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
-        split; auto.
-        inv EV; inv EV0; try congruence.
-        constructor. Equalities.
-        assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
-        eapply match_traces_call.
-      * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
-        split; auto.
-        inv EV; inv EV0; try congruence.
-        constructor. Equalities.
-        assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
-        eapply match_traces_call.
-      * destruct Genv.find_def; try contradiction.
-        destruct Mem.perm_dec; try contradiction.
-        destruct Mem.set_perm; try contradiction.
-        destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
-        split; auto.
-        inv EV; inv EV0; try congruence.
-        constructor. Equalities.
-        assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
-        eapply match_traces_call. }
-    { destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+      - destruct Mem.alloc; destruct Mem.alloc; destruct sp.
+        * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+          split; auto.
+          inv EV; inv EV0; try congruence.
+          constructor. Equalities.
+          assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+          eapply match_traces_call.
+        * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+          split; auto.
+          inv EV; inv EV0; try congruence.
+          constructor. Equalities.
+          assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+          eapply match_traces_call.
+        * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+          split; auto.
+          inv EV; inv EV0; try congruence.
+          constructor. Equalities.
+          assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+          eapply match_traces_call.
+        * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+          split; auto.
+          inv EV; inv EV0; try congruence.
+          constructor. Equalities.
+          assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+          eapply match_traces_call.
+        * destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+          split; auto.
+          inv EV; inv EV0; try congruence.
+          constructor. Equalities.
+          assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+          eapply match_traces_call.
+        * destruct Genv.find_def; try contradiction.
+          destruct Mem.perm_dec; try contradiction.
+          destruct Mem.set_perm; try contradiction.
+          destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
+          split; auto.
+          inv EV; inv EV0; try congruence.
+          constructor. Equalities.
+          assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+          eapply match_traces_call. }
+    { (* External callee: comp_of (External e) = bottom always *)
+      unfold comp_of, has_comp_fundef in allc, allc0.
+      simpl in allc, allc0.
+      destruct allc as (A & B & C), allc0 as (A' & B' & C'); subst.
       split; auto.
       inv EV; inv EV0; try congruence.
       constructor. Equalities.
@@ -216,12 +233,17 @@ intros; constructor; simpl; intros.
       split. constructor. auto.
       assert (res = res0) as <- by (eapply eventval_match_determ_2; eauto).
       split. constructor. auto.
-    * destruct Mem.set_perm; try congruence.
-      inv SET_PERM; inv SET_PERM0.
-      inv EV; inv EV0; try congruence.
-      split. constructor. auto.
-      assert (res = res0) as <- by (eapply eventval_match_determ_2; eauto).
-      split. constructor. auto.
+    * destruct (cp_eq_dec cp bottom).
+      -- subst. inv EV; inv EV0; try congruence.
+         split. constructor. auto.
+         assert (res = res0) as <- by (eapply eventval_match_determ_2; eauto).
+         split. constructor. auto.
+      -- destruct Mem.set_perm; try congruence.
+         inv SET_PERM; inv SET_PERM0.
+         inv EV; inv EV0; try congruence.
+         split. constructor. auto.
+         assert (res = res0) as <- by (eapply eventval_match_determ_2; eauto).
+         split. constructor. auto.
     * inv EV; inv EV0; try congruence.
       split. constructor. auto.
       assert (res = res0) as <- by (eapply eventval_match_determ_2; eauto).
@@ -277,7 +299,7 @@ Variant mergeable: state -> Prop :=
        Forall not_ptr args) ->
       sig = ef_sig ef ->
       call_trace ge (comp_of f) bottom (Vptr f' Ptrofs.zero) args
-        (sig_args sig) E0 ->
+        (proj_sig_args sig) E0 ->
       (* (let (m', dummy_ra) := Mem.alloc m bottom 0 0 in *)
       (*  let (m'', dummy_sp) := Mem.alloc m' bottom 0 0 in *)
       (*  match sp with *)
@@ -317,7 +339,7 @@ Proof.
                  assert (Genv.type_of_call (comp_of fi) bottom = Genv.CrossCompartmentCall -> Forall not_ptr args).
                  { simpl. destruct flowsto_dec; try congruence.
                    exfalso; apply n; auto with comps. }
-                 assert (call_trace ge (comp_of fi) bottom (Vptr b Ptrofs.zero) args (sig_args s) nil).
+                 assert (call_trace ge (comp_of fi) bottom (Vptr b Ptrofs.zero) args (proj_sig_args s) nil).
                  { constructor. simpl. destruct flowsto_dec; try congruence.
                    exfalso; apply n; auto with comps. }
                  (* destruct sp; *)
@@ -338,33 +360,33 @@ Proof.
 Defined.
 
 Lemma mergeable_safe: forall s,
-  mergeable s -> exists s', step return_address_offset ge s E0 s' /\ not (mergeable s').
+  mergeable s -> exists s', Mach.step return_address_offset ge s E0 s' /\ not (mergeable s').
 Proof.
   intros s ?. inv H.
   - exploit (return_address_offset_exists f (ef_sig ef) ros c); eauto.
     intros [? ?].
-    eexists; split; [eapply exec_Mcall_int; eauto|].
+    eexists; split; [eapply Mach.exec_Mcall_int; eauto|].
     eapply is_tail_cons_left; eauto.
     intros A; inv A.
   - exploit (return_address_offset_exists f (ef_sig ef) ros c); eauto.
     intros [? ?].
-    eexists; split; [eapply exec_Mcall_cross; eauto|].
+    eexists; split; [eapply Mach.exec_Mcall_cross; eauto|].
     eapply is_tail_cons_left; eauto. simpl; (split; [| split]); reflexivity.
     intros A; inv A.
 Qed.
 
 Lemma mergeable_step_not_final: forall s s' t,
     mergeable s ->
-    step return_address_offset ge s t s' ->
+    Mach.step return_address_offset ge s t s' ->
     forall n, not (final_state s' n).
 Proof.
   intros. intros A; inv A; inv H; inv H0.
 Qed.
 
-Definition merged_semantics := mergedL (semantics return_address_offset prog) mergeable.
+Definition merged_semantics := mergedL (Mach.semantics return_address_offset prog) mergeable.
 
 Theorem forward_simulation_merged:
-  forward_simulation (semantics return_address_offset prog) merged_semantics.
+  forward_simulation (Mach.semantics return_address_offset prog) merged_semantics.
 Proof.
   apply forward_simulation_merged; eauto.
   eapply semantics_determinate.

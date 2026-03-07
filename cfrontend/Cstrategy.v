@@ -16,23 +16,10 @@
 
 (** A deterministic evaluation strategy for C. *)
 
-Require Import Axioms.
-Require Import Classical.
-Require Import Coqlib.
-Require Import Errors.
-Require Import Maps.
-Require Import Integers.
-Require Import Floats.
-Require Import Values.
-Require Import AST.
-Require Import Memory.
-Require Import Events.
-Require Import Globalenvs.
-Require Import Smallstep.
-Require Import Ctypes.
-Require Import Cop.
-Require Import Csyntax.
-Require Import Csem.
+From Coq Require Import Classical.
+Require Import Axioms Coqlib Errors Maps.
+Require Import Integers Floats Values AST Memory Events Globalenvs Smallstep.
+Require Import Ctypes Cop Csyntax Csem.
 
 Section STRATEGY.
 
@@ -143,13 +130,13 @@ with eval_simple_rvalue: expr -> val -> Prop :=
   | esr_alignof: forall ty1 ty,
       eval_simple_rvalue (Ealignof ty1 ty) (Vptrofs (Ptrofs.repr (alignof ge ty1))).
 
-Inductive eval_simple_list: exprlist -> typelist -> list val -> Prop :=
+Inductive eval_simple_list: exprlist -> list type -> list val -> Prop :=
   | esrl_nil:
-      eval_simple_list Enil Tnil nil
+      eval_simple_list Enil nil nil
   | esrl_cons: forall r rl ty tyl v vl v',
       eval_simple_rvalue r v' -> sem_cast v' (typeof r) ty m = Some v ->
       eval_simple_list rl tyl vl ->
-      eval_simple_list (Econs r rl) (Tcons ty tyl) (v :: vl).
+      eval_simple_list (Econs r rl) (ty :: tyl) (v :: vl).
 
 Scheme eval_simple_rvalue_ind2 := Minimality for eval_simple_rvalue Sort Prop
   with eval_simple_lvalue_ind2 := Minimality for eval_simple_lvalue Sort Prop.
@@ -367,7 +354,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C (Eparen r tycast ty)) k e m)
          E0 (ExprState f (C (Eval v ty)) k e m)
 
-  | step_call: forall f C rf rargs ty k e m targs tres cconv vf vargs fd t,
+  | step_call: forall f C rf rargs ty k e m m' targs tres cconv vf vargs fd t,
       leftcontext RV RV C ->
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
       eval_simple_rvalue e (comp_of f) m rf vf ->
@@ -376,9 +363,13 @@ Inductive estep: state -> trace -> state -> Prop :=
       type_of_fundef fd = Tfunction targs tres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (typlist_of_typelist targs) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (List.map typ_of_type targs) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m
+        else if cp_eq_dec (comp_of fd) bottom then m' = m
+        else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m'),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
-          t (Callstate fd vargs (Kcall f e C ty k) m)
+          t (Callstate fd vargs (Kcall f e C ty k) m')
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
@@ -581,14 +572,17 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists v, sem_cast v1 ty1 ty2 m = Some v
   | Ecall (Eval vf tyf) rargs ty =>
       exprlist_all_values rargs ->
-      exists tyargs tyres cconv fd vl t,
+      exists tyargs tyres cconv fd vl t m',
          classify_fun tyf = fun_case_f tyargs tyres cconv
       /\ Genv.find_funct ge vf = Some fd
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
       /\ (Genv.type_of_call cp (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
-      /\ call_trace ge cp (comp_of fd) vf vl (typlist_of_typelist tyargs) t
+      /\ call_trace ge cp (comp_of fd) vf vl (List.map typ_of_type tyargs) t
+      /\ (if cp_eq_dec cp (comp_of fd) then m' = m
+          else if cp_eq_dec (comp_of fd) bottom then m' = m
+          else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m')
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
@@ -628,12 +622,15 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall cp r fd args ty t m,
+  forall cp r fd args ty t m m',
   callred ge cp r m fd args ty t ->
+  (if cp_eq_dec cp (comp_of fd) then m' = m
+   else if cp_eq_dec (comp_of fd) bottom then m' = m
+   else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m') ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
-  intros. exists tyargs, tyres, cconv, fd, args, t; auto.
+  intros. exists tyargs, tyres, cconv, fd, args, t, m'; auto.
   repeat split; auto.
 Qed.
 
@@ -697,9 +694,9 @@ Proof.
   assert (invert_expr_prop cp (C e0) m).
     eapply A; eauto. eapply rred_invert; eauto.
   red in H. destruct (C e0); auto; contradiction.
-  assert (invert_expr_prop cp (C e0) m).
+  assert (invert_expr_prop cp (C a0) m).
     eapply A; eauto. eapply callred_invert; eauto.
-  red in H. destruct (C e0); auto; contradiction.
+  red in H. destruct (C a0); auto; contradiction.
 Qed.
 
 Lemma safe_inv:
@@ -1288,7 +1285,7 @@ Proof.
   eapply plus_right.
   eapply eval_simple_list_steps with (C := fun x => C(Ecall (Eval vf (typeof rf)) x ty)); eauto.
   eapply contextlist'_call with (rl0 := Enil); auto.
-  left; apply Csem.step_call; eauto. econstructor; eauto.
+  left; eapply Csem.step_call. econstructor; eauto. eauto. exact SET_PERM.
   traceEq. auto.
 (* builtin *)
   exploit eval_simple_list_implies; eauto. intros [vl' [A B]].
@@ -1394,8 +1391,9 @@ Proof.
   eapply safe_steps. eexact S1.
   apply (eval_simple_list_steps f k e m rargs vl E2 C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [tyargs [tyres [cconv [fd [vargs [t [P [Q [U [V [W [Y Z]]]]]]]]]]]].
-  econstructor; econstructor; eapply step_call with (vargs := vargs); eauto. eapply can_eval_simple_list; eauto.
+  intros (tyargs & tyres & cconv & fd & vargs & t & mc & P & Q & U & V & W & Y & Z & SPE).
+  econstructor; econstructor; eapply step_call with (vargs := vargs) (m' := mc); eauto.
+  eapply can_eval_simple_list; eauto.
 + (* builtin *)
   pose (C' := fun x => C(Ebuiltin ef tyargs x ty)).
   assert (contextlist' C'). unfold C'; eapply contextlist'_builtin with (rl0 := Enil); auto.
@@ -1790,22 +1788,30 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       ty = typeof r2 ->
       eval_expr c e m RV (Ecomma r1 r2 ty) (t1**t2) m2 r2'
   | eval_call: forall c e m rf rargs ty t1 m1 rf' t2 m2 rargs' vf vargs
-                      targs tres cconv fd t3 m3 vres t t',
+                      targs tres cconv fd m_call t3 m3 vres m_ret t t',
       eval_expr c e m RV rf t1 m1 rf' -> eval_exprlist c e m1 rargs t2 m2 rargs' ->
       eval_simple_rvalue ge e c m2 rf' vf ->
       eval_simple_list ge e c m2 rargs' targs vargs ->
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
-      eval_funcall c m2 fd vargs t3 m3 vres ty ->
+      forall (SET_PERM_CALL:
+        if cp_eq_dec c (comp_of fd) then m_call = m2
+        else if cp_eq_dec (comp_of fd) bottom then m_call = m2
+        else Mem.set_perm_list m2 (blocks_of_env ge e) Readable = Some m_call),
+      eval_funcall c m_call fd vargs t3 m3 vres ty ->
+      forall (SET_PERM_RET:
+        if cp_eq_dec c (comp_of fd) then m_ret = m3
+        else if cp_eq_dec (comp_of fd) bottom then m_ret = m3
+        else Mem.set_perm_list m3 (blocks_of_env ge e) Freeable = Some m_ret),
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR_CALL: Genv.type_of_call c (comp_of fd) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
       forall (NO_CROSS_PTR_RETURN: Genv.type_of_call c (comp_of fd) = Genv.CrossCompartmentCall ->
                        not_ptr vres),
-      forall (EV: call_trace ge c (comp_of fd) vf vargs (typlist_of_typelist targs) t),
+      forall (EV: call_trace ge c (comp_of fd) vf vargs (List.map typ_of_type targs) t),
       forall (EV': return_trace ge c (comp_of fd) vres (rettype_of_type ty) t'),
-      eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t**t3**t') m3 (Eval vres ty)
+      eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t**t3**t') m_ret (Eval vres ty)
 
 with eval_exprlist: compartment -> env -> mem -> exprlist -> trace -> mem -> exprlist -> Prop :=
   | eval_nil: forall c e m,
@@ -2042,17 +2048,21 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       evalinf_exprlist c e m1 a2 t2 ->
       evalinf_expr c e m RV (Ecall a1 a2 ty) (t1 *** t2)
   | evalinf_call: forall c e m rf rargs ty t1 m1 rf' t2 m2 rargs' vf vargs
-                      targs tres cconv fd t3 t,
+                      targs tres cconv fd m_call t3 t,
       eval_expr c e m RV rf t1 m1 rf' -> eval_exprlist c e m1 rargs t2 m2 rargs' ->
       eval_simple_rvalue ge e c m2 rf' vf ->
       eval_simple_list ge e c m2 rargs' targs vargs ->
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
-      evalinf_funcall m2 fd vargs t3 ->
+      forall (SET_PERM_CALL:
+        if cp_eq_dec c (comp_of fd) then m_call = m2
+        else if cp_eq_dec (comp_of fd) bottom then m_call = m2
+        else Mem.set_perm_list m2 (blocks_of_env ge e) Readable = Some m_call),
+      evalinf_funcall m_call fd vargs t3 ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR: Genv.type_of_call c (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge c (comp_of fd) vf vargs (typlist_of_typelist targs) t),
+      forall (EV: call_trace ge c (comp_of fd) vf vargs (List.map typ_of_type targs) t),
       evalinf_expr c e m RV (Ecall rf rargs ty) (t1***t2***t***t3)
 
 with evalinf_exprlist: compartment -> env -> mem -> exprlist -> traceinf -> Prop :=
@@ -2300,7 +2310,7 @@ Proof.
     eapply leftcontext_compose; eauto. repeat constructor. intros [A [B D]].
   exploit (H2 (fun x => C(Ebinop op a1' x ty))); eauto.
     eapply leftcontext_compose; eauto. repeat constructor. auto. intros [E [F G]].
-  simpl; intuition. eapply star_trans; eauto.
+  simpl; intuition auto with bool. eapply star_trans; eauto.
 (* cast *)
   exploit (H0 (fun x => C(Ecast x ty))); eauto.
     eapply leftcontext_compose; eauto. repeat constructor. intros [A [B D]].
@@ -2400,6 +2410,7 @@ Proof.
   right. constructor.
   eapply NO_CROSS_PTR_RETURN.
   eassumption.
+  exact SET_PERM_RET.
   reflexivity. reflexivity. reflexivity. traceEq.
 (* nil *)
   simpl; intuition. apply star_refl.
@@ -2411,7 +2422,7 @@ Proof.
   rewrite exprlist_app_simple. simpl. rewrite H5; rewrite A; auto.
   repeat rewrite exprlist_app_assoc. simpl.
   intros [E F].
-  simpl; intuition.
+  simpl; intuition auto with bool.
   eapply star_trans; eauto.
 
 (* skip *)
@@ -3084,7 +3095,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
-      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      type_of_fundef (Internal f) = Tfunction nil type_int32s cc_default ->
       eval_funcall ge (comp_of_main p) m0 (Internal f) nil t m1 (Vint r) ty ->
       bigstep_program_terminates p t r.
 
@@ -3094,7 +3105,7 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
-      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      type_of_fundef (Internal f) = Tfunction nil type_int32s cc_default ->
       evalinf_funcall ge m0 (Internal f) nil t ->
       bigstep_program_diverges p t.
 

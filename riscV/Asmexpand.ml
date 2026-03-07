@@ -123,7 +123,7 @@ let fixup_gen single double sg =
         end
     | _, _ -> ()
   in
-    List.iter2 fixup sg.sig_args (Conventions1.loc_arguments sg)
+    List.iter2 fixup (proj_sig_args sg) (Conventions1.loc_arguments sg)
 
 let fixup_call sg =
   fixup_gen move_single_arg move_double_arg sg
@@ -175,7 +175,13 @@ let expand_builtin_memcpy_small sz al src dst =
   let (rsrc, osrc) = memcpy_small_arg sz src tsrc in
   let (rdst, odst) = memcpy_small_arg sz dst tdst in
   let rec copy osrc odst sz =
-    if sz >= 8 && al >= 8 then
+    if Archi.ptr64 && sz >= 8 && al >= 8 then
+      begin
+        emit (Pld (X31, rsrc, Ofsimm osrc, false));
+        emit (Psd (X31, rdst, Ofsimm odst));
+        copy (Ptrofs.add osrc _8) (Ptrofs.add odst _8) (sz - 8)
+      end
+    else if !Clflags.option_ffpu && sz >= 8 && al >= 8 then
       begin
         emit (Pfld (F0, rsrc, Ofsimm osrc, false));
         emit (Pfsd (F0, rdst, Ofsimm odst));
@@ -216,9 +222,11 @@ let expand_builtin_memcpy_big sz al src dst =
     if dst <> BA (IR X5) then (X5, X6) else (X6, X5) in
   memcpy_big_arg sz src s;
   memcpy_big_arg sz dst d;
-  (* Use X7 as loop count, X1 and F0 as ld/st temporaries. *)
+  (* Use X7 as loop count, X31 and F0 as ld/st temporaries. *)
   let (load, store, chunksize) =
-    if al >= 8 then
+    if Archi.ptr64 && al >= 8 then
+      (Pld (X31, s, Ofsimm _0, false), Psd (X31, d, Ofsimm _0), 8)
+    else if !Clflags.option_ffpu && al >= 8 then
       (Pfld (F0, s, Ofsimm _0, false), Pfsd (F0, d, Ofsimm _0), 8)
     else if al >= 4 then
       (Plw (X31, s, Ofsimm _0, false), Psw (X31, d, Ofsimm _0), 4)
@@ -248,7 +256,7 @@ let expand_builtin_memcpy  sz al args =
 
 let expand_builtin_vload_common chunk base ofs res =
   match chunk, res with
-  | Mint8unsigned, BR(IR res) ->
+  | (Mbool | Mint8unsigned), BR(IR res) ->
      emit (Plbu (res, base, Ofsimm ofs, false))
   | Mint8signed, BR(IR res) ->
      emit (Plb  (res, base, Ofsimm ofs, false))
@@ -299,7 +307,7 @@ let expand_builtin_vload chunk args res =
 
 let expand_builtin_vstore_common chunk base ofs src =
   match chunk, src with
-  | (Mint8signed | Mint8unsigned), BA(IR src) ->
+  | (Mbool | Mint8signed | Mint8unsigned), BA(IR src) ->
      emit (Psb (src, base, Ofsimm ofs))
   | (Mint16signed | Mint16unsigned), BA(IR src) ->
      emit (Psh (src, base, Ofsimm ofs))
@@ -386,7 +394,7 @@ let rec args_size l ri rf ofs =
    but not arguments passed in FP registers. *)
 
 let arguments_size sg =
-  let (ri, _, ofs) = args_size sg.sig_args 0 0 0 in
+  let (ri, _, ofs) = args_size (proj_sig_args sg) 0 0 0 in
   ri + ofs
 
 let save_arguments first_reg base_ofs =
@@ -549,6 +557,25 @@ let expand_ctz ~sixtyfour ~splitlong =
                      else Psrliw(X6, X X6, coqint_of_camlint 31l));
   emit (Psubw(X7, X X7, X X6))
 
+(* Full register width "and", "xor" *)
+
+let _Pand (r, a1, a2) =
+  if Archi.ptr64 then Pandl(r, a1, a2) else Pandw(r, a1, a2)
+let _Pxor (r, a1, a2) =
+  if Archi.ptr64 then Pxorl(r, a1, a2) else Pxorw(r, a1, a2)
+
+(* Conditional move *)
+(* res <- if cond then arg1 else arg2
+   cond must be 0 or 1. *)
+
+let expand_csel res cond arg1 arg2 =
+  emit (Psubw(X31, X0, cond)); (* X31 = -1 if cond = 1, 0 if cond = 0 *)
+  emit (_Pxor(X1, arg1, arg2));
+  emit (_Pand(X1, X X1, X X31));
+  emit (_Pxor(res, arg2, X X1))
+     (* res = (arg1 ^ arg2) ^ arg2 = arg1  if cond = 1
+        res = 0 ^ arg2 = arg2              if cond = 0 *)
+
 (* Handling of compiler-inlined builtins *)
 
 let expand_builtin_inline name args res =
@@ -668,6 +695,7 @@ let expand_instruction instr =
         let extra_sz = if n >= 8 then 0 else align ((8 - n) * wordsize) 16 in
         let full_sz = Z.add sz (Z.of_uint extra_sz) in
         expand_addptrofs X2 X2 (Ptrofs.repr (Z.neg full_sz));
+        emit (Pcfi_adjust sz);
         expand_storeind_ptr X30 X2 ofs;
         let va_ofs =
           Z.add full_sz (Z.of_sint ((n - 8) * wordsize)) in
@@ -675,6 +703,7 @@ let expand_instruction instr =
         save_arguments n va_ofs
       end else begin
         expand_addptrofs X2 X2 (Ptrofs.repr (Z.neg sz));
+        emit (Pcfi_adjust sz);
         expand_storeind_ptr X30 X2 ofs;
         vararg_start_ofs := None
       end
@@ -687,6 +716,8 @@ let expand_instruction instr =
       end else 0 in
      expand_addptrofs X2 X2 (Ptrofs.repr (Z.add sz (Z.of_uint extra_sz)))
 
+  | Pcsel(rd, rcond, rs1, rs2) ->
+      expand_csel rd (X rcond) (X rs1) (X rs2)
   | Pseqw(rd, rs1, rs2) ->
       (* emulate based on the fact that x == 0 iff x <u 1 (unsigned cmp) *)
       if rs2 = X0 then begin
@@ -735,8 +766,8 @@ let expand_instruction instr =
   | Pbuiltin (ef,args,res) ->
      begin match ef with
      | EF_builtin (name,sg) ->
-        expand_builtin_inline (camlstring_of_coqstring name) args res
-     | EF_vload (chunk) ->
+        expand_builtin_inline name args res
+     | EF_vload chunk ->
         expand_builtin_vload chunk args res
      | EF_vstore (chunk) ->
         expand_builtin_vstore chunk args
@@ -786,7 +817,7 @@ let expand_function id fn =
     expand id (* sp= *) 2 preg_to_dwarf expand_instruction fn.fn_code;
     Errors.OK (get_current_function ())
   with Error s ->
-    Errors.Error (Errors.msg (coqstring_of_camlstring s))
+    Errors.Error (Errors.msg s)
 
 let expand_fundef id = function
   | Internal f ->

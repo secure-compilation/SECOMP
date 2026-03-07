@@ -12,7 +12,7 @@
 
 (** Correctness proof for the branch tunneling optimization. *)
 
-Require Import FunInd.
+From Coq Require Import FunInd.
 Require Import Coqlib Maps UnionFind.
 Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
@@ -699,6 +699,21 @@ Proof.
   eauto. eauto.
   econstructor; eauto using locmap_undef_regs_lessdef.
 - (* Lcall *)
+  (* Assert target SET_PERM result to avoid evar issue *)
+  assert (EXT_SET: exists tm',
+    (if cp_eq_dec (comp_of f) (comp_of fd) then tm' = tm
+     else if cp_eq_dec (comp_of fd) bottom then tm' = tm
+     else match sp with
+          | Vptr bsp _ => Mem.set_perm tm bsp Readable = Some tm'
+          | _ => tm' = tm
+          end) /\ Mem.extends m' tm').
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [reflexivity | exact MEM].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | exact MEM].
+      + destruct sp; try (subst m'; eexists; split; [reflexivity | exact MEM]).
+        exploit Mem.set_perm_parallel_extends; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   left; simpl; econstructor; split.
   eapply exec_Lcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto.
@@ -754,9 +769,11 @@ Proof.
   }
   rewrite comp_preserved_fundef, comp_tunnel_fundef.
   eapply call_trace_lessdef; eauto using symbols_preserved, senv_preserved.
+  (* SET_PERM target *)
+  rewrite comp_preserved_fundef, comp_tunnel_fundef. exact SET_T.
+  (* match_states *)
   econstructor; eauto.
-  constructor; auto.
-  constructor; auto.
+  constructor. apply match_stackframes_intro. exact LS. exact STK.
 - (* Ltailcall *)
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
   left; simpl; econstructor; split.
@@ -843,6 +860,21 @@ Proof.
   econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.
+  (* Assert target SET_PERM result to avoid evar issue *)
+  assert (EXT_SET: exists tm',
+    (if cp_eq_dec (comp_of f) cp then tm' = tm
+     else if cp_eq_dec cp bottom then tm' = tm
+     else match sp with
+          | Vptr bsp _ => Mem.set_perm tm bsp Freeable = Some tm'
+          | _ => False
+          end) /\ Mem.extends m' tm').
+  { destruct (cp_eq_dec (comp_of f) cp).
+    - subst m'. eexists; split; [reflexivity | exact MEM].
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. eexists; split; [reflexivity | exact MEM].
+      + destruct sp; try contradiction.
+        exploit Mem.set_perm_parallel_extends; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   left; econstructor; split.
   eapply exec_return; eauto.
   rewrite comp_tunnel_fundef.
@@ -852,7 +884,8 @@ Proof.
   apply locmap_getpair_lessdef with (p := map_rpair R (Conventions1.loc_result sig)) in LS.
   rewrite comp_tunnel_fundef.
   eapply return_trace_lessdef; eauto using senv_preserved.
-  constructor; auto.
+  (* match_states *)
+  econstructor; eauto.
 Qed.
 
 Lemma transf_initial_states:

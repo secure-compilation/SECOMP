@@ -13,8 +13,7 @@
 (** Pulling local scalar variables whose address is not taken
   into temporary variables. *)
 
-Require Import FSets.
-Require FSetAVL.
+From Coq Require Import FSets FSetAVL.
 Require Import Coqlib Ordered Errors.
 Require Import AST Linking.
 Require Import Ctypes Cop Clight.
@@ -56,12 +55,12 @@ Definition make_cast (a: expr) (tto: type) : expr :=
 
 Definition Sdebug_temp (id: ident) (ty: type) :=
   Sbuiltin None (EF_debug 2%positive id (typ_of_type ty :: nil))
-                (Tcons (typeconv ty) Tnil)
+                (typeconv ty :: nil)
                 (Etempvar id ty :: nil).
 
 Definition Sdebug_var (id: ident) (ty: type) :=
   Sbuiltin None (EF_debug 5%positive id (AST.Tptr :: nil))
-                (Tcons (Tpointer ty noattr) Tnil)
+                (Tpointer ty noattr :: nil)
                 (Eaddrof (Evar id ty) (Tpointer ty noattr) :: nil).
 
 Definition Sset_debug (id: ident) (ty: type) (a: expr) :=
@@ -167,7 +166,7 @@ Fixpoint store_params (cenv: compilenv) (params: list (ident * type))
   | nil => s
   | (id, ty) :: params' =>
       if VSet.mem id cenv then
-        if Conventions1.parameter_needs_normalization (rettype_of_type ty)
+        if Conventions1.parameter_needs_normalization (argtype_of_type ty)
         then Ssequence (Sset id (make_cast (Etempvar id ty) ty))
                        (store_params cenv params' s)
         else store_params cenv params' s

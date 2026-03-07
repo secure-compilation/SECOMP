@@ -2,8 +2,8 @@
 (*                                                                     *)
 (*              The Compcert verified compiler                         *)
 (*                                                                     *)
-(*      Laurence Rideau, INRIA Sophia-Antipolis-M\u00e9diterran\u00e9e           *)
-(*      Bernard Paul Serpette, INRIA Sophia-Antipolis-M\u00e9diterran\u00e9e     *)
+(*      Laurence Rideau, INRIA Sophia-Antipolis-Méditerranée           *)
+(*      Bernard Paul Serpette, INRIA Sophia-Antipolis-Méditerranée     *)
 (*      Xavier Leroy, INRIA Paris-Rocquencourt                         *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
@@ -53,10 +53,8 @@
   #</A>#
 *)
 
-Require Import Relations.
-Require Import Axioms.
-Require Import Coqlib.
-Require Import Recdef.
+From Coq Require Import Relations Recdef.
+Require Import Axioms Coqlib.
 
 Section PARMOV.
 
@@ -778,7 +776,7 @@ Proof.
   repeat rewrite <- app_ass.
   assert (~In d (dests (mu ++ sigma))). autorewrite with pmov. tauto.
   repeat rewrite exec_par_lift; auto. simpl.
-  repeat rewrite <- app_nil_end.
+  repeat rewrite app_nil_r.
   assert (move_no_temp (mu ++ sigma)).
     red in C. rewrite rev_unit in C. destruct C.
     apply move_no_temp_append; auto. apply move_no_temp_rev; auto.
@@ -828,7 +826,7 @@ Lemma state_wf_start:
   is_mill mu ->
   state_wf (State mu nil nil).
 Proof.
-  intros. constructor. rewrite <- app_nil_end. auto.
+  intros. constructor. rewrite app_nil_r. auto.
   auto.
   red. simpl. auto.
   constructor.
@@ -850,7 +848,7 @@ Proof.
   intros.
   generalize (transitions_preserve_semantics _ _ e H1
               (state_wf_start _ H H0)).
-  unfold statemove. simpl. rewrite <- app_nil_end.
+  unfold statemove. simpl. rewrite app_nil_r.
   rewrite exec_seq_exec_seq_rev. auto.
 Qed.
 

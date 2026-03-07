@@ -146,6 +146,7 @@ Definition label := positive.
 
 Inductive instruction : Type :=
   | Pmv     (rd: ireg) (rs: ireg)                    (**r integer move *)
+  | Pcsel   (rd: ireg) (rcond rs1 rs2: ireg)         (**r conditional move *)
 
 (** 32-bit integer register-immediate instructions *)
   | Paddiw  (rd: ireg) (rs: ireg0) (imm: int)        (**r add immediate *)
@@ -179,7 +180,6 @@ Inductive instruction : Type :=
   | Psllw   (rd: ireg) (rs1 rs2: ireg0)              (**r shift-left-logical *)
   | Psrlw   (rd: ireg) (rs1 rs2: ireg0)              (**r shift-right-logical *)
   | Psraw   (rd: ireg) (rs1 rs2: ireg0)              (**r shift-right-arith *)
-
 (** 64-bit integer register-immediate instructions *)
   | Paddil  (rd: ireg) (rs: ireg0) (imm: int64)      (**r add immediate *)
   | Psltil  (rd: ireg) (rs: ireg0) (imm: int64)      (**r set-less-than immediate *)
@@ -212,7 +212,6 @@ Inductive instruction : Type :=
   | Pslll   (rd: ireg) (rs1 rs2: ireg0)              (**r shift-left-logical *)
   | Psrll   (rd: ireg) (rs1 rs2: ireg0)              (**r shift-right-logical *)
   | Psral   (rd: ireg) (rs1 rs2: ireg0)              (**r shift-right-arith *)
-
   | Pcvtl2w (rd: ireg) (rs: ireg0)                   (**r int64->int32 (pseudo) *)
   | Pcvtw2l (r: ireg)                                (**r int32 signed -> int64 (pseudo) *)
 
@@ -346,7 +345,7 @@ Inductive instruction : Type :=
   | Pfcvtsd  (rd: freg) (rs: freg)                  (**r float   -> float32 *)
 
   (* Pseudo-instructions *)
-  | Pld_arg   (ch: memory_chunk) (rd: ireg + freg) (ra: ireg) (ofs: offset)   (**r load arg *)
+  | Pld_arg  (ch: memory_chunk) (rd: ireg + freg) (ra: ireg) (ofs: offset)   (**r load arg *)
   | Pallocframe (sz: Z) (pos: ptrofs)               (**r allocate new stack frame *)
   | Pfreeframe  (sz: Z) (pos: ptrofs)               (**r deallocate stack frame and restore previous frame *)
   | Plabel  (lbl: label)                            (**r define a code label *)
@@ -358,7 +357,10 @@ Inductive instruction : Type :=
   | Pbtbl   (r: ireg)  (tbl: list label)            (**r N-way branch through a jump table *)
   | Pbuiltin: external_function -> list (builtin_arg preg)
               -> builtin_res preg -> instruction    (**r built-in function (pseudo) *)
-  | Pnop : instruction.                             (**r nop instruction *)
+  | Pnop : instruction                             (**r nop instruction *)
+  | Pcfi_rel_offset (ofs: int)                      (**r .cfi_rel_offset debug directive *)
+  | Pcfi_adjust (ofs: int).                         (**r .cfi_adjust debug directive *)
+
 
 
 (** The pseudo-instructions are the following:
@@ -652,6 +654,11 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   match i with
   | Pmv d s =>
       Next (nextinstr (rs#d <- (rs#s))) m
+  | Pcsel d c s1 s2 =>
+      let v :=
+        if Val.eq rs#c Vone then rs#s1 else
+        if Val.eq rs#c Vzero then rs#s2 else Vundef in
+      Next (nextinstr (rs#d <- v #X31 <- Vundef)) m
 
 (** 32-bit integer register-immediate instructions *)
   | Paddiw d s i =>
@@ -776,7 +783,6 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       Next (nextinstr (rs#d <- (Val.shrlu rs###s1 rs###s2))) m
   | Psral d s1 s2 =>
       Next (nextinstr (rs#d <- (Val.shrl rs###s1 rs###s2))) m
-
   | Pcvtl2w d s =>
       Next (nextinstr (rs#d <- (Val.loword rs##s))) m
   | Pcvtw2l r =>
@@ -1011,11 +1017,14 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
           end
       | _ => Stuck
       end
+  | Pcfi_rel_offset _ =>
+      Next (nextinstr rs) m
   | Pbuiltin ef args res =>
       Stuck (**r treated specially below *)
 
   (** The following instructions and directives are not generated directly by Asmgen,
       so we do not model them. *)
+  | Pcfi_adjust _
   | Pfence
 
   | Pfmvxs _ _
@@ -1250,6 +1259,9 @@ Definition initial_stack: stack := nil.
       (* If we are in the same compartment as previously recorded, we
            don't update the stack *)
       Some (s, rs', m)
+    else if cp_eq_dec cp' bottom then
+      (* Bottom-compartment callees (runtime externals) don't push frames *)
+      Some (s, rs', m)
     else
       (* Otherwise, we simply push the new frame on the stack *)
       let (m', dummy_ra) := Mem.alloc m cp' 0 0 in
@@ -1260,6 +1272,7 @@ Definition initial_stack: stack := nil.
               (* Even if it's a pointer, we really don't want it to be
                  statically allocated *)
             | None =>
+                if cp_eq_dec (Mem.block_compartment m bsp) cp then
                 (* it has to be freeable, otherwise it's not a new frame and someone's trying to trick us *)
                 if Mem.perm_dec m'' bsp 0 Max Freeable then
                   match Mem.set_perm m'' bsp Readable with
@@ -1273,6 +1286,7 @@ Definition initial_stack: stack := nil.
                   | _ => None
                   end
                 else None
+                else None
             | Some _ => None
             end
       | _ => None
@@ -1285,9 +1299,11 @@ Definition initial_stack: stack := nil.
     intros.
     unfold update_stack_call in H.
     destruct cp_eq_dec; try congruence.
+    destruct (cp_eq_dec); try congruence.
     do 2 destruct Mem.alloc.
     destruct (rs X2); try discriminate.
     destruct (Genv.find_def); try discriminate.
+    destruct (cp_eq_dec); try discriminate.
     destruct (Mem.perm_dec); try discriminate.
     destruct (Mem.set_perm); try discriminate.
     destruct (rs X1); try discriminate. inv H.
@@ -1445,6 +1461,10 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Loading from dummy stack pointer *)
       asm_parent_dummy_sp st = Vptr dsp Ptrofs.zero ->
       rs ra = Vptr dsp o' ->
+      forall (EXECi: forall ird, rd = inl ird ->
+                       exec_load ch rs m ird ra o (comp_of f) false = Stuck),
+      forall (EXECf: forall frd, rd = inr frd ->
+                       exec_load ch rs m frd ra o (comp_of f) false = Stuck),
      
       (* gets replaced with actual stack pointer *)
       asm_parent_sp st = sp ->
@@ -1506,7 +1526,7 @@ Inductive step: state -> trace -> state -> Prop :=
           Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) cp' (Vptr b' Ptrofs.zero)
-              args (sig_args sig) t),
+              args (proj_sig_args sig) t),
       forall (INVALIDATE: invalidate_call rs'' sig = rs'''),
       step (State st rs m (comp_of f)) t (State st' rs''' m'' (comp_of f))
   | exec_step_internal_return:
@@ -1533,7 +1553,8 @@ Inductive step: state -> trace -> state -> Prop :=
         rs PC <> Vnullptr ->
         rs PC <> Vundef ->
         rs PC = asm_parent_dummy_ra st ->
-        (* rs PC = Vone -> *)
+        forall (NO_DEF: forall b ofs, asm_parent_dummy_ra st = Vptr b ofs ->
+                          Genv.find_def ge b = None),
         (* Cross ret *)
         forall (CROSS_RET: rec_cp <> cp'),
         forall (RESTORE_SP: rs SP = asm_parent_dummy_sp st),
@@ -1686,53 +1707,132 @@ Qed.
 (*     destruct ((Mem.mem_compartments M) ! B) *)
 (*   end. *)
 
+Lemma param_incoming_to_outgoing:
+  forall sg p o ty,
+    In p (loc_arguments sg) ->
+    In (S Incoming o ty) (regs_of_rpair (map_rpair parameter_of_argument p)) ->
+    In (S Outgoing o ty) (regs_of_rpair p).
+Proof.
+  intros sg p o ty Hin Hrp.
+  exploit loc_arguments_acceptable; eauto.
+  destruct p; simpl in *.
+  - intros ACC. destruct Hrp as [Hrp|[]].
+    destruct r; simpl in Hrp; try congruence.
+    destruct sl; inv Hrp. inv ACC. left; auto.
+  - intros [ACC1 ACC2]. destruct Hrp as [Hrp|[Hrp|[]]];
+    [destruct rhi | destruct rlo]; simpl in Hrp; try congruence;
+    try (destruct sl; inv Hrp); try inv ACC1; try inv ACC2;
+    [left | right; left]; auto.
+Qed.
+
+Lemma loc_parameters_incoming_unique:
+  forall sg p1 p2 o ty1 ty2,
+    In p1 (loc_parameters sg) ->
+    In p2 (loc_parameters sg) ->
+    In (S Incoming o ty1) (regs_of_rpair p1) ->
+    In (S Incoming o ty2) (regs_of_rpair p2) ->
+    p1 = p2 /\ ty1 = ty2.
+Proof.
+  unfold loc_parameters; intros sg p1 p2 o ty1 ty2 H1 H2 Hin1 Hin2.
+  apply list_in_map_inv in H1 as [x1 [Heq1 Hx1]].
+  apply list_in_map_inv in H2 as [x2 [Heq2 Hx2]].
+  assert (Ho1: In (S Outgoing o ty1) (regs_of_rpair x1))
+    by (eapply param_incoming_to_outgoing; eauto; rewrite <- Heq1; auto).
+  assert (Ho2: In (S Outgoing o ty2) (regs_of_rpair x2))
+    by (eapply param_incoming_to_outgoing; eauto; rewrite <- Heq2; auto).
+  destruct (loc_arguments_outgoing_unique _ _ _ _ _ _ Hx1 Hx2 Ho1 Ho2) as [Heq Hty].
+  subst x2. subst ty2. split; auto. congruence.
+Qed.
+
 Lemma in_param_one_same_ty: forall ofs_arg ty ty0 sg,
     In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
     In (One (S Incoming ofs_arg ty0)) (loc_parameters sg) ->
     ty = ty0.
 Proof.
-  unfold loc_parameters.
-  intros ofs_arg ty ty0 sg A B.
-  apply list_in_map_inv in A as [x [A A']].
-  apply list_in_map_inv in B as [y [B B']].
-  destruct x; simpl in A; try congruence.
-  destruct y; simpl in B; try congruence.
-Admitted.
+  intros ofs_arg ty ty0 sg H1 H2.
+  edestruct (loc_parameters_incoming_unique sg _ _ ofs_arg ty ty0 H1 H2)
+    as [_ ?]; simpl; auto.
+Qed.
 
 Lemma in_param_twolong_hi_same_ty: forall ofs_arg ty ty0 lo lo0 sg,
     In (Twolong (S Incoming ofs_arg ty) lo) (loc_parameters sg) ->
     In (Twolong (S Incoming ofs_arg ty0) lo0) (loc_parameters sg) ->
     ty = ty0.
 Proof.
-Admitted.
+  intros ofs_arg ty ty0 lo lo0 sg H1 H2.
+  edestruct (loc_parameters_incoming_unique sg _ _ ofs_arg ty ty0 H1 H2)
+    as [_ ?]; simpl; auto.
+Qed.
 
 Lemma in_param_twolong_lo_same_ty: forall ofs_arg ty ty0 hi hi0 sg,
     In (Twolong hi (S Incoming ofs_arg ty)) (loc_parameters sg) ->
     In (Twolong hi0 (S Incoming ofs_arg ty0)) (loc_parameters sg) ->
     ty = ty0.
 Proof.
-Admitted.
+  intros ofs_arg ty ty0 hi hi0 sg H1 H2.
+  exploit (loc_parameters_incoming_unique sg _ _ ofs_arg ty ty0 H1 H2).
+  - simpl; right; left; auto.
+  - simpl; right; left; auto.
+  - intros [_ ?]; auto.
+Qed.
 
 Lemma in_param_twolong_hi_lo: forall ofs_arg ty ty0 hi lo sg,
     In (Twolong hi (S Incoming ofs_arg ty)) (loc_parameters sg) ->
     In (Twolong (S Incoming ofs_arg ty0) lo) (loc_parameters sg) ->
     False.
 Proof.
-Admitted.
+  intros ofs_arg ty ty0 hi lo sg H1 H2.
+  exploit (loc_parameters_incoming_unique sg _ _ ofs_arg ty ty0 H1 H2).
+  - simpl; right; left; auto.
+  - simpl; left; auto.
+  - intros [Heq _].
+    unfold loc_parameters in H1.
+    apply list_in_map_inv in H1 as [x [Hmap Hx]].
+    destruct x as [r | rhi rlo]; simpl in Hmap; inv Hmap.
+    exploit loc_arguments_acceptable; eauto. intros [ACC1 ACC2].
+    destruct rhi as [r | [] ? ? ]; simpl in *;
+      try discriminate; try (inv ACC1; fail).
+    inv Heq.
+    destruct rlo as [r | [] ? ? ]; simpl in *;
+      try discriminate; try (inv ACC2; fail).
+    inv H1.
+    eapply loc_arguments_twolong_diff; eauto.
+Qed.
 
 Lemma in_param_one_twolong_hi: forall ofs_arg ty ty0 lo sg,
     In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
     In (Twolong (S Incoming ofs_arg ty0) lo) (loc_parameters sg) ->
     False.
 Proof.
-Admitted.
+  intros ofs_arg ty ty0 lo sg H1 H2.
+  exploit (loc_parameters_incoming_unique sg _ _ ofs_arg ty ty0 H1 H2).
+  - simpl; auto.
+  - simpl; left; auto.
+  - intros [Heq _]; congruence.
+Qed.
 
 Lemma in_param_one_twolong_lo: forall ofs_arg ty ty0 hi sg,
     In (One (S Incoming ofs_arg ty)) (loc_parameters sg) ->
     In (Twolong hi (S Incoming ofs_arg ty0)) (loc_parameters sg) ->
     False.
 Proof.
-Admitted.
+  intros ofs_arg ty ty0 hi sg H1 H2.
+  exploit (loc_parameters_incoming_unique sg _ _ ofs_arg ty ty0 H1 H2).
+  - simpl; auto.
+  - simpl; right; left; auto.
+  - intros [Heq _]; destruct hi; congruence.
+Qed.
+
+Lemma semantics_single_events: forall p, single_events (semantics p).
+Proof.
+  intros; red; intros. inv H; simpl.
+  lia. lia. lia.
+  inv EV; auto.
+  lia. lia.
+  inv EV; auto.
+  eapply external_call_trace_length; eauto.
+  eapply external_call_trace_length; eauto.
+Qed.
 
 Lemma semantics_determinate: forall p, determinate (semantics p).
 Proof.
@@ -1796,8 +1896,12 @@ intros; constructor; simpl; intros.
       }
       assert (v = v0) as <- by congruence.
       congruence.
-  + admit.
-  + admit.
+  + exfalso. destruct rd0;
+      [specialize (EXECi _ eq_refl); specialize (EXECi0 _ eq_refl); congruence
+      |specialize (EXECf _ eq_refl); specialize (EXECf0 _ eq_refl); congruence].
+  + exfalso. destruct rd0;
+      [specialize (EXECi _ eq_refl); specialize (EXECi0 _ eq_refl); congruence
+      |specialize (EXECf _ eq_refl); specialize (EXECf0 _ eq_refl); congruence].
   + split. constructor. auto.
     destruct rd0.
     * exploit EXECi; eauto. exploit EXECi0; eauto.
@@ -1815,8 +1919,8 @@ intros; constructor; simpl; intros.
   + split. constructor. auto.
   + now destruct i0.
   + split; constructor; auto.
-  + admit.
-  + admit.
+  + exfalso. exploit NO_DEF; eauto. congruence.
+  + exfalso. exploit NO_DEF; eauto. congruence.
   (* + admit. *)
   (* + admit. *)
   + inv EV; inv EV0; try congruence.
@@ -1831,8 +1935,7 @@ intros; constructor; simpl; intros.
     exploit external_call_determ. eexact H5. eexact H15. intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
   + now destruct i0.
-  +
-    (* assert (ef = ef0) as <- by congruence. *)
+  + (* assert (ef = ef0) as <- by congruence. *)
     assert (args0 = args) as ->
         by (eapply extcall_arguments_determ; eauto).
     exploit external_call_determ. eexact H6. eexact H18. intros [A B].
@@ -1853,7 +1956,7 @@ intros; constructor; simpl; intros.
   inv H. congruence. congruence.
 - (* final states *)
   inv H; inv H0. congruence.
-Admitted.
+Qed.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
 
@@ -1871,23 +1974,23 @@ Section ExecSem.
   Declare Scope reducts_monad_scope.
 
   Notation "'do' U <- A ; B" := (match A with Some U => B | None => None end)
-                                 (at level 200, U ident, A at level 100, B at level 200)
+                                 (at level 200, U name, A at level 100, B at level 200)
       : reducts_monad_scope.
 
   Notation "'do' 'Vptr' U Y <- A ; B" := (match A with Vptr U Y => B | _ => None end)
-                                          (at level 200, U ident, Y ident, A at level 100, B at level 200)
+                                          (at level 200, U name, Y name, A at level 100, B at level 200)
       : reducts_monad_scope.
 
   Notation "'do' U , Y <- A ; B" := (match A with Some (U, Y) => B | None => None end)
-                                     (at level 200, U ident, Y ident, A at level 100, B at level 200)
+                                     (at level 200, U name, Y name, A at level 100, B at level 200)
       : reducts_monad_scope.
 
   Notation "'do' U , Y , Z <- A ; B" := (match A with Some (U, Y, Z) => B | None => None end)
-                                         (at level 200, U ident, Y ident, Z ident, A at level 100, B at level 200)
+                                         (at level 200, U name, Y name, Z name, A at level 100, B at level 200)
       : reducts_monad_scope.
 
   Notation "'do' U , Y , Z , W <- A ; B" := (match A with Some (U, Y, Z, W) => B | None => None end)
-                                             (at level 200, U ident, Y ident, Z ident, W ident, A at level 100, B at level 200)
+                                             (at level 200, U name, Y name, Z name, W name, A at level 100, B at level 200)
       : reducts_monad_scope.
 
   Notation " 'check' A ; B" := (if A then B else None)
@@ -2079,7 +2182,7 @@ Section ExecSem.
                                | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
                                | _ => true
                                end);
-                        do t <- get_call_trace fundef unit ge (comp_of f) cp' (Vptr b' ofs') vargs (sig_args sig);
+                        do t <- get_call_trace fundef unit ge (comp_of f) cp' (Vptr b' ofs') vargs (proj_sig_args sig);
                         Some (t, State st'' (invalidate_call rs'' sig) m'' (comp_of f))
                     | None, true => (* exec_step_internal_return *)
                         (* check (Genv.allowed_call_b ge (comp_of f) (rs' PC)); *)
@@ -2161,12 +2264,12 @@ Section ExecSem.
       rewrite H1, H2, H3, H4.
       destruct rd; auto.
       + destruct exec_load eqn:?; auto.
-        * admit.
+        * specialize (EXECi _ eq_refl). congruence.
         * assert (ch = chunk_of_type ty) as ->.
           { admit. }
           erewrite Ptrofs.eq_true, H7, H8; eauto.
       + destruct exec_load eqn:?; auto.
-        * admit.
+        * specialize (EXECf _ eq_refl). congruence.
         * assert (ch = chunk_of_type ty) as ->.
           { admit. }
           erewrite Ptrofs.eq_true, H7, H9; eauto.

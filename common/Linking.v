@@ -16,7 +16,7 @@
 
 (** Separate compilation and syntactic linking *)
 
-Require Import Coq.Bool.Sumbool.
+From Coq Require Import Sumbool.
 Require Import Coqlib Maps Errors AST.
 
 (** This file follows "approach A" from the paper
@@ -1138,6 +1138,24 @@ Proof.
   eapply link_match_program; eauto.
 (* - intros ? ? ? ?. eapply has_comp_transl_partial_match; eauto. *)
 (*   eapply comp_transf_partial_fundef. eauto. *)
+- intros. eapply link_transf_partial_fundef; eauto.
+- intros; subst. exists v; auto.
+Qed.
+
+Global Instance TransfPartialContextualLink2
+           {A B C D V: Type} {LV: Linker V}
+           {CA: has_comp A} {CB: has_comp B}
+           (tr_fun: C -> D -> A -> res B)
+           (ctx1_for: program (fundef A) V -> C)
+           (ctx2_for: program (fundef A) V -> D)
+           {CAB: forall c d, has_comp_transl_partial (tr_fun c d)}:
+  TransfLink (fun (p1: program (fundef A) V) (p2: program (fundef B) V) =>
+              match_program
+                (fun cu f tf => AST.transf_partial_fundef (tr_fun (ctx1_for cu) (ctx2_for cu)) f = OK tf)
+                eq p1 p2).
+Proof.
+  red. intros. destruct (link_linkorder _ _ _ H) as [LO1 LO2].
+  eapply link_match_program; eauto.
 - intros. eapply link_transf_partial_fundef; eauto.
 - intros; subst. exists v; auto.
 Qed.

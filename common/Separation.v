@@ -30,7 +30,7 @@
   frame rule; instead, a weak form of the frame rule is provided
   by the lemmas that help us reason about the logical assertions. *)
 
-Require Import Setoid Program.Basics.
+From Coq Require Import Setoid Program.Basics.
 Require Import Coqlib Decidableplus.
 Require Import AST Integers Values Memory Events Globalenvs.
 
@@ -937,7 +937,8 @@ Lemma alloc_parallel_rule_2:
   exists j',
      m2' |= range b2 0 lo Freeable ** range b2 hi sz2 Freeable ** minjection j' m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
-  /\ j' b1 = Some(b2, delta).
+  /\ j' b1 = Some(b2, delta)
+  /\ inject_separated j j' m1 m2.
 Proof.
   intros.
   set (j1 := fun b => if eq_block b b1 then Some(b2, delta) else j b).
@@ -950,11 +951,16 @@ Proof.
   - inversion H9; clear H9; subst b3 delta0 b0. split; eapply Mem.fresh_block_alloc; eauto.
   - congruence. }
   rewrite sep_swap in H. eapply globalenv_inject_incr with (j' := j1) in H; eauto. rewrite sep_swap in H.
+  assert (Xsave := X). assert (Ysave := Y).
   clear X Y.
   exploit alloc_parallel_rule; eauto.
   intros (j' & A & B & C & D).
-  exists j'; split; auto.
-  rewrite sep_swap4 in A. rewrite sep_swap4. apply globalenv_inject_incr with j1 m1; auto.
-- red; unfold j1; intros. destruct (eq_block b b1). congruence. rewrite D; auto.
-- red; unfold j1; intros. destruct (eq_block b0 b1). congruence. rewrite D in H9 by auto. congruence.
+  exists j'; split; [|split; [|split]]; auto.
+- rewrite sep_swap4 in A. rewrite sep_swap4. apply globalenv_inject_incr with j1 m1; auto.
+  + red; unfold j1; intros. destruct (eq_block b b1). congruence. rewrite D; auto.
+  + red; unfold j1; intros. destruct (eq_block b0 b1). congruence. rewrite D in H9 by auto. congruence.
+- (* inject_separated j j' m1 m2 *)
+  red; intros. destruct (eq_block b0 b1).
+  + subst b0. rewrite C in H9. inv H9. split; eapply Mem.fresh_block_alloc; eauto.
+  + rewrite D in H9 by auto. congruence.
 Qed.

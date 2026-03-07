@@ -17,11 +17,10 @@
 
 (** Formalization of floating-point numbers, using the Flocq library. *)
 
-Require Import Reals.
+From Coq Require Import Reals Program.
 Require Import Coqlib Zbits Integers.
 From Flocq Require Import BinarySingleNaN Binary Bits Core.
 Require Import IEEE754_extra.
-Require Import Program.
 Require Archi.
 Import ListNotations.
 
@@ -472,7 +471,7 @@ Theorem of_intu_of_int_1:
 Proof.
   unfold of_intu, of_int, Int.signed, Int.ltu; intro.
   change (Int.unsigned ox8000_0000) with Int.half_modulus.
-  destruct (zlt (Int.unsigned x) Int.half_modulus); now intuition.
+  destruct (zlt (Int.unsigned x) Int.half_modulus); now intuition auto.
 Qed.
 
 Theorem of_intu_of_int_2:
@@ -860,7 +859,7 @@ Theorem of_longu_of_long_1:
 Proof.
   unfold of_longu, of_long, Int64.signed, Int64.ltu; intro.
   change (Int64.unsigned (Int64.repr Int64.half_modulus)) with Int64.half_modulus.
-  destruct (zlt (Int64.unsigned x) Int64.half_modulus); now intuition.
+  destruct (zlt (Int64.unsigned x) Int64.half_modulus); now intuition auto.
 Qed.
 
 Theorem of_longu_of_long_2:

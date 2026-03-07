@@ -33,8 +33,6 @@ module type SYSTEM =
       val name_of_section: section_name -> string
       val creg: out_channel -> int -> unit
       val print_file_line: out_channel -> string -> int -> unit
-      val cfi_startproc: out_channel -> unit
-      val cfi_endproc: out_channel -> unit
       val cfi_adjust: out_channel -> int32 -> unit
       val cfi_rel_offset: out_channel -> string -> int32 -> unit
       val print_prologue: out_channel -> unit
@@ -132,7 +130,7 @@ module Linux_System : SYSTEM =
           elf_mergeable_string_section sz ".section	.rodata"
       | Section_literal sz ->
           elf_mergeable_literal_section sz ".section	.rodata"
-      | Section_jumptable -> ".text"
+      | Section_jumptable -> ".section	.rodata"
       | Section_user(s, wr, ex) ->
           sprintf ".section	\"%s\",\"a%s%s\",@progbits"
             s (if wr then "w" else "") (if ex then "x" else "")
@@ -155,9 +153,6 @@ module Linux_System : SYSTEM =
       print_file_line oc comment file line
 
     (* Emit .cfi directives *)
-    let cfi_startproc = cfi_startproc
-
-    let cfi_endproc = cfi_endproc
 
     let cfi_adjust = cfi_adjust
 
@@ -259,9 +254,6 @@ module Diab_System : SYSTEM =
       print_file_line_d2 oc comment file line
 
     (* Emit .cfi directives *)
-    let cfi_startproc oc = ()
-
-    let cfi_endproc oc = ()
 
     let cfi_adjust oc delta = ()
 
@@ -842,12 +834,12 @@ module Target (System : SYSTEM):TARGET =
         begin match ef with
           | EF_annot(kind,txt, targs) ->
             begin match (P.to_int kind) with
-              | 1 -> let annot = annot_text preg_annot "sp" (camlstring_of_coqstring txt) args in
+              | 1 -> let annot = annot_text preg_annot "sp" txt args in
                 fprintf oc "%s annotation: %S\n" comment annot
 
               | 2 -> let lbl = new_label () in
                 fprintf oc "%a:\n" label lbl;
-                add_ais_annot lbl preg_annot "r1" (camlstring_of_coqstring txt) args
+                add_ais_annot lbl preg_annot "r1" txt args
               | _ -> assert false
               end
           | EF_debug(kind, txt, targs) ->
@@ -855,7 +847,7 @@ module Target (System : SYSTEM):TARGET =
                                (P.to_int kind) (extern_atom txt) args
           | EF_inline_asm(txt, sg, clob) ->
               fprintf oc "%s begin inline assembly\n\t" comment;
-              print_inline_asm preg_asm oc (camlstring_of_coqstring txt) sg args res;
+              print_inline_asm preg_asm oc txt sg args res;
               fprintf oc "%s end inline assembly\n" comment
           | _ ->
               assert false

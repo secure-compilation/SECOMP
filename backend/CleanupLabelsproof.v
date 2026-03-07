@@ -12,7 +12,7 @@
 
 (** Correctness proof for clean-up of labels *)
 
-Require Import FSets.
+From Coq Require Import FSets.
 Require Import Coqlib Ordered Integers.
 Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
@@ -310,7 +310,6 @@ Proof.
 (* Lgetstack *)
   left; econstructor; split.
   econstructor; eauto.
-  inv STACKS; eauto. inv H0. eapply H.
   econstructor; eauto with coqlib.
 (* Lsetstack *)
   left; econstructor; split.
@@ -353,6 +352,7 @@ Proof.
     intros; subst.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved.
   }
+  rewrite comp_function_translated, comp_match_prog. exact SET_PERM.
   econstructor; eauto. constructor; auto.
   constructor; eauto with coqlib.
 (* Ltailcall *)

@@ -1,6 +1,6 @@
 (**
 This file is part of the Flocq formalization of floating-point
-arithmetic in Coq: http://flocq.gforge.inria.fr/
+arithmetic in Coq: https://flocq.gitlabpages.inria.fr/
 
 Copyright (C) 2009-2018 Sylvie Boldo
 #<br />#
@@ -214,7 +214,7 @@ destruct (Req_dec x 0) as [Zx|Nzx].
   unfold sqrt.
   destruct Rcase_abs.
   + reflexivity.
-  + casetype False.
+  + exfalso.
     now apply Nzx, Rle_antisym; [|apply Rge_le].
 Qed.
 
@@ -2276,7 +2276,7 @@ assert (Hi: forall n, (0 < INR n + 1)%R).
   intros N.
   rewrite <- S_INR.
   apply lt_0_INR.
-  apply lt_0_Sn.
+  apply Nat.lt_0_succ.
 intros P HP.
 set (E y := exists n, (P n /\ y = / (INR n + 1))%R \/ (~ P n /\ y = 0)%R).
 assert (HE: forall n, P n -> E (/ (INR n + 1))%R).
@@ -2355,7 +2355,7 @@ assert (H: forall i, (i < N)%nat -> ~ P i).
   apply archimed.
 destruct (HP N) as [PN|PN].
   now split.
-elimtype False.
+exfalso.
 refine (Rle_not_lt _ _ (lub (/ (INR (S N) + 1))%R _) _).
   intros x [y [[Py ->]|[_ ->]]].
   destruct (eq_nat_dec y N) as [HyN|HyN].

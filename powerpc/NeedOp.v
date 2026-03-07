@@ -52,18 +52,31 @@ Definition needs_of_operation (op: operation) (nv: nval): list nval :=
   | Orolm amount mask => op1 (rolm nv amount mask)
   | Oroli amount mask => op1 (default nv)
   | Olongconst n => nil
-  | Ocast32signed | Ocast32unsigned | Onegl | Onotl => op1 (default nv)
-  | Oaddl | Osubl | Omull | Omullhs | Omullhu | Odivl | Odivlu | Oandl | Oorl | Oxorl | Oshll | Oshrl | Oshrlu => op2 (default nv)
-  | Oaddlimm _ | Oandlimm _ | Oorlimm _ | Oxorlimm _ | Oshrlimm _ | Oshrxlimm _=> op1 (default nv)
-  | Orolml _ _ | Olongoffloat | Ofloatoflong => op1 (default nv)
+  | Ocast32signed => op1 (longofint nv)
+  | Ocast32unsigned => op1 (longofintu nv)
+  | Onegl => op1 (modarith nv)
+  | Onotl => op1 (bitwise nv)
+  | Oaddl | Osubl| Omull => op2 (modarith nv)
+  | Omullhs | Omullhu | Odivl | Odivlu | Oshll | Oshrl | Oshrlu => op2 (default nv)
+  | Oandl | Oorl | Oxorl  => op2 (bitwise nv)
+  | Oaddlimm n => op1 (modarith nv)
+  | Oandlimm n => op1 (andlimm nv n)
+  | Oorlimm n => op1 (orlimm nv n)
+  | Oxorlimm n => op1 (bitwise nv)
+  | Oshrlimm n => op1 (shrlimm nv n)
+  | Oshrxlimm _=> op1 (default nv)
+  | Orolml amount mask => op1 (rolml nv amount mask)
+  | Olongoffloat | Ofloatoflong => op1 (default nv)
   | Onegf | Oabsf => op1 (default nv)
   | Oaddf | Osubf | Omulf | Odivf => op2 (default nv)
   | Onegfs | Oabsfs => op1 (default nv)
   | Oaddfs | Osubfs | Omulfs | Odivfs => op2 (default nv)
   | Osingleoffloat | Ofloatofsingle => op1 (default nv)
   | Ointoffloat => op1 (default nv)
-  | Ofloatofwords | Omakelong => op2 (default nv)
-  | Olowlong | Ohighlong => op1 (default nv)
+  | Ofloatofwords => op2 (default nv)
+  | Omakelong => makelong_hi nv :: makelong_lo nv :: nil
+  | Olowlong => op1 (loword nv)
+  | Ohighlong => op1 (hiword nv)
   | Ocmp c => needs_of_condition c
   | Osel c ty => nv :: nv :: needs_of_condition c
   end.
@@ -75,6 +88,9 @@ Definition operation_is_redundant (op: operation) (nv: nval): bool :=
   | Oandimm n => andimm_redundant nv n
   | Oorimm n => orimm_redundant nv n
   | Orolm amount mask => rolm_redundant nv amount mask
+  | Oandlimm n => andlimm_redundant nv n
+  | Oorlimm n => orlimm_redundant nv n
+  | Orolml amount mask => rolml_redundant nv amount mask
   | _ => false
   end.
 
@@ -144,6 +160,25 @@ Proof.
 - apply or_sound; auto. apply notint_sound; rewrite bitwise_idem; auto.
 - apply shrimm_sound; auto.
 - apply rolm_sound; auto.
+- apply longofint_sound; auto.
+- apply longofintu_sound; auto.
+- apply addl_sound; auto.
+- apply addl_sound; auto with na.
+- apply subl_sound; auto.
+- apply negl_sound; auto.
+- apply mull_sound; auto.
+- apply andl_sound; auto.
+- apply andlimm_sound; auto.
+- apply orl_sound; auto.
+- apply orlimm_sound; auto.
+- apply xorl_sound; auto.
+- apply xorl_sound; auto with na.
+- apply notl_sound; auto.
+- apply shrlimm_sound; auto.
+- apply rolml_sound; auto.
+- apply makelong_sound; auto.
+- apply loword_sound; auto.
+- apply hiword_sound; auto.
 - destruct (eval_condition c args m) as [b|] eqn:EC; simpl in H2.
   erewrite needs_of_condition_sound by eauto.
   subst v; simpl. auto with na.
@@ -167,6 +202,9 @@ Proof.
 - apply andimm_redundant_sound; auto.
 - apply orimm_redundant_sound; auto.
 - apply rolm_redundant_sound; auto.
+- apply andlimm_redundant_sound; auto.
+- apply orlimm_redundant_sound; auto.
+- apply rolml_redundant_sound; auto.
 Qed.
 
 End SOUNDNESS.

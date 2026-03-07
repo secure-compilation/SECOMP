@@ -169,7 +169,7 @@ Inductive state: Type :=
       forall (v: val)                   (**r Return value *)
              (k: cont)                  (**r what to do next *)
              (m: mem)          (**r memory state *)
-             (ty: rettype) (**r return type of the callee we're returning from *)
+             (ty: xtype) (**r return type of the callee we're returning from *)
              (cp: compartment) (**r compartment we're returning from *),
         state.
 
@@ -397,16 +397,20 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sstore chunk addr a) k e le m)
         E0 (State f Sskip k e le m')
 
-  | step_call: forall f optid sig a bl k e le m vf vargs fd t,
+  | step_call: forall f optid sig a bl k e le m m' vf vargs fd t,
       eval_expr e (comp_of f) le m a vf ->
       eval_exprlist e (comp_of f) le m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (proj_sig_args sig) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m
+        else if cp_eq_dec (comp_of fd) bottom then m' = m
+        else Mem.set_perm_list m (blocks_of_env e) Readable = Some m'),
       step (State f (Scall optid sig a bl) k e le m)
-        t (Callstate fd vargs (Kcall optid f e le k) m)
+        t (Callstate fd vargs (Kcall optid f e le k) m')
 
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m bl vargs ->
@@ -468,6 +472,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s' k' e le m)
 
   | step_internal_function: forall f vargs k m m1 e le,
+      Val.has_argtype_list vargs f.(fn_sig).(sig_args) ->
       list_norepet (map fst f.(fn_vars)) ->
       list_norepet f.(fn_params) ->
       list_disjoint f.(fn_params) f.(fn_temps) ->
@@ -482,11 +487,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 
-  | step_return: forall v optid f e le cp k m ty t,
+  | step_return: forall v optid f e le cp k m m' ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) cp then m' = m
+        else if cp_eq_dec cp bottom then m' = m
+        else Mem.set_perm_list m (blocks_of_env e) Freeable = Some m'),
       step (Returnstate v (Kcall optid f e le k) m ty cp)
-        t (State f Sskip k e (Cminor.set_optvar optid v le) m).
+        t (State f Sskip k e (Cminor.set_optvar optid v le) m').
 
 End RELSEM.
 

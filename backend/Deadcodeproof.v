@@ -12,15 +12,15 @@
 
 (** Elimination of unneeded computations over RTL: correctness proof. *)
 
-Require Import FunInd.
+From Coq Require Import FunInd.
 Require Import Coqlib Maps Errors Integers Floats Lattice Kildall.
 Require Import AST Linking.
-Require Import Values Memory Globalenvs Events Smallstep.
+Require Import Values Memory Builtins Globalenvs Events Smallstep.
 Require Import Registers Op RTL.
 Require Import ValueDomain ValueAnalysis NeedDomain NeedOp Deadcode.
 
 Definition match_prog (prog tprog: RTL.program) :=
-  match_program (fun cu f tf => transf_fundef (romem_for cu) f = OK tf) eq prog tprog.
+  match_program (fun cu f tf => transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf) eq prog tprog.
 
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
@@ -470,23 +470,30 @@ Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
   Genv.find_funct ge v = Some f ->
   exists cu tf,
-  Genv.find_funct tge v = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
+  Genv.find_funct tge v = Some tf /\ transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf /\ linkorder cu prog.
 Proof (Genv.find_funct_match TRANSF).
 
 Lemma function_ptr_translated:
   forall (b: block) (f: RTL.fundef),
   Genv.find_funct_ptr ge b = Some f ->
   exists cu tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
+  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf /\ linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
+
+Local Instance has_comp_match_deadcode:
+  has_comp_match (fun (cu : AST.program fundef unit) (f tf : fundef) =>
+                    transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf).
+Proof.
+  intros c x y H.
+  eapply comp_transl_partial; eauto.
+Qed.
 
 Lemma allowed_call_translated:
   forall cp vf,
     Genv.allowed_call ge cp vf ->
     Genv.allowed_call tge cp vf.
 Proof.
-  intros cp vf H.
-  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+  exact (Genv.match_genvs_allowed_calls TRANSF).
 Qed.
 
 Lemma allowed_syscall_translated:
@@ -494,34 +501,32 @@ Lemma allowed_syscall_translated:
     Genv.allowed_syscall ge cp ef ->
     Genv.allowed_syscall tge cp ef.
 Proof.
-  intros cp ef H.
-  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+  exact (Genv.match_genvs_allowed_syscalls TRANSF).
 Qed.
 
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
-  intros vf.
-  eapply (Genv.match_genvs_find_comp_in_genv TRANSF).
+  exact (Genv.match_genvs_find_comp_in_genv TRANSF).
 Qed.
 
 Lemma sig_function_translated:
-  forall rm f tf,
-  transf_fundef rm f = OK tf ->
+  forall dm rm f tf,
+  transf_fundef dm rm f = OK tf ->
   funsig tf = funsig f.
 Proof.
   intros; destruct f; monadInv H.
   unfold transf_function in EQ.
-  destruct (analyze (ValueAnalysis.analyze rm f) f); inv EQ; auto.
+  destruct analyze; inv EQ; auto.
   auto.
 Qed.
 
 Lemma stacksize_translated:
-  forall rm f tf,
-  transf_function rm f = OK tf -> tf.(fn_stacksize) = f.(fn_stacksize).
+  forall dm rm f tf,
+  transf_function dm rm f = OK tf -> tf.(fn_stacksize) = f.(fn_stacksize).
 Proof.
-  unfold transf_function; intros. destruct (analyze (ValueAnalysis.analyze rm f) f); inv H; auto.
+  unfold transf_function; intros. destruct analyze; inv H; auto.
 Qed.
 
 Definition vanalyze (cu: program) (f: function) :=
@@ -529,10 +534,10 @@ Definition vanalyze (cu: program) (f: function) :=
 
 Lemma transf_function_at:
   forall cu f tf an pc instr,
-  transf_function (romem_for cu) f = OK tf ->
-  analyze (vanalyze cu f) f = Some an ->
+  transf_function (prog_defmap cu) (romem_for cu) f = OK tf ->
+  analyze f (prog_defmap cu) (vanalyze cu f) = Some an ->
   f.(fn_code)!pc = Some instr ->
-  tf.(fn_code)!pc = Some(transf_instr (vanalyze cu f) an pc instr).
+  tf.(fn_code)!pc = Some(transf_instr (prog_defmap cu) (vanalyze cu f) an pc instr).
 Proof.
   intros. unfold transf_function in H. unfold vanalyze in H0. rewrite H0 in H. inv H; simpl.
   rewrite PTree.gmap. rewrite H1; auto.
@@ -565,7 +570,7 @@ Lemma find_function_translated:
   eagree rs trs (add_ros_need_all ros ne) ->
   exists cu tfd,
      find_function tge ros trs = Some tfd
-  /\ transf_fundef (romem_for cu) fd = OK tfd
+  /\ transf_fundef (prog_defmap cu) (romem_for cu) fd = OK tfd
   /\ linkorder cu prog.
 Proof.
   unfold find_function.
@@ -627,12 +632,12 @@ Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
       forall res ty f sp pc e tf te cu an
         (LINK: linkorder cu prog)
-        (FUN: transf_function (romem_for cu) f = OK tf)
-        (ANL: analyze (vanalyze cu f) f = Some an)
+        (FUN: transf_function (prog_defmap cu) (romem_for cu) f = OK tf)
+        (ANL: analyze f (prog_defmap cu) (vanalyze cu f) = Some an)
         (RES: forall v tv,
               Val.lessdef v tv ->
               eagree (e#res <- v) (te#res<- tv)
-                     (fst (transfer f (vanalyze cu f) pc an!!pc))),
+                     (fst (transfer f (prog_defmap cu) (vanalyze cu f) pc an!!pc))),
       match_stackframes (Stackframe res ty f (Vptr sp Ptrofs.zero) pc e)
                         (Stackframe res ty tf (Vptr sp Ptrofs.zero) pc te).
 
@@ -655,17 +660,17 @@ Inductive match_states: state -> state -> Prop :=
       forall s f sp pc e m ts tf te tm cu an
         (STACKS: list_forall2 match_stackframes s ts)
         (LINK: linkorder cu prog)
-        (FUN: transf_function (romem_for cu) f = OK tf)
-        (ANL: analyze (vanalyze cu f) f = Some an)
-        (ENV: eagree e te (fst (transfer f (vanalyze cu f) pc an!!pc)))
-        (MEM: magree m tm (nlive ge sp (snd (transfer f (vanalyze cu f) pc an!!pc)))),
+        (FUN: transf_function (prog_defmap cu) (romem_for cu) f = OK tf)
+        (ANL: analyze f (prog_defmap cu) (vanalyze cu f) = Some an)
+        (ENV: eagree e te (fst (transfer f (prog_defmap cu) (vanalyze cu f) pc an!!pc)))
+        (MEM: magree m tm (nlive ge sp (snd (transfer f (prog_defmap cu) (vanalyze cu f) pc an!!pc)))),
       match_states (State s f (Vptr sp Ptrofs.zero) pc e m)
                    (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
   | match_call_states:
       forall s f args m cp ts tf targs tm cu
         (STACKS: list_forall2 match_stackframes s ts)
         (LINK: linkorder cu prog)
-        (FUN: transf_fundef (romem_for cu) f = OK tf)
+        (FUN: transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf)
         (ARGS: Val.lessdef_list args targs)
         (MEM: Mem.extends m tm),
       match_states (Callstate s f args m cp)
@@ -682,10 +687,10 @@ Inductive match_states: state -> state -> Prop :=
 
 Lemma analyze_successors:
   forall cu f an pc instr pc',
-  analyze (vanalyze cu f) f = Some an ->
+  analyze f (prog_defmap cu) (vanalyze cu f) = Some an ->
   f.(fn_code)!pc = Some instr ->
   In pc' (successors_instr instr) ->
-  NA.ge an!!pc (transfer f (vanalyze cu f) pc' an!!pc').
+  NA.ge an!!pc (transfer f (prog_defmap cu) (vanalyze cu f) pc' an!!pc').
 Proof.
   intros. eapply DS.fixpoint_solution; eauto.
   intros. unfold transfer; rewrite H2. destruct a. apply DS.L.eq_refl.
@@ -695,8 +700,8 @@ Lemma match_succ_states:
   forall s f sp pc e m ts tf te tm an pc' cu instr ne nm
     (LINK: linkorder cu prog)
     (STACKS: list_forall2 match_stackframes s ts)
-    (FUN: transf_function (romem_for cu) f = OK tf)
-    (ANL: analyze (vanalyze cu f) f = Some an)
+    (FUN: transf_function (prog_defmap cu) (romem_for cu) f = OK tf)
+    (ANL: analyze f (prog_defmap cu) (vanalyze cu f) = Some an)
     (INSTR: f.(fn_code)!pc = Some instr)
     (SUCC: In pc' (successors_instr instr))
     (ANPC: an!!pc = (ne, nm))
@@ -875,19 +880,51 @@ Proof.
   intros; red; intros. rewrite PMap.gsspec. destruct (peq r0 r); auto with na.
 Qed.
 
+(** Preservation of external calls *)
+
+Lemma transf_external_call:
+  forall e sp cp m args vargs ef t vres m' res ne2 nm2 ne1 nm1 bc te tm,
+  eval_builtin_args ge cp (fun r => e#r) (Vptr sp Ptrofs.zero) m args vargs ->
+  external_call ef ge cp vargs m t vres m' ->
+  transfer_builtin_args (kill_builtin_res res ne2, nmem_all) args = (ne1, nm1) ->
+  eagree e te ne1 ->
+  magree m tm (nlive ge sp nm1) ->
+  genv_match bc ge ->
+  bc sp = BCstack ->
+  exists tvargs tvres tm',
+     eval_builtin_args tge cp (fun r => te#r) (Vptr sp Ptrofs.zero) tm args tvargs
+  /\ external_call ef tge cp tvargs tm t tvres tm'
+  /\ eagree (regmap_setres res vres e) (regmap_setres res tvres te) ne2
+  /\ magree m' tm' (nlive ge sp nm2).
+Proof.
+  intros.
+  exploit transfer_builtin_args_sound; eauto. intros (tvargs & A & B & C & D).
+  exploit external_call_mem_extends; eauto 2 with na.
+  eapply magree_extends; eauto. intros. apply nlive_all.
+  intros (vres' & tm' & P & Q & R & S).
+  do 3 econstructor.
+  split. eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
+  split. eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  split. apply eagree_set_res; auto.
+  eapply mextends_agree; eauto.
+Qed.
+
 (** * The simulation diagram *)
+
+Definition eventually := Smallstep.eventually RTL.step RTL.final_state ge.
 
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
   forall S1', match_states S1 S1' -> sound_state prog S1 ->
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+     (exists S2', step tge S1' t S2' /\ match_states S2 S2')
+  \/ (exists S2' n, plus step tge S1' t S2' /\ eventually n S2 (fun S3 => match_states S3 S2')).
 Proof.
 
 Ltac TransfInstr :=
   match goal with
   | [INSTR: (fn_code _)!_ = Some _,
-     FUN: transf_function _ _ = OK _,
-     ANL: analyze _ _ = Some _ |- _ ] =>
+     FUN: transf_function _ _ _ = OK _,
+     ANL: analyze _ _ _ = Some _ |- _ ] =>
        generalize (transf_function_at _ _ _ _ _ _ FUN ANL INSTR);
        let TI := fresh "TI" in
        intro TI; unfold transf_instr in TI
@@ -896,7 +933,7 @@ Ltac TransfInstr :=
 Ltac UseTransfer :=
   match goal with
   | [INSTR: (fn_code _)!?pc = Some _,
-     ANL: analyze _ _ = Some ?an |- _ ] =>
+     ANL: analyze _ _ _ = Some ?an |- _ ] =>
        destruct (an!!pc) as [ne nm] eqn:ANPC;
        unfold transfer in *;
        rewrite INSTR in *;
@@ -907,7 +944,7 @@ Ltac UseTransfer :=
 
 - (* nop *)
   TransfInstr; UseTransfer.
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
 
@@ -917,12 +954,12 @@ Ltac UseTransfer :=
   [idtac|destruct (is_int_zero (nreg ne res)) eqn:INTZERO;
   [idtac|destruct (operation_is_redundant op (nreg ne res)) eqn:REDUNDANT]].
 + (* dead instruction, turned into a nop *)
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update_dead; auto with na.
 + (* instruction with needs = [I Int.zero], turned into a load immediate of zero. *)
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Iop with (v := Vint Int.zero); eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; auto.
@@ -934,7 +971,7 @@ Ltac UseTransfer :=
   simpl in *.
   exploit needs_of_operation_sound. eapply ma_perm; eauto.
   eauto. instantiate (1 := nreg ne res). eauto with na. eauto with na. intros [tv [A B]].
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Iop with (v := tv); eauto.
   rewrite <- A. rewrite <- comp_transf_function; eauto. apply eval_operation_preserved.
   exact allowed_addrof_preserved. exact symbols_preserved.
@@ -945,7 +982,7 @@ Ltac UseTransfer :=
   assert (VA: vagree v te#r (nreg ne res)).
   { eapply operation_is_redundant_sound with (arg1' := te#r) (args' := te##args).
     eauto. eauto. exploit add_needs_vagree; eauto. }
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Iop; eauto. simpl; reflexivity.
   eapply match_succ_states; eauto. simpl; auto.
   eapply eagree_update; eauto 2 with na.
@@ -953,7 +990,7 @@ Ltac UseTransfer :=
   simpl in *.
   exploit needs_of_operation_sound. eapply ma_perm; eauto. eauto. eauto 2 with na. eauto with na.
   intros [tv [A B]].
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Iop with (v := tv); eauto.
   rewrite <- A. rewrite <- comp_transf_function; eauto. apply eval_operation_preserved.
   exact allowed_addrof_preserved. exact symbols_preserved.
@@ -966,12 +1003,12 @@ Ltac UseTransfer :=
   [idtac|destruct (is_int_zero (nreg ne dst)) eqn:INTZERO];
   simpl in *.
 + (* dead instruction, turned into a nop *)
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update_dead; auto with na.
 + (* instruction with needs = [I Int.zero], turned into a load immediate of zero. *)
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Iop with (v := Vint Int.zero); eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; auto.
@@ -985,7 +1022,7 @@ Ltac UseTransfer :=
   exploit aaddressing_sound; eauto. intros (bc & A & B & C).
   intros. apply nlive_add with bc i; assumption.
   intros (tv & P & Q).
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Iload with (a := Vptr b i). eauto.
   rewrite <- U. rewrite <- comp_transf_function; eauto. apply eval_addressing_preserved.
   exact allowed_addrof_preserved. exact symbols_preserved.
@@ -1008,7 +1045,7 @@ Ltac UseTransfer :=
   exploit aaddressing_sound; eauto. intros (bc & A & B & C).
   intros. apply nlive_remove with bc b i; assumption.
   intros (tm' & P & Q).
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Istore with (a := Vptr b i). eauto.
   rewrite <- U. rewrite <- comp_transf_function; eauto. apply eval_addressing_preserved.
   exact allowed_addrof_preserved. exact symbols_preserved.
@@ -1017,7 +1054,7 @@ Ltac UseTransfer :=
   eauto 3 with na.
 + (* dead instruction, turned into a nop *)
   destruct a; simpl in H1; try discriminate.
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   eapply magree_store_left; eauto.
@@ -1026,18 +1063,158 @@ Ltac UseTransfer :=
 
 - (* call *)
   TransfInstr; UseTransfer.
+  destruct (is_known_runtime_function (prog_defmap cu) ros) as [bf|] eqn:KNOWN.
++ (* known runtime function *)
+  exploit is_known_runtime_function_sound; eauto. intros (name & sg & EQ & LK). subst fd.
+  (* Source SET_PERM: call to bottom compartment *)
+  assert (m' = m) as ->.
+  { simpl in SET_PERM.
+    destruct (cp_eq_dec (comp_of f) bottom); [exact SET_PERM|].
+    destruct (cp_eq_dec bottom bottom); [exact SET_PERM|congruence]. }
+  assert (T_E0: t = E0).
+  { inv EV; auto. exfalso.
+    unfold Genv.type_of_call in *.
+    match goal with
+    | H: (if flowsto_dec ?a ?b then _ else _) = Genv.CrossCompartmentCall |- _ =>
+      destruct (flowsto_dec a b); [discriminate|apply n; apply bottom_flowsto]
+    end. }
+  subst t.
+  assert (EV': forall (P: state -> Prop),
+            (forall vres, builtin_function_sem bf rs##args = Some vres ->
+               P (State s f (Vptr sp0 Ptrofs.zero) pc' (rs#res <- vres) m)) ->
+            eventually 2%nat
+                (Callstate (Stackframe res (sig_res (funsig (External (EF_runtime name sg)))) f (Vptr sp0 Ptrofs.zero) pc' rs :: s)
+                           (External (EF_runtime name sg)) rs##args m (comp_of f)) P).
+  { intros. apply eventually_later. intros rr F; inv F.
+    intros t0 s1 S1. inv S1.
+    match goal with H: external_call (EF_runtime _ _) _ _ _ _ _ _ _ |- _ => hnf in H; rewrite LK in H; inv H end.
+    split; auto. apply eventually_later. intros rr F; inv F.
+    intros t0 s2 S2. inv S2.
+    (* SET_PERM: return from external function (comp bottom) *)
+    assert (m'0 = m') as ->. {
+      match goal with H: if cp_eq_dec _ _ then _ else _ |- _ =>
+        destruct (cp_eq_dec _ _) in H; [exact H |
+          destruct (cp_eq_dec _ _) in H; [exact H | congruence]]
+      end.
+    }
+    match goal with H: return_trace _ _ _ _ _ _ |- _ =>
+      inv H; [|exfalso; unfold Genv.type_of_call in *;
+              destruct (flowsto_dec bottom (comp_of f)); [discriminate|apply n; apply bottom_flowsto]]
+    end.
+    split; auto. apply eventually_now; auto. }
+  destruct (is_dead (nreg ne res)) eqn:DEAD.
+  * (* dead result, call turned into a nop *)
+    right; econstructor; exists 2%nat; split.
+    apply plus_one. apply exec_Inop; eauto.
+    apply EV'. intros.
+    eapply match_succ_states; eauto. simpl; auto.
+    apply eagree_update_dead; auto with na.
+  * (* live result, call is preserved *)
+    exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & C).
+    exploit find_function_ptr_translated; eauto 2 with na. intros FUNPTR'.
+    simpl in B; inv B.
+    destruct (builtin_function_sem bf rs##args) as [vres|] eqn:BFSEM.
+    ** (* external call succeeds *)
+       exploit builtin_function_sem_lessdef; eauto 2 with na. intros (vres' & BFSEM' & LD).
+       right; econstructor; exists 2%nat; split.
+       eapply plus_three.
+       eapply exec_Icall; eauto.
+       { rewrite <- comp_transf_function; eauto.
+         eapply allowed_call_translated; eauto. }
+       { intros CROSS. exfalso.
+         rewrite <- comp_transf_function in CROSS; eauto.
+         unfold Genv.type_of_call in CROSS.
+         revert CROSS.
+         match goal with |- context [flowsto_dec ?a ?b] =>
+           destruct (flowsto_dec a b) end.
+         - discriminate.
+         - intro. apply n. apply bottom_flowsto. }
+       { constructor. rewrite <- comp_transf_function; eauto.
+         unfold Genv.type_of_call.
+         match goal with |- context [flowsto_dec ?a ?b] =>
+           destruct (flowsto_dec a b) end.
+         - congruence.
+         - exfalso. apply n. apply bottom_flowsto. }
+       (* SET_PERM for exec_Icall: bottom compartment *)
+      { rewrite <- (comp_transl_partial _ FUN). simpl.
+         destruct (cp_eq_dec (comp_of f) bottom).
+         - reflexivity.
+         - destruct (cp_eq_dec bottom bottom); [reflexivity|congruence]. }
+       eapply exec_function_external.
+       { hnf. rewrite LK. econstructor; eauto. }
+       { unfold Genv.allowed_syscall, Genv.allowed_syscall_b. auto. }
+       eapply exec_return.
+       { intros CROSS. exfalso.
+         rewrite <- comp_transf_function in CROSS; eauto.
+         unfold Genv.type_of_call in CROSS.
+         revert CROSS.
+         match goal with |- context [flowsto_dec ?a ?b] =>
+           destruct (flowsto_dec a b) end.
+         - discriminate.
+         - intro. apply n. apply bottom_flowsto. }
+       { constructor. rewrite <- comp_transf_function; eauto.
+         unfold Genv.type_of_call.
+         match goal with |- context [flowsto_dec ?a ?b] =>
+           destruct (flowsto_dec a b) end.
+         - congruence.
+         - exfalso. apply n. apply bottom_flowsto. }
+       (* SET_PERM for exec_return: bottom compartment *)
+       { rewrite <- (comp_transl_partial _ FUN). simpl.
+         destruct (cp_eq_dec (comp_of f) bottom).
+         - reflexivity.
+         - destruct (cp_eq_dec bottom bottom); [reflexivity|congruence]. }
+       traceEq.
+       apply EV'. intros. inv H1. eapply match_succ_states with (cu := cu); eauto. simpl; auto.
+       apply eagree_update; eauto 3 with na.
+    ** (* external call fails *)
+       right; econstructor; exists 2%nat; split.
+       apply plus_one. eapply exec_Icall; eauto.
+       { rewrite <- comp_transf_function; eauto.
+         eapply allowed_call_translated; eauto. }
+       { intros CROSS. exfalso.
+         rewrite <- comp_transf_function in CROSS; eauto.
+         unfold Genv.type_of_call in CROSS.
+         revert CROSS.
+         match goal with |- context [flowsto_dec ?a ?b] =>
+           destruct (flowsto_dec a b) end.
+         - discriminate.
+         - intro. apply n. apply bottom_flowsto. }
+       { constructor. rewrite <- comp_transf_function; eauto.
+         unfold Genv.type_of_call.
+         match goal with |- context [flowsto_dec ?a ?b] =>
+           destruct (flowsto_dec a b) end.
+         - congruence.
+         - exfalso. apply n. apply bottom_flowsto. }
+       (* SET_PERM for exec_Icall: bottom compartment *)
+       { rewrite <- (comp_transl_partial _ FUN). simpl.
+         destruct (cp_eq_dec (comp_of f) bottom).
+         - reflexivity.
+         - destruct (cp_eq_dec bottom bottom); [reflexivity|congruence]. }
+       apply EV'. intros; discriminate.
++ (* default case *)
   exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & C).
   exploit find_function_ptr_translated; eauto 2 with na. intros D.
-  econstructor; split.
+  assert (EXT_SET: exists tm', (if cp_eq_dec (comp_of tf) (comp_of tfd) then tm' = tm
+    else if cp_eq_dec (comp_of tfd) bottom then tm' = tm
+    else Mem.set_perm tm sp0 Readable = Some tm')
+    /\ Mem.extends m' tm').
+  { rewrite <- (comp_transf_function _ _ _ _ FUN). rewrite <- (comp_transl_partial _ B).
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [reflexivity | eapply magree_extends; eauto; apply nlive_all].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | eapply magree_extends; eauto; apply nlive_all].
+      + exploit Mem.set_perm_parallel_extends. eapply magree_extends; eauto. apply nlive_all.
+        eauto. intros (tm' & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
+  left; econstructor; split.
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
   intros CROSS.
-  (* TODO: write a lemma *)
   assert (eagree rs te (add_needs_all args (add_ros_need_all ros (kill res ne))) ->
           Forall not_ptr rs ## args ->
           Forall not_ptr te ## args).
-  { clear. induction args.
+  { clear - args. induction args.
     - eauto.
     - intros AG H.
       simpl in AG.
@@ -1059,7 +1236,6 @@ Ltac UseTransfer :=
   eapply eagree_ge; eauto. rewrite ANPC. simpl.
   apply eagree_update; eauto with na.
   eauto 2 with na.
-  eapply magree_extends; eauto. apply nlive_all.
 
 - (* tailcall *)
   TransfInstr; UseTransfer.
@@ -1068,7 +1244,7 @@ Ltac UseTransfer :=
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & C & D).
   (* exploit find_function_ptr_translated; eauto 2 with na. intros E. *)
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
   destruct fd; simpl in *; try congruence.
@@ -1107,7 +1283,7 @@ Ltac UseTransfer :=
     destruct chunk; simpl; lia.
   }
   destruct X as (tvres & P & Q).
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ibuiltin; eauto. simpl.
   rewrite <- comp_transf_function; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge) (* (CF1 := @has_comp_fundef _ has_comp_function) *).
@@ -1132,7 +1308,7 @@ Ltac UseTransfer :=
   intros (tv2 & A2 & B2 & C2 & D2).
   exploit transf_volatile_store; eauto.
   intros (EQ & tm' & P & Q). subst vres.
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ibuiltin; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge) (* (CF1 := @has_comp_fundef _ has_comp_function) *).
@@ -1175,7 +1351,7 @@ Ltac UseTransfer :=
   rewrite Z2Nat.id in H1 by lia. auto.
   eauto.
   intros (tm' & A & B).
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ibuiltin; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge) (* (CF1 := @has_comp_fundef _ has_comp_function) *).
@@ -1193,7 +1369,7 @@ Ltac UseTransfer :=
   set (adst := aaddr_arg (vanalyze cu f) # pc dst) in *.
   set (asrc := aaddr_arg (vanalyze cu f) # pc src) in *.
   inv H1.
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   destruct res; auto. apply eagree_set_undef; auto.
@@ -1209,7 +1385,7 @@ Ltac UseTransfer :=
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   inv H1.
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ibuiltin; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge) (* (CF1 := @has_comp_fundef _ has_comp_function) *); eauto.
@@ -1225,7 +1401,7 @@ Ltac UseTransfer :=
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   inv H1. inv B. inv H7.
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ibuiltin; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge) (* (CF1 := @has_comp_fundef _ has_comp_function) *); eauto.
@@ -1240,44 +1416,76 @@ Ltac UseTransfer :=
 + (* debug *)
   inv H1.
   exploit can_eval_builtin_args; eauto. intros (vargs' & A).
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ibuiltin; eauto.
   rewrite <- comp_transf_function; eauto.
   constructor.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
++ (* known EF_builtin, dead *)
+  rewrite e1, e2 in TI.
+  unfold builtin_or_external_sem in H1.
+  rewrite e1 in H1. destruct H1.
+  left; econstructor; split.
+  eapply exec_Inop; eauto.
+  eapply match_succ_states; eauto. simpl; auto.
+  destruct res; auto. simpl.
+  apply eagree_update_dead; auto with na.
++ (* known EF_builtin, not dead *)
+  rewrite e1, e2 in TI.
+  destruct (transfer_builtin_args (kill_builtin_res res ne, nm) args0) as (ne1, nm1) eqn:TR.
+  InvSoundState.
+  exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
+  unfold builtin_or_external_sem in H1; rewrite e1 in H1.
+  assert (m' = m) by (inv H1; auto). subst m'.
+  exploit known_builtin_sem_lessdef; eauto. intros (vres' & P & Q).
+  left; econstructor; split.
+  eapply exec_Ibuiltin; eauto.
+  rewrite <- comp_transf_function; eauto.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto.
+  exact allowed_addrof_preserved.
+  exact symbols_preserved.
+  simpl; unfold builtin_or_external_sem; rewrite e1. rewrite <- comp_transf_function; eauto.  eapply match_succ_states; eauto. simpl; auto.
+  apply eagree_set_res; auto.
++ (* other EF_builtin *)
+  assert (external_call (EF_builtin name sg) ge (comp_of f) vargs m t vres m') by auto.
+  assert ((fn_code tf)!pc = Some(Ibuiltin (EF_builtin name sg) args0 res pc')).
+  {
+    destruct (Builtins.lookup_builtin_function name sg) eqn:BR; auto. contradiction.
+  }
+  destruct (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args0) as (ne1, nm1) eqn:TR.
+  InvSoundState.
+  exploit transf_external_call; eauto.
+  intros (tvargs & tvres & tm' & A & B & C & D). 
+  left; econstructor; split.
+  eapply exec_Ibuiltin; eauto.
+  { rewrite <- comp_transf_function; eauto. }
+  { rewrite <- comp_transf_function; eauto. }
+  eapply match_succ_states; eauto. simpl; auto.
 + (* all other builtins *)
   assert ((fn_code tf)!pc = Some(Ibuiltin _x _x0 res pc')).
   {
-    destruct _x; auto. destruct _x0; auto. destruct _x0; auto. destruct _x0; auto. contradiction.
+    destruct _x; auto. inv y. destruct _x0; auto. destruct _x0; auto. destruct _x0; auto. contradiction.
   }
   clear y TI.
   destruct (transfer_builtin_args (kill_builtin_res res ne, nmem_all) _x0) as (ne1, nm1) eqn:TR.
   InvSoundState.
-  exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
-  exploit external_call_mem_extends; eauto 2 with na.
-  eapply magree_extends; eauto. intros. apply nlive_all.
-  intros (v' & tm' & P & Q & R & S).
-  econstructor; split.
+  exploit transf_external_call; eauto.
+  intros (tvargs & tvres & tm' & A & B & C & D). 
+  left; econstructor; split.
   eapply exec_Ibuiltin; eauto.
-  rewrite <- comp_transf_function; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge) (* (CF1 := @has_comp_fundef _ has_comp_function) *); eauto.
-  exact allowed_addrof_preserved.
-  exact symbols_preserved.
-  rewrite <- comp_transf_function; eauto.
-  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
-  rewrite <- comp_transf_function; eauto using allowed_syscall_translated.
+  { rewrite <- comp_transf_function; eauto. }
+  { rewrite <- comp_transf_function; eauto. }
+  { rewrite <- comp_transf_function; eauto using allowed_syscall_translated. }
   eapply match_succ_states; eauto. simpl; auto.
-  apply eagree_set_res; auto.
-  eapply mextends_agree; eauto.
 
 - (* conditional *)
   TransfInstr; UseTransfer. destruct (peq ifso ifnot).
 + replace (if b then ifso else ifnot) with ifso by (destruct b; congruence).
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
-+ econstructor; split.
++ left; econstructor; split.
   eapply exec_Icond; eauto.
   eapply needs_of_condition_sound. eapply ma_perm; eauto. eauto. eauto with na.
   eapply match_succ_states; eauto 2 with na.
@@ -1287,7 +1495,7 @@ Ltac UseTransfer :=
   TransfInstr; UseTransfer.
   assert (LD: Val.lessdef rs#arg te#arg) by eauto 2 with na.
   rewrite H0 in LD. inv LD.
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ijumptable; eauto.
   eapply match_succ_states; eauto 2 with na.
   simpl. eapply list_nth_z_in; eauto.
@@ -1297,22 +1505,22 @@ Ltac UseTransfer :=
   exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & A & B).
-  econstructor; split.
+  left; econstructor; split.
   eapply exec_Ireturn; eauto.
   erewrite stacksize_translated by eauto.
   rewrite <- comp_transf_function; eauto.
-  unfold transf_function in FUN. destruct (analyze (ValueAnalysis.analyze (romem_for cu) f) f); inv FUN.
+  unfold transf_function in FUN. destruct (analyze f (prog_defmap cu) (ValueAnalysis.analyze (romem_for cu) f)); inv FUN.
   constructor; auto.
   destruct or; simpl; eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.
 
 - (* internal function *)
   monadInv FUN. generalize EQ. unfold transf_function. fold (vanalyze cu f). intros EQ'.
-  destruct (analyze (vanalyze cu f) f) as [an|] eqn:AN; inv EQ'.
+  destruct analyze as [an|] eqn:AN; inv EQ'.
   exploit Mem.alloc_extends; eauto. apply Z.le_refl. apply Z.le_refl.
   intros (tm' & A & B).
-  econstructor; split.
-  econstructor; simpl; eauto.
+  left; econstructor; split.
+  econstructor; simpl; eauto using Val.has_argtype_list_lessdef.
   simpl. econstructor; eauto.
   apply eagree_init_regs; auto.
   apply mextends_agree; auto.
@@ -1321,7 +1529,7 @@ Ltac UseTransfer :=
   exploit external_call_mem_extends; eauto.
   intros (res' & tm' & A & B & C & D).
   simpl in FUN. inv FUN.
-  econstructor; split.
+  left; econstructor; split.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eauto using allowed_syscall_translated.
@@ -1329,13 +1537,26 @@ Ltac UseTransfer :=
 
 - (* return *)
   inv STACKS. inv H1.
-  econstructor; split.
+  assert (EXT_SET: exists tm', (if cp_eq_dec (comp_of tf) cp then tm' = tm
+    else if cp_eq_dec cp bottom then tm' = tm
+    else Mem.set_perm tm sp0 Freeable = Some tm')
+    /\ Mem.extends m' tm').
+  { rewrite <- (comp_transf_function _ _ _ _ FUN).
+    destruct (cp_eq_dec (comp_of f) cp).
+    - subst m'. eexists; split; [reflexivity | exact MEM].
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. eexists; split; [reflexivity | exact MEM].
+      + exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm' & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
+  left; econstructor; split.
   constructor.
   rewrite <- comp_transf_function; eauto.
   intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
   rewrite <- comp_transf_function; eauto.
   now eapply return_trace_lessdef; eauto using senv_preserved.
-  econstructor; eauto. apply mextends_agree; auto.
+  exact SET_T.
+  econstructor; eauto. apply mextends_agree; exact EXT'.
 Qed.
 
 Lemma transf_initial_states:
@@ -1375,18 +1596,25 @@ Qed.
 Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
-  intros.
-  apply forward_simulation_step with
-     (match_states := fun s1 s2 => sound_state prog s1 /\ match_states s1 s2).
+  eapply forward_simulation_eventually_plus with
+    (match_states := fun s1 s2 => match_states s1 s2 /\ sound_state prog s1).
 - apply senv_preserved.
 - apply senv_preserved.
-- simpl; intros. exploit transf_initial_states; eauto. intros [st2 [A B]].
-  exists st2; intuition. eapply sound_initial; eauto.
-- simpl; intros. destruct H. eapply transf_final_states; eauto.
-- simpl; intros. destruct H0.
-  assert (sound_state prog s1') by (eapply sound_step; eauto).
-  fold ge; fold tge. exploit step_simulation; eauto. intros [st2' [A B]].
-  exists st2'; auto.
+- intros. exploit transf_initial_states; eauto. intros [s2 [A B]].
+  exists s2. auto using sound_initial.
+- intros. destruct H. eapply transf_final_states; eauto.
+- intros. destruct H0.
+  exploit step_simulation; eauto.
+  intros [(s2' & A & B) | (s2' & n & A & B)].
++ exists 0%nat, s2'; split.
+  apply plus_one; auto.
+  apply eventually_now. eauto using sound_step.
++ exists n, s2'; split; auto.
+  apply eventually_and_invariant; auto.
+  apply sound_step.
+  eapply sound_step; eauto.
 Qed.
 
 End PRESERVATION.
+
+

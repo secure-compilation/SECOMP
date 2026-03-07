@@ -202,9 +202,7 @@ End PrimIter.
   [None] means that iteration does not terminate.
   [Some b] means that iteration terminates with the result [b]. *)
 
-Require Import Classical.
-Require Import ClassicalDescription.
-Require Import Max.
+From Coq Require Import Classical ClassicalDescription.
 
 Module GenIter.
 
@@ -240,7 +238,7 @@ Lemma iter_monot:
 Proof.
   induction p; intros.
   simpl. red; intros; red; auto.
-  destruct q. elimtype False; lia.
+  destruct q. exfalso; lia.
   simpl. apply F_iter_monot. apply IHp. lia.
 Qed.
 
@@ -280,7 +278,7 @@ Lemma converges_to_unique:
 Proof.
   intros a b [n C] b' [n' C'].
   rewrite <- (C (max n n')). rewrite <- (C' (max n n')). auto.
-  apply le_max_r. apply le_max_l.
+  apply Nat.le_max_r. apply Nat.le_max_l.
 Qed.
 
 Lemma converges_to_exists_uniquely:

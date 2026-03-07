@@ -12,8 +12,9 @@
 
 (** Correctness proof for AArch64 code generation: auxiliary results. *)
 
-Require Import Recdef Coqlib Zwf Zbits.
-Require Import Maps Errors AST Integers Floats Values Memory Globalenvs.
+From Coq Require Import Recdef Zwf.
+Require Import Zbits Coqlib Maps Errors.
+Require Import AST Integers Floats Values Memory Globalenvs.
 Require Import Op Locations Mach Asm Conventions.
 Require Import Asmgen.
 Require Import Asmgenproof0.
@@ -1521,24 +1522,38 @@ Local Transparent Val.add.
   destruct (preg_of res) eqn:RES; monadInv TR.
   + (* integer *)
     generalize (ireg_of_eq _ _ EQ) (ireg_of_eq _ _ EQ1); intros E1 E2; rewrite E1, E2.
-    exploit (transl_cond_correct cond args); eauto. intros (rs' & A & B & C).
-    econstructor; split.
-    eapply exec_straight_trans. eexact A. apply exec_straight_one. simpl; eauto. auto.
-    split. Simpl. destruct (eval_condition cond (map rs (map preg_of args)) m) as [b|]; simpl in *.
-    rewrite (B b) by auto. rewrite !C. apply Val.lessdef_normalize.
-    rewrite <- E2; auto with asmgen. rewrite <- E1; auto with asmgen.
-    auto.
-    intros; Simpl.
+    destruct (ireg_eq x x0); inv EQ2.
+    * econstructor; split.
+      econstructor; simpl; eauto.
+      split. Simpl. unfold Val.select.
+      destruct (eval_condition cond (map rs (map preg_of args)) m); auto.
+      destruct b; auto using Val.lessdef_normalize.
+      intros; Simpl.
+    * exploit (transl_cond_correct cond args); eauto. intros (rs' & A & B & C).
+      econstructor; split.
+      eapply exec_straight_trans. eexact A. apply exec_straight_one. simpl; eauto. auto.
+      split. Simpl. destruct (eval_condition cond (map rs (map preg_of args)) m) as [b|]; simpl in *.
+      rewrite (B b) by auto. rewrite !C. apply Val.lessdef_normalize.
+      rewrite <- E2; auto with asmgen. rewrite <- E1; auto with asmgen.
+      auto.
+      intros; Simpl.
   + (* FP *)
     generalize (freg_of_eq _ _ EQ) (freg_of_eq _ _ EQ1); intros E1 E2; rewrite E1, E2.
-    exploit (transl_cond_correct cond args); eauto. intros (rs' & A & B & C).
-    econstructor; split.
-    eapply exec_straight_trans. eexact A. apply exec_straight_one. simpl; eauto. auto.
-    split. Simpl. destruct (eval_condition cond (map rs (map preg_of args)) m) as [b|]; simpl in *.
-    rewrite (B b) by auto. rewrite !C. apply Val.lessdef_normalize.
-    rewrite <- E2; auto with asmgen. rewrite <- E1; auto with asmgen.
-    auto.
-    intros; Simpl.
+    destruct (freg_eq x x0); inv EQ2.
+    * econstructor; split.
+      econstructor; simpl; eauto.
+      split. Simpl. unfold Val.select.
+      destruct (eval_condition cond (map rs (map preg_of args)) m); auto.
+      destruct b; auto using Val.lessdef_normalize.
+      intros; Simpl.
+    * exploit (transl_cond_correct cond args); eauto. intros (rs' & A & B & C).
+      econstructor; split.
+      eapply exec_straight_trans. eexact A. apply exec_straight_one. simpl; eauto. auto.
+      split. Simpl. destruct (eval_condition cond (map rs (map preg_of args)) m) as [b|]; simpl in *.
+      rewrite (B b) by auto. rewrite !C. apply Val.lessdef_normalize.
+      rewrite <- E2; auto with asmgen. rewrite <- E1; auto with asmgen.
+      auto.
+      intros; Simpl.
 Qed.
 
 (** Translation of addressing modes, loads, stores *)
@@ -1659,27 +1674,19 @@ Lemma transl_store_correct:
   /\ forall r, data_preg r = true -> rs' r = rs r.
 Proof.
   intros. destruct vaddr; try discriminate. 
-  set (chunk' := match chunk with Mint8signed => Mint8unsigned
-                                | Mint16signed => Mint16unsigned
-                                | _ => chunk end).
   assert (A: exists sz insn,
                 transl_addressing sz addr args insn k = OK c
              /\ (forall ad rs', exec_instr ge fn (insn ad) rs' m =
-                              exec_store ge chunk' ad rs'#(preg_of src) rs' m)).
-  {
-    unfold chunk'; destruct chunk; monadInv H;
+                              exec_store ge chunk ad rs'#(preg_of src) rs' m)).
+  { destruct chunk; monadInv H;
     try rewrite (ireg_of_eq _ _ EQ); try rewrite (freg_of_eq _ _ EQ);
     do 2 econstructor; (split; [eassumption|auto]).
   }
   destruct A as (sz & insn & B & C).
   exploit transl_addressing_correct. eexact B. eexact H0. intros (ad & rs' & P & Q & R).
-  assert (X: Mem.storev chunk' m (Vptr b i) rs#(preg_of src) = Some m').
-  { rewrite <- H1. unfold chunk'. destruct chunk; auto; simpl; symmetry.
-    apply Mem.store_signed_unsigned_8.
-    apply Mem.store_signed_unsigned_16. }
-  assert (Y: exec_store ge chunk' ad rs'#(preg_of src) rs' m =
+  assert (Y: exec_store ge chunk ad rs'#(preg_of src) rs' m =
              Next (nextinstr rs') m').
-  { unfold exec_store. rewrite Q, R, X by auto with asmgen. auto. }
+  { unfold exec_store. rewrite Q, R, H1 by auto with asmgen. auto. }
   econstructor; split.
   eapply exec_straight_opt_right. eexact P.
   apply exec_straight_one. rewrite C, Y; eauto. Simpl. 

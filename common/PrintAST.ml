@@ -28,15 +28,23 @@ let name_of_type = function
   | Tany32 -> "any32"
   | Tany64 -> "any64"
 
-let name_of_rettype = function
-  | Tret t -> name_of_type t
-  | Tvoid -> "void"
-  | Tint8signed -> "int8s"
-  | Tint8unsigned -> "int8u"
-  | Tint16signed -> "int16s"
-  | Tint16unsigned -> "int16u"
+let name_of_xtype = function
+  | Xbool -> "bool"
+  | Xint8signed -> "int8s"
+  | Xint8unsigned -> "int8u"
+  | Xint16signed -> "int16s"
+  | Xint16unsigned -> "int16u"
+  | Xint -> "int"
+  | Xfloat -> "float"
+  | Xlong -> "long"
+  | Xsingle -> "single"
+  | Xany32 -> "any32"
+  | Xany64 -> "any64"
+  | Xptr -> "ptr"
+  | Xvoid -> "void"
 
 let name_of_chunk = function
+  | Mbool -> "bool"
   | Mint8signed -> "int8s"
   | Mint8unsigned -> "int8u"
   | Mint16signed -> "int16s"
@@ -57,18 +65,18 @@ let string_of_value = function
   | Values.Vundef -> "Vundef"
 
 let name_of_external = function
-  | EF_external(name, sg) -> sprintf "extern %S" (camlstring_of_coqstring name)
-  | EF_builtin(name, sg) -> sprintf "builtin %S" (camlstring_of_coqstring name)
-  | EF_runtime(name, sg) -> sprintf "runtime %S" (camlstring_of_coqstring name)
-  | EF_vload(chunk) -> sprintf "volatile load %s" (name_of_chunk chunk)
-  | EF_vstore(chunk) -> sprintf "volatile store %s" (name_of_chunk chunk)
+  | EF_external(name, sg) -> sprintf "extern %S" name
+  | EF_builtin(name, sg) -> sprintf "builtin %S" name
+  | EF_runtime(name, sg) -> sprintf "runtime %S" name
+  | EF_vload chunk -> sprintf "volatile load %s" (name_of_chunk chunk)
+  | EF_vstore chunk -> sprintf "volatile store %s" (name_of_chunk chunk)
   | EF_malloc -> "malloc"
   | EF_free -> "free"
   | EF_memcpy(sz, al) ->
       sprintf "memcpy size %s align %s " (Z.to_string sz) (Z.to_string al)
-  | EF_annot(kind,text, targs) -> sprintf "annot %S" (camlstring_of_coqstring text)
-  | EF_annot_val(kind,text, targ) ->  sprintf "annot_val %S" (camlstring_of_coqstring text)
-  | EF_inline_asm(text, sg, clob) -> sprintf "inline_asm %S" (camlstring_of_coqstring text)
+  | EF_annot(kind,text, targs) -> sprintf "annot %S" text
+  | EF_annot_val(kind,text, targ) ->  sprintf "annot_val %S" text
+  | EF_inline_asm(text, sg, clob) -> sprintf "inline_asm %S" text
   | EF_debug(kind, text, targs) ->
       sprintf "debug%d %S" (P.to_int kind) (extern_atom text)
 

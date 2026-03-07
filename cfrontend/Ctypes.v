@@ -76,12 +76,9 @@ Inductive type : Type :=
   | Tfloat: floatsize -> attr -> type              (**r floating-point types *)
   | Tpointer: type -> attr -> type                 (**r pointer types ([*ty]) *)
   | Tarray: type -> Z -> attr -> type              (**r array types ([ty[len]]) *)
-  | Tfunction: typelist -> type -> calling_convention -> type    (**r function types *)
+  | Tfunction: list type -> type -> calling_convention -> type    (**r function types *)
   | Tstruct: ident -> attr -> type                 (**r struct types *)
-  | Tunion: ident -> attr -> type                  (**r union types *)
-with typelist : Type :=
-  | Tnil: typelist
-  | Tcons: type -> typelist -> typelist.
+  | Tunion: ident -> attr -> type.                  (**r union types *)
 
 Lemma intsize_eq: forall (s1 s2: intsize), {s1=s2} + {s1<>s2}.
 Proof.
@@ -93,23 +90,28 @@ Proof.
   decide equality.
 Defined.
 
+Lemma floatsize_eq: forall (s1 s2: floatsize), {s1=s2} + {s1<>s2}.
+Proof.
+  decide equality.
+Defined.
+
 Lemma attr_eq: forall (a1 a2: attr), {a1=a2} + {a1<>a2}.
 Proof.
   decide equality. decide equality. apply N.eq_dec. apply bool_dec.
 Defined.
 
-Lemma type_eq: forall (ty1 ty2: type), {ty1=ty2} + {ty1<>ty2}
-with typelist_eq: forall (tyl1 tyl2: typelist), {tyl1=tyl2} + {tyl1<>tyl2}.
+Lemma type_eq: forall (ty1 ty2: type), {ty1=ty2} + {ty1<>ty2}.
 Proof.
-  assert (forall (x y: floatsize), {x=y} + {x<>y}) by decide equality.
-  generalize ident_eq zeq bool_dec ident_eq intsize_eq signedness_eq attr_eq; intros.
-  decide equality.
-  decide equality.
-  decide equality.
-  decide equality.
+  fix REC 1.
+  decide equality; auto using ident_eq, zeq, bool_dec, ident_eq, intsize_eq, signedness_eq, floatsize_eq, attr_eq, list_eq_dec, calling_convention_eq.
 Defined.
 
-Global Opaque intsize_eq signedness_eq attr_eq type_eq typelist_eq.
+Lemma typelist_eq: forall (tyl1 tyl2: list type), {tyl1=tyl2} + {tyl1<>tyl2}.
+Proof.
+  auto using list_eq_dec, type_eq.
+Defined.
+
+Global Opaque intsize_eq signedness_eq floatsize_eq attr_eq type_eq typelist_eq.
 
 (** Extract the attributes of a type. *)
 
@@ -905,7 +907,7 @@ Definition access_mode (ty: type) : mode :=
   | Tint I16 Signed _ => By_value Mint16signed
   | Tint I16 Unsigned _ => By_value Mint16unsigned
   | Tint I32 _ _ => By_value Mint32
-  | Tint IBool _ _ => By_value Mint8unsigned
+  | Tint IBool _ _ => By_value Mbool
   | Tlong _ _ => By_value Mint64
   | Tfloat F32 _ => By_value Mfloat32
   | Tfloat F64 _ => By_value Mfloat64
@@ -1044,11 +1046,8 @@ Fixpoint rank_members (ce: composite_env) (m: members) : nat :=
 
 (** Extracting a type list from a function parameter declaration. *)
 
-Fixpoint type_of_params (params: list (ident * type)) : typelist :=
-  match params with
-  | nil => Tnil
-  | (id, ty) :: rem => Tcons ty (type_of_params rem)
-  end.
+Definition type_of_params (params: list (ident * type)) : list type :=
+  List.map snd params.
 
 (** Translating C types to Cminor types and function signatures. *)
 
@@ -1062,30 +1061,57 @@ Definition typ_of_type (t: type) : AST.typ :=
   | Tpointer _ _ | Tarray _ _ _ | Tfunction _ _ _ | Tstruct _ _ | Tunion _ _ => AST.Tptr
   end.
 
-Definition rettype_of_type (t: type) : AST.rettype :=
+Definition argtype_of_type (t: type) : xtype :=
   match t with
-  | Tvoid => AST.Tvoid
-  | Tint I32 _ _ => AST.Tint
-  | Tint I8 Signed _ => AST.Tint8signed
-  | Tint I8 Unsigned _ => AST.Tint8unsigned
-  | Tint I16 Signed _ => AST.Tint16signed
-  | Tint I16 Unsigned _ => AST.Tint16unsigned
-  | Tint IBool _ _ => AST.Tint8unsigned
-  | Tlong _ _ => AST.Tlong
-  | Tfloat F32 _ => AST.Tsingle
-  | Tfloat F64 _ => AST.Tfloat
-  | Tpointer _ _ => AST.Tptr
-  | Tarray _ _ _ | Tfunction _ _ _ | Tstruct _ _ | Tunion _ _ => AST.Tvoid
+  | Tvoid => Xvoid
+  | Tint I32 _ _ => Xint
+  | Tint I8 Signed _ => Xint8signed
+  | Tint I8 Unsigned _ => Xint8unsigned
+  | Tint I16 Signed _ => Xint16signed
+  | Tint I16 Unsigned _ => Xint16unsigned
+  | Tint IBool _ _ => Xbool
+  | Tlong _ _ => Xlong
+  | Tfloat F32 _ => Xsingle
+  | Tfloat F64 _ => Xfloat
+  | Tpointer _ _ => Xptr
+  | Tarray _ _ _ | Tfunction _ _ _ | Tstruct _ _ | Tunion _ _ => Xptr
   end.
 
-Fixpoint typlist_of_typelist (tl: typelist) : list AST.typ :=
-  match tl with
-  | Tnil => nil
-  | Tcons hd tl => typ_of_type hd :: typlist_of_typelist tl
+Lemma proj_xtype_argtype_of_type:
+  forall t, AST.proj_xtype (argtype_of_type t) = typ_of_type t.
+Proof.
+  destruct t; simpl; auto;
+  try destruct i; try destruct s; try destruct f; auto.
+Qed.
+
+Lemma proj_sig_args_argtype:
+  forall tyl, List.map AST.proj_xtype (List.map argtype_of_type tyl) = List.map typ_of_type tyl.
+Proof.
+  induction tyl; simpl; auto.
+  rewrite proj_xtype_argtype_of_type. f_equal; auto.
+Qed.
+
+(** In CompCert C, array, function, struct and union types cannot
+    appear as function return types. *)
+
+Definition rettype_of_type (t: type) : xtype :=
+  match t with
+  | Tvoid => AST.Xvoid
+  | Tint I32 _ _ => AST.Xint
+  | Tint I8 Signed _ => AST.Xint8signed
+  | Tint I8 Unsigned _ => AST.Xint8unsigned
+  | Tint I16 Signed _ => AST.Xint16signed
+  | Tint I16 Unsigned _ => AST.Xint16unsigned
+  | Tint IBool _ _ => AST.Xbool
+  | Tlong _ _ => AST.Xlong
+  | Tfloat F32 _ => AST.Xsingle
+  | Tfloat F64 _ => AST.Xfloat
+  | Tpointer _ _ => AST.Xptr
+  | Tarray _ _ _ | Tfunction _ _ _ | Tstruct _ _ | Tunion _ _ => AST.Xvoid
   end.
 
-Definition signature_of_type (args: typelist) (res: type) (cc: calling_convention): signature :=
-  mksignature (typlist_of_typelist args) (rettype_of_type res) cc.
+Definition signature_of_type (args: list type) (res: type) (cc: calling_convention): signature :=
+  mksignature (List.map argtype_of_type args) (rettype_of_type res) cc.
 
 (** * Construction of the composite environment *)
 
@@ -1506,7 +1532,7 @@ Context {CF: has_comp F}.
 
 Inductive fundef : Type :=
   | Internal: F -> fundef
-  | External: external_function -> typelist -> type -> calling_convention -> fundef.
+  | External: external_function -> list type -> type -> calling_convention -> fundef.
 
 #[export] Instance has_comp_fundef : has_comp fundef :=
   fun fd =>
@@ -1551,6 +1577,7 @@ Coercion program_of_program: program >-> AST.program.
 Lemma agr_enforce_update_policy:
   forall (pol : Policy.t) (defs : list (ident * globdef fundef type))
                                 (public: list ident),
+    list_norepet (map fst defs) ->
     agr_comps (Policy.enforce_in_pub (update_policy pol defs) public) defs.
 Proof.
   intros.
@@ -1571,7 +1598,8 @@ Qed.
 Program Definition make_program (types: list composite_definition)
                                 (defs: list (ident * globdef fundef type))
                                 (public: list ident)
-                                (main: ident) (pol: Policy.t) : res program :=
+                                (main: ident) (pol: Policy.t)
+                                (NR: list_norepet (map fst defs)) : res program :=
   match build_composite_env types with
   | Error e => Error e
   | OK ce =>
@@ -1583,7 +1611,7 @@ Program Definition make_program (types: list composite_definition)
             prog_comp_env := ce;
             prog_comp_env_eq := _;
             prog_pol_pub := Policy.enforce_in_pub_correct pol public;
-            prog_agr_comps := (agr_enforce_update_policy _ _ _);
+            prog_agr_comps := (agr_enforce_update_policy _ _ _ NR);
             prog_pol_complete := (complete_enforce_update_policy _ _ _)|}
   end.
 
@@ -1854,13 +1882,9 @@ Defined.
 Next Obligation.
   destruct x, y; simpl in H.
 + discriminate.
-+ destruct e; try easy.
-  inv H.
-  split; constructor.
-+ destruct e; try easy.
-  inv H.
-  split; constructor.
-+ destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0) eqn:A; inv H.
++ destruct e; inv H. split; constructor.
++ destruct e; inv H. split; constructor.
++ destruct (external_function_eq e e0 && typelist_eq l l0 && type_eq t t0 && calling_convention_eq c c0) eqn:A; inv H.
   InvBooleans. subst. split; constructor.
 Defined.
 
@@ -1883,11 +1907,9 @@ Remark link_fundef_either:
   forall (F: Type) {CF: has_comp F} (f1 f2 f: fundef F), link f1 f2 = Some f -> f = f1 \/ f = f2.
 Proof.
   simpl; intros. unfold link_fundef in H. destruct f1, f2; try discriminate.
-- destruct e; try easy.
-  inv H; eauto.
-- destruct e; try easy.
-  inv H; eauto.
-- destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0); inv H; auto.
+- destruct e; inv H; eauto.
+- destruct e; inv H; eauto.
+- destruct (external_function_eq e e0 && typelist_eq l l0 && type_eq t t0 && calling_convention_eq c c0); inv H; auto.
 Qed.
 
 Global Opaque Linker_fundef.

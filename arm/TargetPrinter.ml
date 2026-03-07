@@ -24,7 +24,6 @@ open Fileinfo
 module type PRINTER_OPTIONS =
 sig
   val vfpv3: bool
-  val hardware_idiv: bool
 end
 
 (* Basic printing functions *)
@@ -52,7 +51,7 @@ let single_param_reg_name = function
     | SR4 -> "s4" | SR5 -> "s5" | SR6 -> "s6" | SR7 -> "s7"
     | SR8 -> "s8" | SR9 -> "s9" | SR10 -> "s10" | SR11 -> "s11"
     | SR12 -> "s12" | SR13 -> "s13" | SR14 -> "s14" | SR15 -> "s15"
-    | SR16 -> "s16" | SR17 -> "s1"  | SR18 -> "s18" | SR19 -> "s19"
+    | SR16 -> "s16" | SR17 -> "s17" | SR18 -> "s18" | SR19 -> "s19"
     | SR20 -> "s20" | SR21 -> "s21" | SR22 -> "s22" | SR23 -> "s23"
     | SR24 -> "s24" | SR25 -> "s25" | SR26 -> "s26" | SR27 -> "s27"
     | SR28 -> "s28" | SR29 -> "s29" | SR30 -> "s30" | SR31 -> "s31"
@@ -106,7 +105,18 @@ struct
 
   let symbol = elf_symbol
 
-  let symbol_offset = elf_symbol_offset
+  let symbol_paren oc symb =
+    let s = extern_atom symb in
+    if String.length s > 0 && s.[0] = '$'
+    then fprintf oc "(%s)" s
+    else fprintf oc "%s" s
+
+  let symbol_offset oc (symb, ofs) =
+    let ofs = camlint64_of_ptrofs ofs in
+    if ofs = 0L then
+      symbol_paren oc symb
+    else
+      fprintf oc "(%a + %Ld)" symbol symb ofs
 
   let ireg oc r = output_string oc (int_reg_name r)
   let freg oc r = output_string oc (float_reg_name r)
@@ -211,7 +221,7 @@ struct
       fprintf oc "	adc	%a, %a, %a\n" ireg r1 ireg r2 shift_op so
     | Padd(r1, r2, so) ->
       fprintf oc "	add%s	%a, %a, %a\n"
-        (if !Clflags.option_mthumb && r2 <> IR14 then "s" else "")
+        (if !Clflags.option_mthumb && r2 <> IR13 then "s" else "")
         ireg r1 ireg r2 shift_op so
     | Padds (r1,r2,so) ->
       fprintf oc "	adds	%a, %a, %a\n" ireg r1 ireg r2 shift_op so
@@ -228,11 +238,11 @@ struct
     | Pbne lbl ->
       fprintf oc "	bne	%a\n" print_label lbl
     | Pbsymb(id, sg) ->
-      fprintf oc "	b	%a\n" symbol id
+      fprintf oc "	b	%a\n" symbol_paren id
     | Pbreg(r, sg) ->
       fprintf oc "	bx	%a\n" ireg r
     | Pblsymb(id, sg) ->
-      fprintf oc "	bl	%a\n" symbol id
+      fprintf oc "	bl	%a\n" symbol_paren id
     | Pblreg(r, sg) ->
       fprintf oc "	blx	%a\n" ireg r
     | Pbic(r1, r2, so) ->
@@ -277,9 +287,9 @@ struct
         thumbS ireg r1 ireg r2 ireg r3
     | Pmla(r1, r2, r3, r4) ->
       fprintf oc "	mla	%a, %a, %a, %a\n" ireg r1 ireg r2 ireg r3 ireg r4
-    | Pmov(r1, (SOimm _ | SOreg _ as so)) ->
+    | Pmov(r1, SOreg reg) ->
       (* No S flag even in Thumb2 mode *)
-      fprintf oc "	mov	%a, %a\n" ireg r1 shift_op so
+      fprintf oc "	mov	%a, %a\n" ireg r1 ireg reg
     | Pmov(r1, so) ->
       fprintf oc "	mov%t	%a, %a\n" thumbS ireg r1 shift_op so
     | Pmovw(r1, n) ->
@@ -323,9 +333,9 @@ struct
       fprintf oc "	strb	%a, [%a], %a\n" ireg r1 ireg r2 shift_op sa
     | Pstrh_p(r1, r2, sa) ->
       fprintf oc "	strh	%a, [%a], %a\n" ireg r1 ireg r2 shift_op sa
-    | Psdiv ->
-      if Opt.hardware_idiv then
-        fprintf oc "	sdiv	r0, r0, r1\n"
+    | Psdiv (r, r1, r2) ->
+      if Archi.hardware_idiv () then
+        fprintf oc "	sdiv	%a, %a, %a\n" ireg r ireg r1 ireg r2
       else
         fprintf oc "	bl	__aeabi_idiv\n"
     | Psbfx(r1, r2, lsb, sz) ->
@@ -333,14 +343,15 @@ struct
     | Psmull(r1, r2, r3, r4) ->
       fprintf oc "	smull	%a, %a, %a, %a\n" ireg r1 ireg r2 ireg r3 ireg r4
     | Psub(r1, r2, so) ->
-      fprintf oc "	sub%t	%a, %a, %a\n"
-        thumbS ireg r1 ireg r2 shift_op so
+      fprintf oc "	sub%s	%a, %a, %a\n"
+        (if !Clflags.option_mthumb && r2 <> IR13 then "s" else "")
+        ireg r1 ireg r2 shift_op so
     | Psubs(r1, r2, so) ->
       fprintf oc "	subs	%a, %a, %a\n"
         ireg r1 ireg r2 shift_op so
-    | Pudiv ->
-      if Opt.hardware_idiv then
-        fprintf oc "	udiv	r0, r0, r1\n"
+    | Pudiv (r, r1, r2) ->
+      if Archi.hardware_idiv () then
+        fprintf oc "	udiv	%a, %a, %a\n" ireg r ireg r1 ireg r2
       else
          fprintf oc "	bl	__aeabi_uidiv\n"
     | Pumull(r1, r2, r3, r4) ->
@@ -360,13 +371,7 @@ struct
       fprintf oc "	vmul.f64 %a, %a, %a\n" freg r1 freg r2 freg r3
     | Pfsubd(r1, r2, r3) ->
       fprintf oc "	vsub.f64 %a, %a, %a\n" freg r1 freg r2 freg r3
-    | Pflid(r1, f) ->
-      let f = camlint64_of_coqint(Floats.Float.to_bits f) in
-      let lbl = label_literal64 f in
-      fprintf oc "	movw	r14, #:lower16:.L%d\n" lbl;
-      fprintf oc "	movt	r14, #:upper16:.L%d\n" lbl;
-      fprintf oc "	vldr	%a, [r14, #0] @ %.12g\n"
-        freg r1 (Int64.float_of_bits f)
+    | Pflid(r1, f) -> assert false (* Should be eliminated in expand constants *)
     | Pfcmpd(r1, r2) ->
       fprintf oc "	vcmp.f64 %a, %a\n" freg r1 freg r2;
       fprintf oc "	vmrs APSR_nzcv, FPSCR\n"
@@ -471,11 +476,11 @@ struct
       begin match ef with
         | EF_annot(kind,txt, targs) ->
             begin match (P.to_int kind) with
-              | 1 -> let annot = annot_text preg_annot "sp" (camlstring_of_coqstring txt) args in
+              | 1 -> let annot = annot_text preg_annot "sp" txt args in
                 fprintf oc "%s annotation: %S\n" comment annot
               | 2 -> let lbl = new_label () in
                 fprintf oc "%a:\n" label lbl;
-                AisAnnot.add_ais_annot lbl preg_annot "r13" (camlstring_of_coqstring txt) args
+                AisAnnot.add_ais_annot lbl preg_annot "r13" txt args
               | _ -> assert false
             end
         | EF_debug(kind, txt, targs) ->
@@ -483,7 +488,7 @@ struct
             (P.to_int kind) (extern_atom txt) args
         | EF_inline_asm(txt, sg, clob) ->
           fprintf oc "%s begin inline assembly\n\t" comment;
-          print_inline_asm preg_asm oc (camlstring_of_coqstring txt) sg args res;
+          print_inline_asm preg_asm oc txt sg args res;
           fprintf oc "%s end inline assembly\n" comment
         | _ ->
           assert false
@@ -536,10 +541,6 @@ struct
     fprintf oc "	.balign %d\n" alignment
 
   let print_jumptable _ _ = ()
-
-  let cfi_startproc = cfi_startproc
-
-  let cfi_endproc = cfi_endproc
 
   let print_optional_fun_info oc =
     if !Clflags.option_mthumb then
@@ -605,11 +606,6 @@ let sel_target () =
   let module S : PRINTER_OPTIONS = struct
 
     let vfpv3 = Configuration.model >= "armv7"
-
-    let hardware_idiv  =
-      match  Configuration.model with
-      | "armv7r" | "armv7m" -> !Clflags.option_mthumb
-      | _ -> false
 
   end in
   (module Target(S):TARGET)

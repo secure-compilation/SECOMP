@@ -66,7 +66,7 @@ let string_of_comp c =
 let print_event p = function
   | Event_syscall(id, args, _, res, _) ->
       fprintf p "extcall %s(%a) -> %a"
-                (camlstring_of_coqstring id)
+                id
                 print_eventval_list args
                 print_eventval res
   | Event_vload(chunk, id, ofs, res) ->
@@ -81,7 +81,7 @@ let print_event p = function
                 print_eventval arg
   | Event_annot(text, args) ->
       fprintf p "annotation \"%s\" %a"
-                (camlstring_of_coqstring text)
+                text
                 print_eventval_list args
   | Event_call(caller, callee, f, args) ->
       fprintf p "Call %s -[%a]-> %s.%ld"
@@ -454,7 +454,7 @@ let rec convert_external_args ge vl tl =
   | _, _ -> None
 
 let do_external_function id sg ge cp w args m =
-  match camlstring_of_coqstring id, args with
+  match id, args with
   | "printf", Vptr(b, ofs) :: args' ->
       extract_string m b ofs >>= fun fmt ->
       let fmt' = do_printf m fmt args' in
@@ -466,7 +466,7 @@ let do_external_function id sg ge cp w args m =
   | "fgets", Vptr(b, ofs) :: Vint siz :: args' ->
       do_fgets m b ofs siz >>= fun (p,m') ->
       convert_external_args ge args sg.sig_args >>= fun eargs ->
-      convert_external_arg ge p (proj_rettype sg.sig_res) >>= fun eres ->
+      convert_external_arg ge p (proj_xtype sg.sig_res) >>= fun eres ->
       Some(((w, [Event_syscall(id, eargs, [], eres, [])]), p), m')   (* temporary version *)
   | _ ->
       None
@@ -597,7 +597,7 @@ let rec explore_one cp_main p prog ge time s w =
       | Random -> List.nth succs (Random.int (List.length succs))
       | All -> assert false in
     if !trace >= 2 then
-      fprintf p "--[%s]-->@." (camlstring_of_coqstring r);
+      fprintf p "--[%s]-->@." r;
     explore_one cp_main p prog ge (time + 1) s' w'
   end
 
@@ -631,7 +631,7 @@ let rec explore_all cp p prog ge time states =
            numseen + 1) in
       if !trace >= 2 then begin
         fprintf p "Transition state %d.%d --[%s]--> state %d.%d@."
-                  time n (camlstring_of_coqstring r) (time + 1) n'
+                  time n r (time + 1) n'
       end;
       add_reducts nextstates' seen' numseen' states n reducts
   in
@@ -707,14 +707,13 @@ let fixup_main p =
       None
   | Some main_fd ->
       match type_of_fundef main_fd with
-      | Tfunction(Tnil, Ctypes.Tint(I32, Signed, _), _) ->
+      | Tfunction([], Ctypes.Tint(I32, Signed, _), _) ->
           Some p
-      | Tfunction(Tcons(Ctypes.Tint _,
-                  Tcons(Tpointer(Tpointer(Ctypes.Tint(I8,_,_),_),_), Tnil)),
+      | Tfunction([Ctypes.Tint _; Tpointer(Tpointer(Ctypes.Tint(I8,_,_),_),_)],
                   Ctypes.Tint _, _) as ty ->
           Some (change_main_function p
                    (call_main3_function p.Ctypes.prog_main ty))
-      | Tfunction(Tnil, ty_res, _) as ty ->
+      | Tfunction([], ty_res, _) as ty ->
           Some (change_main_function p
                    (call_other_main_function p.Ctypes.prog_main ty ty_res))
       | _ ->

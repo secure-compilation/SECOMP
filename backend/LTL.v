@@ -326,7 +326,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
         E0 (Block s f sp bb rs' m')
-  | exec_Lcall: forall s f sp sig ros bb rs m fd vf callrs args t,
+  | exec_Lcall: forall s f sp sig ros bb rs m m' fd vf callrs args t,
       find_function ros rs = Some fd ->
       find_function_ptr ros rs = Some vf ->
       funsig fd = sig ->
@@ -338,9 +338,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf args (sig_args sig) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf args (proj_sig_args sig) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m
+        else if cp_eq_dec (comp_of fd) bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Readable = Some m'
+             | _ => m' = m end),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
-        t (Callstate (Stackframe f sig sp rs bb :: s) fd sig rs m (comp_of f))
+        t (Callstate (Stackframe f sig sp rs bb :: s) fd sig rs m' (comp_of f))
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
@@ -397,13 +402,18 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) sig rs m cp)
          t (Returnstate s rs' m' bottom)
-  | exec_return: forall f sp rs1 bb s rs m cp sig t,
+  | exec_return: forall f sp rs1 bb s rs m m' cp sig t,
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sig)) rs)),
       forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sig)) rs) (sig_res sig) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) cp then m' = m
+        else if cp_eq_dec cp bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Freeable = Some m'
+             | _ => False end),
       step (Returnstate (Stackframe f sig sp rs1 bb :: s) rs m cp)
-        t (Block s f sp bb rs m).
+        t (Block s f sp bb rs m').
 
 End RELSEM.
 

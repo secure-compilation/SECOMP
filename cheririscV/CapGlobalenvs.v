@@ -391,25 +391,28 @@ Program Definition add_global (idg: ident * globdef F V) (ge: t): option t :=
   else None.
 Next Obligation.
   destruct ge; simpl in *.
-  rewrite PTree.gsspec in H0.
-  inv H0. pose proof (build_capability_inv genv_next0 g).
-  destruct H0 as [B [S [Size [C G]]]].
-  remember (build_capability genv_next0 g) as cap.
-  destruct cap,o;[|easy..].
-  pose proof (build_capability_inv_lt Heqcap) as LT. simpl in *.
-  destruct (peq id i).
-  - unfold get_region_size_nat,get_region_size in Size.
+  match goal with H : context [PTree.set] |- _ => rewrite PTree.gsspec in H;
+    destruct (peq id _) eqn:?; [inv H | rename H into H0] end.
+  - pose proof (build_capability_inv genv_next0 g) as [B [S [Size [C G]]]].
+    remember (build_capability genv_next0 g) as cap.
+    destruct cap,o;[|easy..].
+    pose proof (build_capability_inv_lt Heqcap) as LT. simpl in *.
+    unfold get_region_size_nat,get_region_size in Size.
     pose proof (Ptrofs.unsigned_range i0) as [? _].
     pose proof (globdef_size_pos g).
-    subst. inv H2. simpl in *. lia.
-  - apply genv_symb_range0 in H2.
-    apply Ptrofs.same_if_eq in B. subst.  
+    simpl in *. lia.
+  - pose proof (build_capability_inv genv_next0 g) as [B [S [Size [C G]]]].
+    remember (build_capability genv_next0 g) as cap.
+    destruct cap,o;[|easy..].
+    pose proof (build_capability_inv_lt Heqcap) as LT. simpl in *.
+    apply genv_symb_range0 in H0.
+    apply Ptrofs.same_if_eq in B. subst.
     lia.
 Qed.
 Next Obligation.
   destruct ge; simpl in *.
   pose proof (build_capability_inv genv_next0 g0) as [B [S [Size [C G]]]].
-  rewrite ZTree.gsspec in H0.
+  match goal with H : context [ZTree.set] |- _ => rewrite ZTree.gsspec in H; rename H into H0 end.
   remember (build_capability genv_next0 g0) as c.
   apply build_capability_inv_lt in Heqc as LT.
   destruct c,o;[|easy..]. simpl in *.
@@ -419,26 +422,23 @@ Next Obligation.
     simpl in *. rewrite e.
     pose proof (globdef_size_pos g).
     lia.
-  - apply genv_defs_range0 in H2.
-    apply Ptrofs.same_if_eq in B.
-    apply Ptrofs.same_if_eq in S;subst.
-    lia.
+  - match goal with H : context [genv_defs0] |- _ => apply genv_defs_range0 in H;
+      apply Ptrofs.same_if_eq in B;
+      apply Ptrofs.same_if_eq in S; subst; lia end.
 Qed.
 Next Obligation.
   destruct ge; simpl in *.
-  rewrite PTree.gsspec in H0. rewrite PTree.gsspec in H1.
-  pose proof (build_capability_inv genv_next0 g) as [B [S [Size [C G]]]].
+  rewrite PTree.gsspec in H. rewrite PTree.gsspec in H0.
+  pose proof (build_capability_inv genv_next0 g) as [B' [S' [Size [C G]]]].
   remember (build_capability genv_next0 g) as c.
   apply build_capability_inv_lt in Heqc as LT.
-  apply Ptrofs.same_if_eq in S.
-  apply Ptrofs.same_if_eq in B.
+  apply Ptrofs.same_if_eq in S'.
+  apply Ptrofs.same_if_eq in B'.
   destruct (peq id1 i); destruct (peq id2 i).
   - congruence.
-  - inversion H0. subst c. apply genv_symb_range0 in H1 as ?.
-    rewrite S in *. rewrite B in *. rewrite H3 in *.
-    rewrite S in H2. lia.
-  - inversion H1. subst c. apply genv_symb_range0 in H0 as ?.
-    rewrite <- B, H3 in H2. lia.
+  - inv H. apply genv_symb_range0 in H0.
+    rewrite B' in *. lia.
+  - inv H0. apply genv_symb_range0 in H. rewrite B' in H. lia.
   - eauto.
 Qed.
 Next Obligation.
@@ -476,7 +476,7 @@ Qed.
 Lemma add_globals_none:
   forall gls, add_globals None gls = None.
 Proof.
-  induction 0;auto.
+  intro gls; induction gls;auto.
 Qed.
 
 Program Definition add_stack (ge: t): option t :=
@@ -500,9 +500,7 @@ Next Obligation.
   rewrite <- Heqcap in *.
   destruct cap,o;[clear S|easy..].
   unfold get_region_size in Size. simpl in *.
-  apply (ge.(genv_symb_range)) in H0.
-  apply Ptrofs.same_if_eq in B. subst.
-  lia.
+  apply (ge.(genv_symb_range)) in H. apply Ptrofs.same_if_eq in B. subst. lia.
 Defined.
 Next Obligation.
   remember (build_stack_capability (genv_next ge)) as cap.
@@ -510,9 +508,7 @@ Next Obligation.
   rewrite <- Heqcap in *.
   destruct cap,o;[clear S|easy..].
   unfold get_region_size in Size. simpl in *.
-  apply (ge.(genv_defs_range)) in H0.
-  apply Ptrofs.same_if_eq in B. subst.
-  lia.
+  apply (ge.(genv_defs_range)) in H. apply Ptrofs.same_if_eq in B. subst. lia.
 Defined.
 Next Obligation.
   remember (build_stack_capability (genv_next ge)) as cap.
@@ -520,8 +516,7 @@ Next Obligation.
   rewrite <- Heqcap in *.
   destruct cap,o;[clear S|easy..].
   unfold get_region_size in Size. simpl in *.
-  eapply (ge.(genv_vars_inj)) in H0;[|apply H1].
-  auto.
+  eapply (ge.(genv_vars_inj)) in H;[|apply H0]. auto.
 Defined.
 Next Obligation.
   split;auto.
@@ -555,9 +550,7 @@ Next Obligation.
   rewrite <- Heqcap in *.
   destruct cap,o;[clear S|easy..].
   unfold get_region_size in Size. simpl in *.
-  apply (ge.(genv_symb_range)) in H0.
-  apply Ptrofs.same_if_eq in B. subst.
-  lia.
+  apply (ge.(genv_symb_range)) in H. apply Ptrofs.same_if_eq in B. subst. lia.
 Defined.
 Next Obligation.
   remember (build_heap_capability (genv_next ge)) as cap.
@@ -565,9 +558,7 @@ Next Obligation.
   rewrite <- Heqcap in *.
   destruct cap,o;[clear S|easy..].
   unfold get_region_size in Size. simpl in *.
-  apply (ge.(genv_defs_range)) in H0.
-  apply Ptrofs.same_if_eq in B. subst.
-  lia.
+  apply (ge.(genv_defs_range)) in H. apply Ptrofs.same_if_eq in B. subst. lia.
 Defined.
 Next Obligation.
   remember (build_heap_capability (genv_next ge)) as cap.
@@ -575,8 +566,7 @@ Next Obligation.
   rewrite <- Heqcap in *.
   destruct cap,o;[clear S|easy..].
   unfold get_region_size in Size. simpl in *.
-  eapply (ge.(genv_vars_inj)) in H0;[|apply H1].
-  auto.
+  eapply (ge.(genv_vars_inj)) in H;[|apply H0]. auto.
 Defined.
 Next Obligation.
   split;auto.

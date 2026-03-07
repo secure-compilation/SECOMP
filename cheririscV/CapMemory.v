@@ -2973,7 +2973,7 @@ Theorem perm_free_1:
 Proof.
   intros. rewrite free_result. unfold perm, unchecked_free; simpl.
   destruct zle,zlt;simpl.
-  elimtype False;intuition.
+  exfalso;intuition.
   all: auto.
 Qed.
 

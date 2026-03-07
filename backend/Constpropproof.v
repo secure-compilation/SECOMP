@@ -556,6 +556,18 @@ Proof.
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
   exploit transf_ros_correct_ptr; eauto. intros FUNPTR'.
+  (* Assert target SET_PERM result to avoid evar issue *)
+  assert (EXT_SET: exists tm',
+    (if cp_eq_dec (comp_of f) (comp_of fd) then tm' = m'0
+     else if cp_eq_dec (comp_of fd) bottom then tm' = m'0
+     else Mem.set_perm m'0 sp0 Readable = Some tm')
+    /\ Mem.extends m' tm').
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [reflexivity | exact MEM].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | exact MEM].
+      + exploit Mem.set_perm_parallel_extends; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   left; econstructor; econstructor; split.
   eapply exec_Icall; eauto. apply sig_function_translated; auto.
   rewrite comp_transf_function.
@@ -579,11 +591,15 @@ Proof.
   eapply H2; eauto.
   eapply NO_CROSS_PTR.
   erewrite <- comp_function_translated; eauto.
-  rewrite comp_function_translated.
-  eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
-  apply regs_lessdef_regs; auto.
-  constructor; auto. constructor; auto.
+  rewrite comp_transf_function.
+  eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved, regs_lessdef_regs.
+  rewrite comp_function_translated. exact EV.
+  (* SET_PERM target *)
+  rewrite comp_transf_function, comp_function_translated. exact SET_T.
+  (* match_states *)
+  rewrite comp_transf_function.
   econstructor; eauto.
+  constructor; eauto. constructor; eauto.
   apply regs_lessdef_regs; auto.
 
 - (* Itailcall *)
@@ -689,7 +705,7 @@ Opaque builtin_strength_reduction.
   intros [m2' [A B]].
   simpl. unfold transf_function.
   left; exists O; econstructor; split.
-  eapply exec_function_internal; simpl; eauto.
+  eapply exec_function_internal; simpl; eauto using Val.has_argtype_list_lessdef.
   simpl. econstructor; eauto.
   constructor.
   apply init_regs_lessdef; auto.
@@ -706,13 +722,31 @@ Opaque builtin_strength_reduction.
 
 - (* return *)
   inv H5. inv H1.
+  (* Assert target SET_PERM result to avoid evar issue *)
+  assert (EXT_SET: exists tm',
+    (if cp_eq_dec (comp_of f) cp then tm' = m'0
+     else if cp_eq_dec cp bottom then tm' = m'0
+     else match sp with
+       | Vptr bsp _ => Mem.set_perm m'0 bsp Freeable = Some tm'
+       | _ => False
+       end)
+    /\ Mem.extends m' tm').
+  { destruct (cp_eq_dec (comp_of f) cp).
+    - subst m'. eexists; split; [reflexivity | exact MEM].
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. eexists; split; [reflexivity | exact MEM].
+      + destruct sp; try contradiction.
+        exploit Mem.set_perm_parallel_extends; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   left; exists O; econstructor; split.
   eapply exec_return; eauto.
   rewrite comp_transf_function. intros G. specialize (NO_CROSS_PTR G).
   inv RES; auto; contradiction.
   rewrite comp_transf_function.
   now eapply return_trace_lessdef; eauto using senv_preserved.
-  econstructor; eauto. constructor. apply set_reg_lessdef; auto.
+  (* match_states *)
+  econstructor; eauto. constructor.
+  apply set_reg_lessdef; auto.
 Qed.
 
 Lemma transf_initial_states:

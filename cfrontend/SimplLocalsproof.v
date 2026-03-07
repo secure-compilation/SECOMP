@@ -12,7 +12,7 @@
 
 (** Semantic preservation for the SimplLocals pass. *)
 
-Require Import FSets.
+From Coq Require Import FSets.
 Require Import Coqlib Errors Ordered Maps Integers Floats.
 Require Import AST Linking.
 Require Import Values Memory Globalenvs Events Smallstep.
@@ -301,12 +301,12 @@ Proof.
   induction 1; intros tyl F; inv F; constructor; eauto. eapply val_casted_inject; eauto.
 Qed.
 
-Inductive val_casted_list: list val -> typelist -> Prop :=
+Inductive val_casted_list: list val -> list type -> Prop :=
   | vcl_nil:
-      val_casted_list nil Tnil
+      val_casted_list nil nil
   | vcl_cons: forall v1 vl ty1 tyl,
       val_casted v1 ty1 -> val_casted_list vl tyl ->
-      val_casted_list (v1 :: vl) (Tcons  ty1 tyl).
+      val_casted_list (v1 :: vl) (ty1 :: tyl).
 
 Lemma val_casted_list_params:
   forall params vl,
@@ -1223,7 +1223,7 @@ Local Opaque Conventions1.parameter_needs_normalization.
     eauto.
   intros (tle & tm' & U & V & X & Y & Z).
   exists tle, tm'; split; [|auto].
-  destruct (Conventions1.parameter_needs_normalization (rettype_of_type ty)); [|assumption].
+  destruct (Conventions1.parameter_needs_normalization (argtype_of_type ty)); [|assumption].
   assert (A: tle!id = Some v').
   { erewrite bind_parameter_temps_inv by eauto. apply PTree.gss. }
   eapply star_left. constructor.
@@ -1494,6 +1494,62 @@ Local Opaque ge tge.
   exploit me_flat; eauto. apply PTree.elements_complete; eauto.
   intros [P Q]. subst delta. eapply free_blocks_of_env_perm_1 with (m := m); eauto.
   rewrite <- comp_env_preserved. lia.
+Qed.
+
+Theorem match_envs_set_perm_blocks:
+  forall j cenv e le m lo hi te tle tlo thi p m' tm,
+  match_envs j cenv e le m lo hi te tle tlo thi ->
+  Mem.inject j m tm ->
+  Mem.set_perm_list m (blocks_of_env ge e) p = Some m' ->
+  perm_order p Readable ->
+  exists tm',
+     Mem.set_perm_list tm (blocks_of_env tge te) p = Some tm'
+  /\ Mem.inject j m' tm'.
+Proof.
+  intros until tm; intros ME INJ SPL PR.
+  destruct ME.
+Local Opaque ge tge.
+  assert (EX: exists tm', Mem.set_perm_list tm (blocks_of_env tge te) p = Some tm').
+  { rewrite blocks_of_env_translated. apply Mem.set_perm_list_exists.
+    intros b lo0 hi0 IN.
+    unfold blocks_of_env in IN. exploit list_in_map_inv; eauto.
+    intros [[id [b' ty]] [EQ IN']]. unfold block_of_binding in EQ; inv EQ.
+    exploit me_mapped0; eauto. eapply PTree.elements_complete; eauto.
+    intros [b0 [MAP ENV0]].
+    eapply Mem.valid_block_inject_2; eauto. }
+  destruct EX as [tm' SPL2].
+  exists tm'; split; auto.
+  eapply Mem.set_perm_list_parallel_inject; eauto.
+  intros b1 b2 delta MAP. split.
+  - (* forward: b1 in source env => b2 in target env *)
+    intros [lo0 [hi0 IN]].
+    unfold blocks_of_env in IN. exploit list_in_map_inv; eauto.
+    intros [[id [b' ty]] [EQ IN']]. unfold block_of_binding in EQ; inv EQ.
+    generalize (me_vars0 id); intros MV; inv MV.
+    + (* lifted: j b1 = None, contradiction *)
+      exploit PTree.elements_complete; eauto. intros. congruence.
+    + (* not lifted *)
+      exploit PTree.elements_complete; eauto. intros ENV'.
+      rewrite ENV' in ENV. inv ENV. rewrite MAPPED in MAP. inv MAP.
+      exists 0, (sizeof tge ty0).
+      unfold blocks_of_env. apply in_map_iff.
+      exists (id, (b2, ty0)). split.
+      * unfold block_of_binding. auto.
+      * apply PTree.elements_correct. auto.
+    + (* not local: e!id = None, but elements_complete gives Some *)
+      exploit PTree.elements_complete; eauto. congruence.
+  - (* backward: b2 in target env => b1 in source env *)
+    intros [lo0 [hi0 IN]].
+    rewrite blocks_of_env_translated in IN.
+    unfold blocks_of_env in IN. exploit list_in_map_inv; eauto.
+    intros [[id [b' ty]] [EQ IN']]. unfold block_of_binding in EQ; inv EQ.
+    exploit me_flat0; eauto. eapply PTree.elements_complete; eauto.
+    intros [ENV' DELTA]. subst delta.
+    exists 0, (sizeof ge ty).
+    unfold blocks_of_env. apply in_map_iff.
+    exists (id, (b1, ty)). split.
+    * unfold block_of_binding. auto.
+    * apply PTree.elements_correct. auto.
 Qed.
 
 (** Matching global environments *)
@@ -2262,8 +2318,24 @@ Proof.
   assert (vf = tvf). eapply match_cont_find_funct_eq; eauto. subst tvf.
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit match_cont_find_funct; eauto. intros [tfd [P Q]].
+  (* Pre-compute SET_PERM for target *)
+  assert (SET_PERM_T: exists tm',
+    (if cp_eq_dec (comp_of tf) (comp_of tfd)
+     then tm' = tm
+     else if cp_eq_dec (comp_of tfd) bottom
+          then tm' = tm
+          else Mem.set_perm_list tm (blocks_of_env tge te) Readable = Some tm')
+    /\ Mem.inject j m' tm').
+  { rewrite <- (comp_transl_partial _ TRF).
+    rewrite <- (comp_transl_partial _ Q).
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. exists tm. split; auto.
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. exists tm. split; auto.
+      + exploit match_envs_set_perm_blocks; eauto. constructor. }
+  destruct SET_PERM_T as [tm' [SET_PERM_T INJ']].
   econstructor; split.
-  apply plus_one. eapply step_call with (fd := tfd).
+  apply plus_one. eapply step_call with (fd := tfd) (m' := tm').
   rewrite typeof_simpl_expr. eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
@@ -2277,9 +2349,29 @@ Proof.
   eapply call_trace_translated; eauto.
   rewrite <- comp_transf_function; eauto.
   rewrite <- comp_transf_function; eauto.
-
+  exact SET_PERM_T.
+  (* match_states for Callstate *)
+  assert (LOAD_FWD: forall c b chunk v0,
+    Mem.load chunk m b 0 c = Some v0 -> Mem.load chunk m' b 0 c = Some v0).
+  { intros. destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst m'; auto|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst m'; auto|].
+    eapply Mem.load_set_perm_list_fwd; eauto. constructor. }
+  assert (NB_EQ: Mem.nextblock m' = Mem.nextblock m).
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst m'; auto|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst m'; auto|].
+    eapply Mem.nextblock_set_perm_list; eauto. }
+  assert (TNB_EQ: Mem.nextblock tm' = Mem.nextblock tm).
+  { destruct (cp_eq_dec (comp_of tf) (comp_of tfd)); [subst tm'; auto|].
+    destruct (cp_eq_dec (comp_of tfd) bottom); [subst tm'; auto|].
+    eapply Mem.nextblock_set_perm_list; eauto. }
+  assert (MCONT': forall cenv cp,
+    match_cont j cenv cp (Kcall optid f e le k) (Kcall optid tf te tle tk) m'
+      (Mem.nextblock m') (Mem.nextblock tm')).
+  { intros. eapply match_Kcall;
+      [exact TRF | eapply match_envs_invariant; eauto
+      | eapply match_cont_invariant; eauto
+      | exact EQ | rewrite NB_EQ; auto | rewrite TNB_EQ; auto]. }
   econstructor; eauto.
-  intros ??. econstructor; eauto.
 
 (* builtin *)
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
@@ -2495,17 +2587,63 @@ Proof.
 
 (* return *)
   specialize (MCONT (cenv_for f)). inv MCONT.
+  monadInv H4. simpl. unfold comp_of. simpl.
+  (* Pre-compute SET_PERM for target return *)
+  assert (SET_PERM_T: exists tm',
+    (if cp_eq_dec (fn_comp f) cp
+     then tm' = tm
+     else if cp_eq_dec cp bottom
+          then tm' = tm
+          else Mem.set_perm_list tm (blocks_of_env tge te) Freeable = Some tm')
+    /\ Mem.inject j m' tm').
+  { change (comp_of f) with (fn_comp f) in SET_PERM.
+    destruct (cp_eq_dec (fn_comp f) cp).
+    - subst m'. exists tm. split; auto.
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. exists tm. split; auto.
+      + exploit match_envs_set_perm_blocks; eauto. constructor. }
+  destruct SET_PERM_T as [tm' [SET_PERM_T INJ']].
+  assert (TRF: transf_function f = OK
+    {| fn_comp := fn_comp f; fn_return := fn_return f;
+       fn_callconv := fn_callconv f; fn_params := fn_params f;
+       fn_vars := remove_lifted (cenv_for f) (fn_params f ++ fn_vars f);
+       fn_temps := add_lifted (cenv_for f) (fn_vars f) (fn_temps f);
+       fn_body := add_debug_params (fn_params f)
+                    (store_params (cenv_for f) (fn_params f)
+                       (add_debug_vars
+                          (remove_lifted (cenv_for f) (fn_params f ++ fn_vars f)) x0)) |}).
+  { unfold transf_function. destruct (list_disjoint_dec ident_eq
+      (var_names (fn_params f)) (var_names (fn_temps f))); [|contradiction].
+    simpl. rewrite EQ. auto. }
   econstructor; split.
-  apply plus_one. econstructor.
+  apply plus_one. eapply step_returnstate with (m' := tm').
   intros H.
-
-  rewrite <- type_of_call_translated with (f := f) in H.
+  rewrite <- type_of_call_translated with (f := f) in H; auto.
   specialize (NO_CROSS_PTR H). inv RINJ; simpl in NO_CROSS_PTR; eauto; contradiction.
-  eauto.
-  monadInv H4; simpl. unfold comp_of. simpl.
   eapply return_trace_inj; eauto.
+  exact SET_PERM_T.
+  (* match_states for return *)
+  assert (LOAD_FWD: forall c b chunk v0,
+    Mem.load chunk m b 0 c = Some v0 -> Mem.load chunk m' b 0 c = Some v0).
+  { intros. change (comp_of f) with (fn_comp f) in SET_PERM.
+    destruct (cp_eq_dec (fn_comp f) cp); [subst m'; auto|].
+    destruct (cp_eq_dec cp bottom); [subst m'; auto|].
+    eapply Mem.load_set_perm_list_fwd; eauto. constructor. }
+  assert (NB_EQ: Mem.nextblock m' = Mem.nextblock m).
+  { change (comp_of f) with (fn_comp f) in SET_PERM.
+    destruct (cp_eq_dec (fn_comp f) cp); [subst m'; auto|].
+    destruct (cp_eq_dec cp bottom); [subst m'; auto|].
+    eapply Mem.nextblock_set_perm_list; eauto. }
+  assert (TNB_EQ: Mem.nextblock tm' = Mem.nextblock tm).
+  { destruct (cp_eq_dec (fn_comp f) cp); [subst tm'; auto|].
+    destruct (cp_eq_dec cp bottom); [subst tm'; auto|].
+    eapply Mem.nextblock_set_perm_list; eauto. }
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
+  eapply match_envs_invariant; eauto.
+  eapply match_cont_invariant; eauto.
+  rewrite NB_EQ; auto.
+  rewrite TNB_EQ; auto.
 Qed.
 
 Lemma initial_states_simulation:
@@ -2575,7 +2713,7 @@ Local Transparent Linker_fundef.
 - destruct e; inv H2.
   exists (Internal x); split; auto.
   simpl; rewrite EQ; auto.
-- destruct (external_function_eq e e0 && typelist_eq t t1 &&
-            type_eq t0 t2 && calling_convention_eq c c0); inv H2.
-  econstructor; split; eauto. 
+- match goal with H2: (if ?b then _ else _) = Some _ |- _ =>
+    destruct b; inv H2 end.
+  econstructor; split; eauto.
 Qed.

@@ -404,7 +404,7 @@ let elab_int_constant loc s0 =
     try List.find (fun ty -> integer_representable v ty)
                   (if base = 10 then dec_kinds else hex_kinds)
     with Not_found ->
-      error loc "integer literal '%s' cannot be represented" s0;
+      error loc "integer literal '%s' is too large to be represented in a signed integer type.  Consider marking it as unsigned, or writing it in hexadecimal." s0;
       IInt
   in
   (v, ty)
@@ -470,7 +470,7 @@ let elab_char_constant loc enc chars =
   if v' <> v then
     warning loc Constant_conversion
       "overflow in character constant, changes value from %Ld to %Ld" v v';
-  v'
+  (v', ik)
 
 let elab_string_literal loc enc chars =
   let ik = ikind_of_encoding enc in
@@ -510,7 +510,7 @@ let elab_constant loc = function
         | EncU16 -> IUShort
         | EncU32 -> IUInt
         | EncUTF8 -> assert false in
-      CInt(elab_char_constant loc enc s, ikind, "")
+      CInt(fst (elab_char_constant loc enc s), ikind, "")
   | CONST_STRING(wide, s) ->
       warn_C11_literals loc wide "string literals";
       elab_string_literal loc wide s
@@ -846,6 +846,7 @@ let rec elab_specifier ?(only = false) loc env specifier =
     | [Cabs.Tunsigned; Cabs.Tlong; Cabs.Tlong; Cabs.Tint] -> simple (TInt(IULongLong, []))
 
     | [Cabs.Tfloat] -> simple (TFloat(FFloat, []))
+    | [Cabs.Tfloat16] -> simple (TFloat(FFloat16, [])) 
     | [Cabs.Tdouble] -> simple (TFloat(FDouble, []))
 
     | [Cabs.Tlong; Cabs.Tdouble] -> simple (TFloat(FLongDouble, []))
@@ -901,7 +902,6 @@ and elab_cvspec env = function
 and elab_cvspecs env cv_specs =
   List.fold_left add_attributes [] (List.map (elab_cvspec env) cv_specs)
 
-(* Elaboration of a type declarator.  C99 section 6.7.5. *)
 and elab_return_type loc env ty =
   match unroll env ty with
   | TArray _ ->
@@ -910,6 +910,8 @@ and elab_return_type loc env ty =
       error loc "function cannot return function type %a" (print_typ env) ty
   | _ -> ()
 
+(* Elaboration of a type declarator.  C99 section 6.7.5. *)
+
 (* The [?fundef] parameter is true if we're elaborating a function definition
    and false otherwise.  When [fundef = true], K&R function declarators
    are allowed, and the returned environment includes bindings for the
@@ -917,16 +919,27 @@ and elab_return_type loc env ty =
    When [fundef = false], K&R function declarators are rejected
    and declarations in parameters are not returned. *)
 
-and elab_type_declarator ?(fundef = false) loc env ty = function
+(* The [?param] parameter is true if we're elaborating a parameter
+   of a function prototype, and false otherwise.
+   This is used for checking 'static' array declarators. *)
+
+and elab_type_declarator ?(fundef = false) ?(param = false) loc env ty = function
   | Cabs.JUSTBASE ->
       ((ty, None), env)
-  | Cabs.ARRAY(d, cv_specs, sz) ->
+  | Cabs.ARRAY(d, cv_specs, static, sz) ->
       let (ty, a) = get_nontype_attrs env ty in
       let a = add_attributes a (elab_cvspecs env cv_specs) in
       if wrap incomplete_type loc env ty then
         error loc "array type has incomplete element type %a" (print_typ env) ty;
       if wrap contains_flex_array_mem loc env ty then
         warning loc Flexible_array_extensions "%a may not be used as an array element due to flexible array member" (print_typ env) ty;
+      if static then begin
+        assert (sz <> None);   (* guaranteed by the parser *)
+        if not param then
+          error loc "'static' used in array declarator outside of function prototype"
+        else if d <> Cabs.JUSTBASE then
+          error loc "'static' used in non-outermost array type derivation"
+      end;
       let sz' =
         match sz with
         | None ->
@@ -943,39 +956,45 @@ and elab_type_declarator ?(fundef = false) loc env ty = function
             | None ->
                 error loc "size of array is not a compile-time constant";
                 Some 1L in (* produces better error messages later *)
-       elab_type_declarator ~fundef loc env (TArray(ty, sz', a)) d
+       elab_type_declarator ~fundef ~param loc env (TArray(ty, sz', a)) d
   | Cabs.PTR(cv_specs, d) ->
       let (ty, a) = get_nontype_attrs env ty in
       let a = add_attributes a (elab_cvspecs env cv_specs) in
       if is_function_type env ty && incl_attributes [ARestrict] a then
         error loc "pointer to function type %a may not be 'restrict' qualified" (print_typ env) ty;
-      elab_type_declarator ~fundef loc env (TPtr(ty, a)) d
+      elab_type_declarator ~fundef ~param loc env (TPtr(ty, a)) d
   | Cabs.PROTO(d, (params, vararg)) ->
       elab_return_type loc env ty;
       let (ty, a) = get_nontype_attrs env ty in
       let (params', env') = elab_parameters loc env params in
-      (* For a function declaration (fundef = false), the scope introduced
-         to treat parameters ends here, so we discard the extended
-         environment env' returned by elab_parameters.
-         For a function definition (fundef = true) we return the
-         extended environment env' so that it can serve as the basis
-         to elaborating the function body. *)
-      let env'' = if fundef then env' else env in
-      elab_type_declarator ~fundef loc env'' (TFun(ty, Some params', vararg, a)) d
+      let funty = TFun(ty, Some params', vararg, a) in
+      (* For a function declaration (fundef = false or d <> JUSTBASE),
+         the scope introduced to treat parameters ends here, so we
+         discard the extended environment env' returned by
+         elab_parameters.
+         For a function definition (fundef = true and d = JUSTBASE),
+         we return the extended environment env' so that it can serve
+         as the basis to elaborating the function body. *)
+      if fundef && d = Cabs.JUSTBASE then
+        ((funty, None), env')
+      else
+        elab_type_declarator ~fundef ~param loc env funty d
   | Cabs.PROTO_OLD(d, params) ->
       elab_return_type loc env ty;
       let (ty, a) = get_nontype_attrs env ty in
+      let funty = TFun(ty, None, false, a) in
       (* For consistency with the PROTO case above, for a function definition
-         (fundef = true) we open a new scope, even though we do not
-         add any bindings for the parameters. *)
-      let env'' = if fundef then Env.new_scope env else env in
-      match params with
-      | [] ->
-        elab_type_declarator ~fundef loc env'' (TFun(ty, None, false, a)) d
-      | _ ->
-        if not fundef || d <> Cabs.JUSTBASE then
+         (fundef = true and d = JUSTBASE) we open a new scope, even
+         though we do not add any bindings for the parameters. *)
+      if fundef && d = Cabs.JUSTBASE then begin
+        let env' = Env.new_scope env in
+        let opt_params = if params = [] then None else Some params in
+        ((funty, opt_params), env')
+      end else begin
+        if params <> [] then
           fatal_error loc "illegal old-style K&R function definition";
-        ((TFun(ty, None, false, a), Some params), env'')
+        elab_type_declarator ~fundef ~param loc env funty d
+      end
 
 (* Elaboration of parameters in a prototype *)
 
@@ -995,7 +1014,7 @@ and elab_parameter env (PARAM (spec, id, decl, attr, loc)) =
   let (sto, inl, noret, tydef, bty, env1, comp) = elab_specifier loc env spec in
   if tydef then
     error loc "'typedef' used in function parameter";
-  let ((ty, _), _) = elab_type_declarator loc env1 bty decl in
+  let ((ty, _), _) = elab_type_declarator ~param:true loc env1 bty decl in
   let ty = add_attributes_type (elab_attributes env attr) ty in
   if sto <> Storage_default && sto <> Storage_register then
     error loc                               (* NB: 'auto' not allowed *)
@@ -1038,7 +1057,7 @@ and elab_fundef_name env spec (Name (s, decl, attr, loc)) =
     error loc "'typedef' is forbidden here";
   let id = Env.fresh_ident s in
   let ((ty, kr_params), env'') =
-    elab_type_declarator ~fundef:true loc env' bty decl in
+    elab_type_declarator ~fundef:true ~param:true loc env' bty decl in
   let a = elab_attributes env attr in
   (id, sto, inl, noret, add_attributes_type a ty, kr_params, env', env'', comp)
 
@@ -1552,16 +1571,21 @@ module I = struct
                 find (f_i :: before) after
         in find [] flds
     | TUnion(id, _), Init_union(id', fld, i) ->
+        (* matches in the most recently activated field, propagating current initializer *)
         if fld.fld_name = name then
           OK(Zunion(z, id, fld), i)
+        else if fld.fld_anonymous && has_member env name fld.fld_typ then
+          let zi = (Zunion(z, id, fld), i) in
+          member env zi name
         else begin
+          (* matches in another field, creation of new default initializer *)
           let rec find = function
             | [] -> NotFound
             | fld1 :: rem ->
                 if fld1.fld_name = name then
                   OK(Zunion(z, id, fld1), default_init env fld1.fld_typ)
-                else if fld.fld_anonymous && has_member env name fld.fld_typ then
-                  let zi = (Zunion(z, id, fld1),i) in
+                else if fld1.fld_anonymous && has_member env name fld1.fld_typ then
+                  let zi = (Zunion(z, id, fld1), default_init env fld1.fld_typ) in
                   member env zi name
                 else
                   find rem
@@ -1774,7 +1798,8 @@ type elab_context = {
   ctx_labels: StringSet.t;      (**r all labels defined in the function *)
   ctx_break: bool;              (**r is 'break' allowed? *)
   ctx_continue: bool;           (**r is 'continue' allowed? *)
-  ctx_in_switch: bool;          (**r are 'case' and 'default' allowed? *)
+  ctx_in_switch: typ option;    (**r type of the controlling switch expression
+                                     or [None] outside of switch *)
   ctx_vararg: bool;             (**r is this a vararg function? *)
   ctx_nonstatic_inline: bool    (**r is this a nonstatic inline function? *)
 }
@@ -1784,7 +1809,7 @@ type elab_context = {
 let ctx_constexp = {
   ctx_return_typ = TVoid [];
   ctx_labels = StringSet.empty;
-  ctx_break = false; ctx_continue = false; ctx_in_switch = false;
+  ctx_break = false; ctx_continue = false; ctx_in_switch = None;
   ctx_vararg = false; ctx_nonstatic_inline = false
 }
 
@@ -2854,6 +2879,9 @@ let elab_fundef genv spec name defs body loc =
     | _, _ ->
         fatal_error loc "wrong type for function definition"
   in
+  (* Add the noreturn to the function type since for calls we only check for noreturn
+      attributes in the type of the function call. *)
+  let ty = if noret then add_attributes_type [Attr("noreturn",[])] ty else ty in
   (* Extract infos from the type of the function. *)
   let (ty_ret, params, vararg, attr) =
     match ty with
@@ -3092,7 +3120,7 @@ let stmt_labels stmt =
 
 let ctx_loop ctx = { ctx with ctx_break = true; ctx_continue = true }
 
-let ctx_switch ctx = { ctx with ctx_break = true; ctx_in_switch = true }
+let ctx_switch ctx ty = { ctx with ctx_break = true; ctx_in_switch = Some ty }
 
 (* Check the uniqueness of 'case' and 'default' in a 'switch' *)
 
@@ -3154,9 +3182,11 @@ let rec elab_stmt env ctx s =
       { sdesc = Slabeled(Slabel lbl, s1); sloc = elab_loc loc },env
 
   | CASE(a, s1, loc) ->
-      if not ctx.ctx_in_switch then
-        error loc "'case' statement not in switch statement";
       let a',env = elab_expr ctx loc env a in
+      let a' = match ctx.ctx_in_switch with
+        | None -> error loc "'case' statement not in switch statement"; a'
+        | Some ((TInt _) as ty) -> ecast ty a'
+        | _ -> a' in
       let n =
         match Ceval.integer_expr env a' with
         | None ->
@@ -3166,7 +3196,8 @@ let rec elab_stmt env ctx s =
       { sdesc = Slabeled(Scase(a', n), s1); sloc = elab_loc loc },env
 
   | DEFAULT(s1, loc) ->
-      if not ctx.ctx_in_switch then
+      (*- #Link_to E_COMPCERT_TR_Robustness_ELAB_141 *)
+      if ctx.ctx_in_switch = None then
         error loc "'case' statement not in switch statement";
       let s1,env = elab_stmt env ctx s1 in
       { sdesc = Slabeled(Sdefault, s1); sloc = elab_loc loc },env
@@ -3246,7 +3277,7 @@ let rec elab_stmt env ctx s =
       if not (is_integer_type env' a'.etyp) then
         error loc "controlling expression of 'switch' does not have integer type (%a invalid)"
           (print_typ env') a'.etyp;
-      let s1' = elab_stmt_new_scope env' (ctx_switch ctx) s1 in
+      let s1' = elab_stmt_new_scope env' (ctx_switch ctx (unary_conversion env a'.etyp)) s1 in
       check_switch_cases s1';
       { sdesc = Sswitch(a', s1'); sloc = elab_loc loc },env
 
@@ -3355,7 +3386,7 @@ let elab_funbody return_typ vararg nonstatic_inline env b =
       ctx_labels = stmt_labels b;
       ctx_break = false;
       ctx_continue = false;
-      ctx_in_switch = false;
+      ctx_in_switch = None;
       ctx_vararg = vararg;
       ctx_nonstatic_inline = nonstatic_inline } in
   (* The function body appears as a block in the AST but should not create

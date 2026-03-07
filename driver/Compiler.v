@@ -13,7 +13,7 @@
 (** The whole compiler and its proof of semantic preservation *)
 
 (** Libraries. *)
-Require Import String.
+From Coq Require Import String.
 Require Import Coqlib Errors.
 Require Import AST Linking Smallstep.
 (** Languages (syntax and semantics). *)
@@ -445,10 +445,11 @@ Qed.
 Theorem cstrategy_semantic_preservation:
   forall p tp,
   match_prog p tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   forward_simulation (Cstrategy.semantics p) (Asm.semantics tp)
   /\ backward_simulation (atomic (Cstrategy.semantics p)) (Asm.semantics tp).
 Proof.
-  intros p tp M. unfold match_prog, pass_match in M; simpl in M.
+  intros p tp M INB. unfold match_prog, pass_match in M; simpl in M.
 Ltac DestructM :=
   match goal with
     [ H: exists p, _ /\ _ |- _ ] =>
@@ -456,6 +457,14 @@ Ltac DestructM :=
       destruct H as (p & M & MM); clear H
   end.
   repeat DestructM. subst tp.
+  assert (INB20: forall b f, Genv.find_funct_ptr (Genv.globalenv p20) b = Some (Internal f) -> comp_of f <> bottom).
+  { intros b f FF.
+    exploit (Genv.find_funct_ptr_match M19). exact FF.
+    intros (cu & tf & FIND & MF & _).
+    unfold Asmgen.transf_fundef, transf_partial_fundef in MF.
+    monadInv MF.
+    assert (COMP_EQ: comp_of f = comp_of x). { eapply comp_transl_partial; eauto. }
+    rewrite COMP_EQ. eapply INB; eauto. }
   assert (F: forward_simulation (Cstrategy.semantics p) (Asm.semantics p21)).
   {
   eapply compose_forward_simulations.
@@ -503,7 +512,7 @@ Ltac DestructM :=
     eapply MachMerge.forward_simulation_merged.
     now eapply Asmgenproof.return_address_exists.
     eapply Asmgenproof.return_address_determinate.
-  eapply Asmgenproof.transf_program_correct; eassumption.
+  eapply Asmgenproof.transf_program_correct; eauto.
   }
   split. auto.
   apply forward_to_backward_simulation.
@@ -515,6 +524,7 @@ Qed.
 Theorem c_semantic_preservation:
   forall p tp,
   match_prog p tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   backward_simulation (Csem.semantics p) (Asm.semantics tp).
 Proof.
   intros.
@@ -524,7 +534,7 @@ Proof.
   apply Cstrategy.strategy_simulation.
   apply Csem.semantics_single_events.
   eapply ssr_well_behaved; eapply Cstrategy.semantics_strongly_receptive.
-  exact (proj2 (cstrategy_semantic_preservation _ _ H)).
+  exact (proj2 (cstrategy_semantic_preservation _ _ H H0)).
 Qed.
 
 (** * Correctness of the CompCert compiler *)
@@ -542,12 +552,13 @@ Qed.
 Theorem transf_c_program_correct:
   forall p tp,
   transf_c_program p = OK tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   backward_simulation (Csem.semantics p) (Asm.semantics tp).
 Proof.
-  intros. apply c_semantic_preservation. apply transf_c_program_match; auto.
+  intros. apply c_semantic_preservation. apply transf_c_program_match; auto. auto.
 Qed.
 
-(* Print Assumptions transf_c_program_correct. *)
+Print Assumptions transf_c_program_correct.
 
 
 (** Here is the separate compilation case.  Consider a nonempty list [c_units]
@@ -568,7 +579,8 @@ Theorem separate_transf_c_program_correct:
   link_list c_units = Some c_program ->
   exists asm_program,
       link_list asm_units = Some asm_program
-   /\ backward_simulation (Csem.semantics c_program) (Asm.semantics asm_program).
+   /\ ((forall b f, Genv.find_funct_ptr (Genv.globalenv asm_program) b = Some (Internal f) -> comp_of f <> bottom) ->
+       backward_simulation (Csem.semantics c_program) (Asm.semantics asm_program)).
 Proof.
   intros.
   assert (nlist_forall2 match_prog c_units asm_units).
@@ -576,7 +588,7 @@ Proof.
   assert (exists asm_program, link_list asm_units = Some asm_program /\ match_prog c_program asm_program).
   { eapply link_list_compose_passes; eauto. }
   destruct H2 as (asm_program & P & Q).
-  exists asm_program; split; auto. apply c_semantic_preservation; auto.
+  exists asm_program; split; auto. intro INB. apply c_semantic_preservation; auto.
 Qed.
 
-(* Print Assumptions separate_transf_c_program_correct. *)
+Print Assumptions separate_transf_c_program_correct.

@@ -18,6 +18,7 @@ Require Import Decidableplus.
 Require Import AST.
 Require Import Events.
 Require Import Locations.
+Require Import Compopts.
 Require Archi.
 
 (** * Classification of machine registers *)
@@ -70,6 +71,31 @@ Definition is_float_reg (r: mreg): bool :=
   | F0  | F1  | F2  | F3  | F4  | F5  | F6  | F7
   | F8  | F9  | F10  | F11 | F12  | F13  | F14  | F15 => true
   end.
+
+(** How to use registers for register allocation.
+    In classic ARM mode, we favor the use of caller-save registers,
+    using callee-save registers only when no caller-save is available.
+    In Thumb mode, we additionally favor integer registers R0 to R3 over the other
+    integer registers, as they lead to more compact instruction encodings. *)
+
+Record alloc_regs := mk_alloc_regs {
+  preferred_int_regs: list mreg;
+  remaining_int_regs: list mreg;
+  preferred_float_regs: list mreg;
+  remaining_float_regs: list mreg
+}.
+
+Definition allocatable_registers (_ : unit) :=
+  if thumb tt then
+  {| preferred_int_regs := R0 :: R1 :: R2 :: R3 :: nil;
+     remaining_int_regs := R4 :: R5 :: R6 :: R7 :: R12 :: R8 :: R9 :: R10 :: R11 :: nil;
+     preferred_float_regs := float_caller_save_regs;
+     remaining_float_regs := float_callee_save_regs |}
+  else
+  {| preferred_int_regs := int_caller_save_regs;
+     remaining_int_regs := int_callee_save_regs;
+     preferred_float_regs := float_caller_save_regs;
+     remaining_float_regs := float_callee_save_regs |}.
 
 (** * Function calling conventions *)
 
@@ -262,11 +288,11 @@ Fixpoint loc_arguments_sf
 Definition loc_arguments (s: signature) : list (rpair loc) :=
   match Archi.abi with
   | Archi.Softfloat =>
-      loc_arguments_sf s.(sig_args) (-4)
+      loc_arguments_sf (proj_sig_args s) (-4)
   | Archi.Hardfloat =>
       if s.(sig_cc).(cc_vararg)
-      then loc_arguments_sf s.(sig_args) (-4)
-      else loc_arguments_hf s.(sig_args) 0 0 0
+      then loc_arguments_sf (proj_sig_args s) (-4)
+      else loc_arguments_hf (proj_sig_args s) 0 0 0
   end.
 
 (** Argument locations are either non-temporary registers or [Outgoing]
@@ -420,9 +446,9 @@ Proof.
     destruct l as [r | [] ofs ty]; auto. intros (A & B); split; auto. rewrite B; apply Z.divide_1_l. }
   assert (Y: forall p, forall_rpair (loc_argument_charact 0) p -> forall_rpair loc_argument_acceptable p).
   { destruct p0; simpl; intuition auto. }
-  assert (In p (loc_arguments_sf (sig_args s) (-4)) -> forall_rpair loc_argument_acceptable p).
+  assert (In p (loc_arguments_sf (proj_sig_args s) (-4)) -> forall_rpair loc_argument_acceptable p).
   { intros. exploit loc_arguments_sf_charact; eauto. }
-  assert (In p (loc_arguments_hf (sig_args s) 0 0 0) -> forall_rpair loc_argument_acceptable p).
+  assert (In p (loc_arguments_hf (proj_sig_args s) 0 0 0) -> forall_rpair loc_argument_acceptable p).
   { intros. exploit loc_arguments_hf_charact; eauto. }
   destruct Archi.abi; [ | destruct (cc_vararg (sig_cc s)) ]; auto.
 Qed.
@@ -440,5 +466,5 @@ Qed.
 
 (** No normalization needed. *)
 
-Definition return_value_needs_normalization (t: rettype) := false.
-Definition parameter_needs_normalization (t: rettype) := false.
+Definition return_value_needs_normalization (t: xtype) := false.
+Definition parameter_needs_normalization (t: xtype) := false.

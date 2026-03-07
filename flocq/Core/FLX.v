@@ -1,6 +1,6 @@
 (**
 This file is part of the Flocq formalization of floating-point
-arithmetic in Coq: http://flocq.gforge.inria.fr/
+arithmetic in Coq: https://flocq.gitlabpages.inria.fr/
 
 Copyright (C) 2009-2018 Sylvie Boldo
 #<br />#
@@ -339,6 +339,16 @@ fold (Req_bool (-x) (bpow (mag beta (-x) - 1))); case Req_bool.
   replace (_ - _)%Z with (mag beta (- x) - 1 - prec + e)%Z; [|ring].
   rewrite bpow_plus; ring. }
 rewrite ulp_FLX_exact_shift; ring.
+Qed.
+
+Lemma pred_FLX_exact_shift :
+  forall x e,
+  (pred beta FLX_exp (x * bpow e) = pred beta FLX_exp x * bpow e)%R.
+Proof.
+intros x e.
+unfold pred.
+rewrite Ropp_mult_distr_l, succ_FLX_exact_shift.
+apply Ropp_mult_distr_l.
 Qed.
 
 (** FLX is a nice format: it has a monotone exponent... *)

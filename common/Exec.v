@@ -13,19 +13,19 @@ Local Open Scope list_scope.
 Declare Scope option_monad_scope.
 
 Notation "'do' X <- A ; B" := (match A with Some X => B | None => None end)
-  (at level 200, X ident, A at level 100, B at level 200)
+  (at level 200, X name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation "'do' X , Y <- A ; B" := (match A with Some (X, Y) => B | None => None end)
-  (at level 200, X ident, Y ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation "'do' X , Y , Z <- A ; B" := (match A with Some (X, Y, Z) => B | None => None end)
-  (at level 200, X ident, Y ident, Z ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, Z name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation "'do' X , Y , Z , W <- A ; B" := (match A with Some (X, Y, Z, W) => B | None => None end)
-  (at level 200, X ident, Y ident, Z ident, W ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, Z name, W name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation " 'check' A ; B" := (if A then B else None)
@@ -35,7 +35,7 @@ Notation " 'check' A ; B" := (if A then B else None)
 Declare Scope list_monad_scope.
 
 Notation "'do' X <- A ; B" := (match A with Some X => B | None => nil end)
-  (at level 200, X ident, A at level 100, B at level 200)
+  (at level 200, X name, A at level 100, B at level 200)
   : list_monad_scope.
 
 Notation " 'check' A ; B" := (if A then B else nil)
@@ -187,10 +187,10 @@ Proof.
     eapply list_eventval_of_val_sound; eauto.
 Qed.
 
-Definition get_return_trace (cp cp': compartment) (vres: val) (ty: rettype): option trace :=
+Definition get_return_trace (cp cp': compartment) (vres: val) (ty: xtype): option trace :=
   match Genv.type_of_call cp cp' with
   | Genv.CrossCompartmentCall =>
-      match eventval_of_val vres (proj_rettype ty) with
+      match eventval_of_val vres (proj_xtype ty) with
       | Some v => Some (Event_return cp cp' v :: E0)
       | None => None
       end
@@ -210,7 +210,7 @@ Proof.
     intros H.
     destruct (Genv.type_of_call cp cp') eqn:TOC;
       inv H; [constructor; auto; congruence |].
-    destruct (eventval_of_val vres (proj_rettype ty)) eqn:LEOV; [| congruence].
+    destruct (eventval_of_val vres (proj_xtype ty)) eqn:LEOV; [| congruence].
     inv H1. unfold E0. econstructor; eauto.
     eapply eventval_of_val_sound; eauto.
 Qed.

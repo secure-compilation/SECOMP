@@ -218,10 +218,10 @@ Section CONV.
     | EVptr_global id _ => Tpointer Tvoid noattr
     end.
 
-  Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
+  Fixpoint list_eventval_to_typelist (vs: list eventval): list type :=
     match vs with
-    | nil => Tnil
-    | cons v vs' => Tcons (eventval_to_type v) (list_eventval_to_typelist vs')
+    | nil => nil
+    | cons v vs' => cons (eventval_to_type v) (list_eventval_to_typelist vs')
     end.
 
 
@@ -287,25 +287,29 @@ Section CODEAUX.
       | AST.Tany64 => Tlong Signed noattr
       end.
 
-  Fixpoint list_typ_to_typelist (ts: list typ): typelist :=
+  Fixpoint list_typ_to_typelist (ts: list typ): list type :=
     match ts with
-    | nil => Tnil
-    | cons t ts' => Tcons (typ_to_type t) (list_typ_to_typelist ts')
+    | nil => nil
+    | cons t ts' => cons (typ_to_type t) (list_typ_to_typelist ts')
     end.
 
-  Definition rettype_to_type: rettype -> type :=
-    fun rt: rettype =>
+  Definition xtype_to_type: xtype -> type :=
+    fun rt: xtype =>
       match rt with
-      | Tint8signed | Tint8unsigned | Tint16signed | Tint16unsigned => Tint I32 Signed noattr
-      | AST.Tvoid => Tint I32 Signed noattr
-      | Tret t => typ_to_type t
+      | Xbool | Xint8signed | Xint8unsigned | Xint16signed | Xint16unsigned
+      | Xint | Xany32 => Tint I32 Signed noattr
+      | Xlong | Xany64 => Tlong Signed noattr
+      | Xfloat => Tfloat F64 noattr
+      | Xsingle => Tfloat F32 noattr
+      | Xptr => if Archi.ptr64 then Tlong Signed noattr else Tint I32 Signed noattr
+      | Xvoid => Tvoid
       end.
 
-  (* Lemma proj_rettype_to_type_rettype_of_type_eq *)
+  (* Lemma proj_xtype_to_type_rettype_of_type_eq *)
   (*       ge evres rt res *)
-  (*       (EVM: eventval_match ge evres (proj_rettype rt) res) *)
+  (*       (EVM: eventval_match ge evres (proj_xtype rt) res) *)
   (*   : *)
-  (*   proj_rettype (rettype_of_type (rettype_to_type rt)) = proj_rettype rt. *)
+  (*   proj_xtype (rettype_of_type (xtype_to_type rt)) = proj_xtype rt. *)
   (* Proof. *)
   (*   inv EVM; destruct rt; simpl; auto. *)
   (*   destruct t; simpl in *; auto; try congruence. *)
@@ -318,11 +322,11 @@ Section CODEAUX.
   (* Qed. *)
 
   (* Wanted internal function data from signature *)
-  Record fun_data : Type := mkfundata { dargs: typelist; dret: type; dcc: calling_convention }.
+  Record fun_data : Type := mkfundata { dargs: list type; dret: type; dcc: calling_convention }.
   Definition funs_data : Type := (PTree.tree fun_data).
 
   Definition from_sig_fun_data (sig: signature): fun_data :=
-    mkfundata (list_typ_to_typelist sig.(sig_args)) (rettype_to_type sig.(sig_res)) (sig.(sig_cc)).
+    mkfundata (list_typ_to_typelist (proj_sig_args sig)) (xtype_to_type sig.(sig_res)) (sig.(sig_cc)).
 
   (* Extract from Asm *)
   Definition from_asmfun_fun_data (af: Asm.function): fun_data := from_sig_fun_data af.(fn_sig).
@@ -368,6 +372,7 @@ Section CONV.
     | Mint64 => Some (Tlong Signed noattr)
     | Mfloat32 => Some (Tfloat F32 noattr)
     | Mfloat64 => Some (Tfloat F64 noattr)
+    | Mbool => Some (Tint I8 Unsigned noattr)
     | Many32 => None
     | Many64 => None
     end.
@@ -466,7 +471,7 @@ Section GEN.
 
   Definition gen_function (ge: Senv.t) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
     let a_sg := Asm.fn_sig a_f in
-    let tret := rettype_to_type a_sg.(sig_res) in
+    let tret := xtype_to_type a_sg.(sig_res) in
     let cc := a_sg.(sig_cc) in
     let cp := Asm.fn_comp a_f in
     mkfunction cp
@@ -527,7 +532,7 @@ Section GEN.
     match gd with
     | Gvar _ => None
     | Gfun fd =>
-        let types := map typ_to_type (sig_args (funsig fd)) in
+        let types := map typ_to_type (proj_sig_args (funsig fd)) in
         Some (numbering m types)
     end.
 
@@ -587,7 +592,7 @@ Section AUX.
 
   Definition wf_params_of_sig (pars: params_of) (ge: Asm.genv) :=
     forall b f id params, (Genv.find_funct_ptr ge b = Some f) -> (Genv.find_symbol ge id = Some b) -> (pars ! id = Some params) ->
-                     (list_typ_to_list_type (sig_args (funsig f)) = map snd params).
+                     (list_typ_to_list_type (proj_sig_args (funsig f)) = map snd params).
 
   Definition wf_params_of_symb (pars: params_of) (ge: Clight.genv) :=
     forall id b, (Senv.find_symbol ge id = Some b) ->

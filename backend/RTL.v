@@ -17,7 +17,7 @@
 *)
 
 Require Import Coqlib Maps.
-Require Import AST Integers Values Events Memory Globalenvs Smallstep.
+Require Import AST Linking Integers Values Builtins Events Memory Globalenvs Smallstep.
 Require Import Op Registers.
 
 (** * Abstract syntax *)
@@ -155,7 +155,7 @@ a function call in progress.
 Inductive stackframe : Type :=
   | Stackframe:
       forall (res: reg)            (**r where to store the result *)
-             (ty: rettype)         (**r the type of the result *)
+             (ty: xtype)         (**r the type of the result *)
              (f: function)         (**r calling function *)
              (sp: val)             (**r stack pointer in calling function *)
              (pc: node)            (**r program point in calling function *)
@@ -256,16 +256,21 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f sp pc rs m sig ros args res pc' fd vf t,
+      forall s f sp pc rs m m' sig ros args res pc' fd vf t,
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf (rs##args) (sig_args sig) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf (rs##args) (proj_sig_args sig) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m
+        else if cp_eq_dec (comp_of fd) bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Readable = Some m'
+             | _ => m' = m end),
       step (State s f sp pc rs m)
-        t (Callstate (Stackframe res (sig_res sig) f sp pc' rs :: s) fd rs##args m (comp_of f))
+        t (Callstate (Stackframe res (sig_res sig) f sp pc' rs :: s) fd rs##args m' (comp_of f))
   | exec_Itailcall:
       forall s f stk pc rs m sig ros args fd m',
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
@@ -306,6 +311,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Returnstate s (regmap_optget or Vundef rs) m' (comp_of f))
   | exec_function_internal:
       forall s f args m cp m' stk,
+      Val.has_argtype_list args f.(fn_sig).(sig_args) ->
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
       step (Callstate s (Internal f) args m cp)
         E0 (State s
@@ -321,12 +327,17 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s (External ef) args m cp)
          t (Returnstate s res m' bottom)
   | exec_return:
-      forall res f cp sp pc rs s vres m ty t,
+      forall res f cp sp pc rs s vres m m' ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr vres),
       forall (EV: return_trace ge (comp_of f) cp vres ty t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) cp then m' = m
+        else if cp_eq_dec cp bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Freeable = Some m'
+             | _ => False end),
       step (Returnstate (Stackframe res ty f sp pc rs :: s) vres m cp)
-        t (State s f sp pc (rs#res <- vres) m).
+        t (State s f sp pc (rs#res <- vres) m').
 
 Lemma exec_Iop':
   forall s f sp pc rs m op args res pc' rs' v,
@@ -621,3 +632,39 @@ Proof.
   { apply X; auto. }
   unfold max_reg_function. extlia.
 Qed.
+
+(** Recognition of function calls to runtime functions with known semantics. *)
+
+Definition defmap := PTree.t (globdef fundef unit).
+
+Definition is_known_runtime_function (dm: defmap) (ros: reg + ident) : option builtin_function :=
+  match ros with
+  | inl r => None
+  | inr id =>
+      match dm!id with
+      | Some(Gfun(External(EF_runtime name sg))) => lookup_builtin_function name sg
+      | _ => None
+      end
+  end.
+
+Lemma is_known_runtime_function_sound:
+  forall cu prog ros bf rs fd,
+  is_known_runtime_function (prog_defmap cu) ros = Some bf ->
+  linkorder cu prog ->
+  find_function (Genv.globalenv prog) ros rs = Some fd ->
+  exists name sg, fd = External(EF_runtime name sg)
+               /\ lookup_builtin_function name sg = Some bf.
+Proof.
+  unfold is_known_runtime_function; intros.
+  destruct ros as [r|id]; try discriminate.
+  destruct (prog_defmap cu)!id as [gd|] eqn:D; try discriminate.
+  destruct gd as [f|v]; try discriminate.
+  destruct f as [f|ef]; try discriminate.
+  destruct ef; try discriminate.
+  exploit (prog_defmap_linkorder cu prog); eauto.
+  intros (gd & D2 & LD). inv LD. inv H3.
+  apply Genv.find_def_symbol in D2. destruct D2 as (b & F1 & F2).
+  unfold find_function, find_function_ptr in H1. rewrite F1 in H1.
+  apply Genv.find_funct_ptr_iff in H1.
+  exists name, sg; intuition congruence.
+Qed. 

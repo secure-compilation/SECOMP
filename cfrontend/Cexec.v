@@ -12,9 +12,8 @@
 
 (** Animating the CompCert C semantics *)
 
-Require Import FunInd.
-Require Import Axioms Classical.
-Require Import String Coqlib Decidableplus.
+From Coq Require Import FunInd Classical String.
+Require Import Axioms Coqlib Decidableplus.
 Require Import Errors Maps Integers Floats.
 Require Import AST Values Memory Events Globalenvs Builtins Determinism Exec.
 Require Import Ctypes Cop Csyntax Csem.
@@ -28,19 +27,19 @@ Local Open Scope list_scope.
 Declare Scope option_monad_scope.
 
 Notation "'do' X <- A ; B" := (match A with Some X => B | None => None end)
-  (at level 200, X ident, A at level 100, B at level 200)
+  (at level 200, X name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation "'do' X , Y <- A ; B" := (match A with Some (X, Y) => B | None => None end)
-  (at level 200, X ident, Y ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation "'do' X , Y , Z <- A ; B" := (match A with Some (X, Y, Z) => B | None => None end)
-  (at level 200, X ident, Y ident, Z ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, Z name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation "'do' X , Y , Z , W <- A ; B" := (match A with Some (X, Y, Z, W) => B | None => None end)
-  (at level 200, X ident, Y ident, Z ident, W ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, Z name, W name, A at level 100, B at level 200)
   : option_monad_scope.
 
 Notation " 'check' A ; B" := (if A then B else None)
@@ -50,7 +49,7 @@ Notation " 'check' A ; B" := (if A then B else None)
 Declare Scope list_monad_scope.
 
 Notation "'do' X <- A ; B" := (match A with Some X => B | None => nil end)
-  (at level 200, X ident, A at level 100, B at level 200)
+  (at level 200, X name, A at level 100, B at level 200)
   : list_monad_scope.
 
 Notation " 'check' A ; B" := (if A then B else nil)
@@ -296,6 +295,7 @@ Hypothesis do_inline_assembly_complete:
   possible_trace w t w' ->
   do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m').
 
+
 (** * Reduction of expressions *)
 
 Inductive reduction: Type :=
@@ -309,10 +309,10 @@ Section EXPRS.
 Variable e: env.
 Variable w: world.
 
-Fixpoint sem_cast_arguments (vtl: list (val * type)) (tl: typelist) (m: mem) : option (list val) :=
+Fixpoint sem_cast_arguments (vtl: list (val * type)) (tl: list type) (m: mem) : option (list val) :=
   match vtl, tl with
-  | nil, Tnil => Some nil
-  | (v1,t1)::vtl, Tcons t1' tl =>
+  | nil, nil => Some nil
+  | (v1,t1)::vtl, t1'::tl =>
       do v <- sem_cast v1 t1 t1' m; do vl <- sem_cast_arguments vtl tl m; Some(v::vl)
   | _, _ => None
   end.
@@ -343,19 +343,19 @@ Definition incontext2 {A1 A2 B: Type}
 Declare Scope reducts_monad_scope.
 
 Notation "'do' X <- A ; B" := (match A with Some X => B | None => stuck end)
-  (at level 200, X ident, A at level 100, B at level 200)
+  (at level 200, X name, A at level 100, B at level 200)
   : reducts_monad_scope.
 
 Notation "'do' X , Y <- A ; B" := (match A with Some (X, Y) => B | None => stuck end)
-  (at level 200, X ident, Y ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, A at level 100, B at level 200)
   : reducts_monad_scope.
 
 Notation "'do' X , Y , Z <- A ; B" := (match A with Some (X, Y, Z) => B | None => stuck end)
-  (at level 200, X ident, Y ident, Z ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, Z name, A at level 100, B at level 200)
   : reducts_monad_scope.
 
 Notation "'do' X , Y , Z , W <- A ; B" := (match A with Some (X, Y, Z, W) => B | None => stuck end)
-  (at level 200, X ident, Y ident, Z ident, W ident, A at level 100, B at level 200)
+  (at level 200, X name, Y name, Z name, W name, A at level 100, B at level 200)
   : reducts_monad_scope.
 
 Notation " 'check' A ; B" := (if A then B else stuck)
@@ -550,8 +550,11 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
               check (match Genv.type_of_call cp (comp_of fd) with
                      | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
                      | _ => true end);
-              do t <- get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs);
-              topred (Callred "red_call" fd vargs ty t m)
+              do t <- get_call_trace _ _ ge cp (comp_of fd) vf vargs (List.map typ_of_type tyargs);
+              do m' <- (if cp_eq_dec cp (comp_of fd) then Some m
+                        else if cp_eq_dec (comp_of fd) bottom then Some m
+                        else Mem.set_perm_list m (blocks_of_env ge e) Readable);
+              topred (Callred "red_call" fd vargs ty t m')
           | _ => stuck
           end
       | _, _ =>
@@ -598,9 +601,12 @@ Inductive imm_safe_t (cp: compartment): kind -> expr -> mem -> Prop :=
       rred ge cp r m t r' m' -> possible_trace w t w' ->
       context RV to C ->
       imm_safe_t cp to (C r) m
-  | imm_safe_t_callred: forall to C r m fd args ty t,
+  | imm_safe_t_callred: forall to C r m fd args ty t m',
       callred ge cp r m fd args ty t ->
       context RV to C ->
+      (if cp_eq_dec cp (comp_of fd) then m' = m
+       else if cp_eq_dec (comp_of fd) bottom then m' = m
+       else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m') ->
       imm_safe_t cp to (C r) m.
 
 Remark imm_safe_t_imm_safe:
@@ -670,14 +676,17 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists v, sem_cast v1 ty1 tycast m = Some v
   | Ecall (Eval vf tyf) rargs ty =>
       exprlist_all_values rargs ->
-      exists tyargs tyres cconv fd vl t,
+      exists tyargs tyres cconv fd vl t m',
          classify_fun tyf = fun_case_f tyargs tyres cconv
       /\ Genv.find_funct ge vf = Some fd
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
       /\ (Genv.type_of_call cp (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
-      /\ call_trace ge cp (comp_of fd) vf vl (typlist_of_typelist tyargs) t
+      /\ call_trace ge cp (comp_of fd) vf vl (List.map typ_of_type tyargs) t
+      /\ (if cp_eq_dec cp (comp_of fd) then m' = m
+          else if cp_eq_dec (comp_of fd) bottom then m' = m
+          else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m')
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
@@ -718,12 +727,15 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall cp r fd args ty t m,
+  forall cp r fd args ty t m m',
   callred ge cp r m fd args ty t ->
+  (if cp_eq_dec cp (comp_of fd) then m' = m
+   else if cp_eq_dec (comp_of fd) bottom then m' = m
+   else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m') ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
-  intros. exists tyargs, tyres, cconv, fd, args, t; auto.
+  intros. exists tyargs, tyres, cconv, fd, args, t, m'; auto.
   repeat split; auto.
 Qed.
 
@@ -816,7 +828,10 @@ Definition reduction_ok (cp: compartment) (k: kind) (a: expr) (m: mem) (rd: redu
   match k, rd with
   | LV, Lred _ l' m' => lred ge e cp a m l' m'
   | RV, Rred _ r' m' t => rred ge cp a m t r' m' /\ exists w', possible_trace w t w'
-  | RV, Callred _ fd args tyres t m' => callred ge cp a m fd args tyres t /\ m' = m
+  | RV, Callred _ fd args tyres t m' => callred ge cp a m fd args tyres t /\
+      (if cp_eq_dec cp (comp_of fd) then m' = m
+       else if cp_eq_dec (comp_of fd) bottom then m' = m
+       else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m')
   | LV, Stuckred => ~imm_safe_t cp k a m
   | RV, Stuckred => ~imm_safe_t cp k a m
   | _, _ => False
@@ -1181,12 +1196,31 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv))...
   destruct (flowsto_dec (comp_of fd) cp) eqn:?...
-  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs)) eqn:?...
-  apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
-  eapply sem_cast_arguments_sound; eauto.
-  (* Use Heqb *)
-  eapply Genv.allowed_call_reflect; eauto. simpl. rewrite Heqs. congruence.
-  eapply get_call_trace_eq; eauto.
+  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (List.map typ_of_type tyargs)) eqn:?...
+  destruct (cp_eq_dec cp (comp_of fd)) as [EQ_CP|NEQ_CP]; simpl.
+  { apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+    eapply sem_cast_arguments_sound; eauto.
+    eapply Genv.allowed_call_reflect; eauto. simpl. rewrite Heqs. congruence.
+    eapply get_call_trace_eq; eauto.
+    destruct (cp_eq_dec cp (comp_of fd)); auto; congruence. }
+  destruct (cp_eq_dec (comp_of fd) bottom) as [EQ_BOT|NEQ_BOT]; simpl.
+  { apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+    eapply sem_cast_arguments_sound; eauto.
+    eapply Genv.allowed_call_reflect; eauto. simpl. rewrite Heqs. congruence.
+    eapply get_call_trace_eq; eauto.
+    destruct (cp_eq_dec cp (comp_of fd)); [congruence|].
+    destruct (cp_eq_dec (comp_of fd) bottom); auto; congruence. }
+  destruct (Mem.set_perm_list m (blocks_of_env ge e) Readable) eqn:HEQSPE.
+  { apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+    eapply sem_cast_arguments_sound; eauto.
+    eapply Genv.allowed_call_reflect; eauto. simpl. rewrite Heqs. congruence.
+    eapply get_call_trace_eq; eauto.
+    destruct (cp_eq_dec cp (comp_of fd)); [congruence|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [congruence|]. auto. }
+  { apply not_invert_ok; simpl; intros. specialize (H ALLVAL). myinv.
+    assert (x2 = fd) as -> by congruence.
+    destruct (cp_eq_dec cp (comp_of fd)) in H6; [congruence|].
+    destruct (cp_eq_dec (comp_of fd) bottom) in H6; [congruence|]. congruence. }
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   eapply get_call_trace_eq in H5.
   rewrite Heqc in H; inv H.
@@ -1194,12 +1228,34 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
   rewrite Heqo2 in Q; inv Q. congruence.
   destruct (forallb not_ptr_b vargs) eqn:?...
-  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs)) eqn:?...
-  apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
-  eapply sem_cast_arguments_sound; eauto.
-  eapply Genv.allowed_call_reflect; eauto.
-  intros. pose proof (proj1 (forallb_forall _ _) Heqb). eapply Forall_forall. intros; eapply not_ptr_reflect; eauto.
-  eapply get_call_trace_eq; eauto.
+  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (List.map typ_of_type tyargs)) eqn:?...
+  destruct (cp_eq_dec cp (comp_of fd)) as [EQ_CP'|NEQ_CP']; simpl.
+  { apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+    eapply sem_cast_arguments_sound; eauto.
+    eapply Genv.allowed_call_reflect; eauto.
+    intros. pose proof (proj1 (forallb_forall _ _) Heqb). eapply Forall_forall. intros; eapply not_ptr_reflect; eauto.
+    eapply get_call_trace_eq; eauto.
+    destruct (cp_eq_dec cp (comp_of fd)); auto; congruence. }
+  destruct (cp_eq_dec (comp_of fd) bottom) as [EQ_BOT'|NEQ_BOT']; simpl.
+  { apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+    eapply sem_cast_arguments_sound; eauto.
+    eapply Genv.allowed_call_reflect; eauto.
+    intros. pose proof (proj1 (forallb_forall _ _) Heqb). eapply Forall_forall. intros; eapply not_ptr_reflect; eauto.
+    eapply get_call_trace_eq; eauto.
+    destruct (cp_eq_dec cp (comp_of fd)); [congruence|].
+    destruct (cp_eq_dec (comp_of fd) bottom); auto; congruence. }
+  destruct (Mem.set_perm_list m (blocks_of_env ge e) Readable) eqn:HEQSPE'.
+  { apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+    eapply sem_cast_arguments_sound; eauto.
+    eapply Genv.allowed_call_reflect; eauto.
+    intros. pose proof (proj1 (forallb_forall _ _) Heqb). eapply Forall_forall. intros; eapply not_ptr_reflect; eauto.
+    eapply get_call_trace_eq; eauto.
+    destruct (cp_eq_dec cp (comp_of fd)); [congruence|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [congruence|]. auto. }
+  { apply not_invert_ok; simpl; intros. specialize (H ALLVAL). myinv.
+    assert (x2 = fd) as -> by congruence.
+    destruct (cp_eq_dec cp (comp_of fd)) in H6; [congruence|].
+    destruct (cp_eq_dec (comp_of fd) bottom) in H6; [congruence|]. congruence. }
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   (* apply Genv.cross_call_reflect in Heqb. *)
   assert (x2 = fd) as -> by congruence. rewrite Heqs in H4. specialize (H4 eq_refl).
@@ -1217,7 +1273,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   pose proof (proj1 (Forall_forall _ _) H4).
   eapply eq_true_false_abs with (b := forallb not_ptr_b x3); [| auto].
   eapply forallb_forall. intros. eapply not_ptr_reflect; eauto.
-  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs)) eqn:?...
+  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (List.map typ_of_type tyargs)) eqn:?...
   (* apply topred_ok; auto. red. split; auto. eapply red_call; eauto. *)
   (* eapply sem_cast_arguments_sound; eauto. *)
   (* eapply Genv.allowed_call_reflect; eauto. congruence. *)
@@ -1367,26 +1423,37 @@ Proof.
 Qed.
 
 Lemma callred_topred:
-  forall cp a fd args ty t m,
+  forall cp a fd args ty t m m',
   callred ge cp a m fd args ty t ->
-  exists rule, step_expr cp RV a m = topred (Callred rule fd args ty t m).
+  (if cp_eq_dec cp (comp_of fd) then m' = m
+   else if cp_eq_dec (comp_of fd) bottom then m' = m
+   else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m') ->
+  exists rule, step_expr cp RV a m = topred (Callred rule fd args ty t m').
 Proof.
-  induction 1; simpl.
+  intros cp0 a0 fd0 args0 ty0 t0 m0 m'0 CRED SPE.
+  inv CRED; simpl.
   rewrite H2. exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
   rewrite A; rewrite H; rewrite B; rewrite H1; rewrite dec_eq_true.
   eapply Genv.allowed_call_reflect in ALLOWED.
   rewrite ALLOWED.
-  econstructor; eauto.
-  destruct (flowsto_dec (comp_of fd) cp) eqn:?; try reflexivity.
-  eapply get_call_trace_eq in EV; rewrite EV; eauto.
-  simpl in NO_CROSS_PTR; rewrite Heqs in NO_CROSS_PTR.
-  specialize (NO_CROSS_PTR eq_refl).
-  pose proof (proj1 (Forall_forall _ _) NO_CROSS_PTR) as G.
-  assert (forallb not_ptr_b vargs = true) as G'.
-  { eapply forallb_forall.
-    intros. eapply not_ptr_reflect. eauto. }
-  rewrite G'.
-  eapply get_call_trace_eq in EV; rewrite EV; eauto.
+  assert (SPE_COMP: (if cp_eq_dec cp0 (comp_of fd0) then Some m0
+                      else if cp_eq_dec (comp_of fd0) bottom then Some m0
+                      else Mem.set_perm_list m0 (blocks_of_env ge e) Readable)
+                    = Some m'0).
+  { destruct (cp_eq_dec cp0 (comp_of fd0)); [subst; auto|].
+    destruct (cp_eq_dec (comp_of fd0) bottom); [subst; auto|]. auto. }
+  destruct (flowsto_dec (comp_of fd0) cp0) eqn:?.
+  - eapply get_call_trace_eq in EV; rewrite EV; eauto.
+    rewrite SPE_COMP. econstructor; eauto.
+  - simpl in NO_CROSS_PTR; rewrite Heqs in NO_CROSS_PTR.
+    specialize (NO_CROSS_PTR eq_refl).
+    assert (forallb not_ptr_b args0 = true) as G'.
+    { eapply forallb_forall.
+      intros. eapply not_ptr_reflect.
+      eapply Forall_forall in NO_CROSS_PTR; eauto. }
+    rewrite G'.
+    eapply get_call_trace_eq in EV; rewrite EV; eauto.
+    rewrite SPE_COMP. econstructor; eauto.
 Qed.
 
 Definition reducts_incl {A B: Type} (C: A -> B) (res1: reducts A) (res2: reducts B) : Prop :=
@@ -1831,7 +1898,10 @@ Definition do_step (w: world) (s: state) : list transition :=
              | Genv.CrossCompartmentCall => not_ptr_b v
              | _ => true end);
       do t <- get_return_trace _ _ ge (comp_of f) cp v ty';
-      TR "step_returnstate" t (ExprState f (C (Eval v ty)) k e m) :: nil
+      do m' <- (if cp_eq_dec (comp_of f) cp then Some m
+                else if cp_eq_dec cp bottom then Some m
+                else Mem.set_perm_list m (blocks_of_env ge e) Freeable);
+      TR "step_returnstate" t (ExprState f (C (Eval v ty)) k e m') :: nil
 
   | _ => nil
   end.
@@ -1888,7 +1958,7 @@ Proof with try (left; right; econstructor; eauto; fail).
   (* rred *)
   destruct RD. left; left; apply step_rred; auto.
   (* callred *)
-  destruct RD; subst m'. left; left; apply step_call; eauto.
+  destruct RD. left; left; apply step_call; eauto.
   (* stuck rred *)
   exploit not_imm_safe_t; eauto. intros [R | R]; eauto.
 (* callstate *)
@@ -1903,10 +1973,13 @@ Proof with try (left; right; econstructor; eauto; fail).
   eapply do_ef_external_sound; eauto.
   eapply Heqb.
 (* returnstate *)
-  destruct k; myinv... left; right; constructor.
+  destruct k; myinv... left; right; apply step_returnstate.
   simpl.
   intros REWR; rewrite REWR in Heqb. now apply not_ptr_reflect.
   now apply get_return_trace_eq in Heqo.
+  destruct (cp_eq_dec (comp_of f) cp); [inv Heqo0; auto |].
+  destruct (cp_eq_dec cp bottom); [inv Heqo0; auto |].
+  auto.
 (* stuckstate *)
   contradiction.
 Qed.
@@ -1954,10 +2027,10 @@ Proof with (unfold ret; eauto with coqlib).
 (* callred *)
   unfold do_step; rewrite NOTVAL.
   exploit callred_topred; eauto.
-  instantiate (1 := w). instantiate (1 := e).
+  instantiate (1 := w).
   intros (rule & STEP). exists rule.
-  change (TR rule t (Callstate fd vargs (Kcall f e C ty k) m))
-    with (expr_final_state f k e (C, Callred rule fd vargs ty t m)).
+  change (TR rule t (Callstate fd vargs (Kcall f e C ty k) m'))
+    with (expr_final_state f k e (C, Callred rule fd vargs ty t m')).
   apply in_map.
   generalize (step_expr_context e w _ _ _ H1 (comp_of f) a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
@@ -2014,7 +2087,11 @@ Proof with (unfold ret; eauto with coqlib).
     apply not_ptr_reflect; auto. }
   simpl in H.
   rewrite H. apply get_return_trace_eq in EV; rewrite EV. simpl.
-  left; reflexivity.
+  destruct (cp_eq_dec (comp_of f) cp) as [EC|EC].
+  - rewrite SET_PERM. simpl. left; reflexivity.
+  - destruct (cp_eq_dec cp bottom) as [EB|EB].
+    + rewrite SET_PERM. simpl. left; reflexivity.
+    + rewrite SET_PERM. simpl. left; reflexivity.
 Qed.
 
 End EXEC.
@@ -2026,7 +2103,7 @@ Definition do_initial_state (p: program): option (genv * state) :=
   do m0 <- Genv.init_mem p;
   do b <- Genv.find_symbol ge p.(prog_main);
   do f <- Genv.find_funct_ptr ge b;
-  check (type_eq (type_of_fundef f) (Tfunction Tnil type_int32s cc_default));
+  check (type_eq (type_of_fundef f) (Tfunction nil type_int32s cc_default));
   Some (ge, Callstate f nil Kstop m0).
 
 Definition at_final_state (S: state): option int :=

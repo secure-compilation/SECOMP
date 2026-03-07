@@ -90,9 +90,9 @@ module Printer(Target:TARGET) =
       print_debug_label oc s;
       fprintf oc "%a: # %s\n" Target.symbol name (string_of_comp fn.Asm.fn_comp);
       print_location oc (C2C.atom_location name);
-      Target.cfi_startproc oc;
+      cfi_startproc oc;
       Target.print_instructions oc fn;
-      Target.cfi_endproc oc;
+      cfi_endproc oc;
       print_debug_label oc e;
       Target.print_fun_info oc name;
       emit_constants oc lit;
@@ -217,7 +217,7 @@ module Printer(Target:TARGET) =
       | [] -> ()
       | (c, []) :: syscalls' -> print_syscalls oc syscalls'
       | (c, s :: t) :: syscalls' ->
-        fprintf oc "# %s imports system call %s\n" (string_of_comp c) (camlstring_of_coqstring s);
+        fprintf oc "# %s imports system call %s\n" (string_of_comp c) s;
         print_syscalls oc ((c, t) :: syscalls')
 
     (* TODO list vs tree *)
@@ -253,6 +253,7 @@ let print_program oc p =
   List.iter (Printer.print_globdef oc) p.prog_defs;
   Target.print_epilogue oc;
   Printer.print_ais_annot oc;
+  print_nonexec_stack_note oc;
   if !Clflags.option_g then
     begin
       let atom_to_s s =

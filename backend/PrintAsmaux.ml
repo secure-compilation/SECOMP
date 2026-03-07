@@ -30,9 +30,7 @@ module type TARGET =
       val print_fun_info: out_channel -> P.t -> unit
       val print_file_line: out_channel -> string -> int -> unit
       val print_optional_fun_info: out_channel -> unit
-      val cfi_startproc: out_channel -> unit
       val print_instructions: out_channel -> coq_function -> unit
-      val cfi_endproc: out_channel -> unit
       val print_jumptable: out_channel -> section_name -> unit
       val section: out_channel -> section_name -> unit
       val name_of_section: section_name -> string
@@ -102,7 +100,7 @@ let reset_literals () =
 
 let current_function_stacksize = ref 0l
 let current_function_sig =
-  ref { sig_args = []; sig_res = Tvoid; sig_cc = cc_default }
+  ref { sig_args = []; sig_res = Xvoid; sig_cc = cc_default }
 
 (* Functions for printing of symbol names *)
 let elf_symbol oc symb =
@@ -271,8 +269,8 @@ let re_asm_param_2 = Str.regexp "%\\([QR]?\\)\\([0-9]+\\)"
 let print_inline_asm print_preg oc txt sg args res =
   let (operands, ty_operands) =
     match sg.sig_res with
-    | Tvoid -> (args, sg.sig_args)
-    | tres -> (builtin_arg_of_res res :: args, proj_rettype tres :: sg.sig_args) in
+    | Xvoid -> (args, proj_sig_args sg)
+    | tres -> (builtin_arg_of_res res :: args, proj_xtype tres :: proj_sig_args sg) in
   let print_fragment = function
   | Str.Text s ->
       output_string oc s
@@ -357,3 +355,12 @@ let macos_mergeable_string_section sz =
   | 0 | 2 | 4 -> ".const"
   | 1 -> ".cstring"
   | _ -> assert false
+
+(** Marking the stack as non executable *)
+
+let print_nonexec_stack_note oc =
+  match Configuration.system with
+  | "linux" | "bsd" ->
+      output_string oc "\n\t.section .note.GNU-stack,\"\",%progbits\n"
+  | _ ->
+      ()

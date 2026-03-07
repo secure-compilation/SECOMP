@@ -178,7 +178,7 @@ let expand_builtin_memcpy sz al args =
 
 let expand_builtin_vload_common chunk addr res =
   match chunk, res with
-  | Mint8unsigned, BR(IR res) ->
+  | (Mbool | Mint8unsigned), BR(IR res) ->
      emit (Pmovzb_rm (res,addr))
   | Mint8signed, BR(IR res) ->
      emit (Pmovsb_rm (res,addr))
@@ -215,7 +215,7 @@ let expand_builtin_vload chunk args res =
 
 let expand_builtin_vstore_common chunk addr src tmp =
   match chunk, src with
-  | (Mint8signed | Mint8unsigned), BA(IR src) ->
+  | (Mbool | Mint8signed | Mint8unsigned), BA(IR src) ->
      if Archi.ptr64 || Asmgen.low_ireg src then
        emit (Pmovb_mr (addr,src))
      else begin
@@ -496,7 +496,7 @@ let expand_builtin_inline name args res =
 
 let fixup_funcall_elf64 sg =
   if sg.sig_cc.cc_vararg <> None || sg.sig_cc.cc_unproto then begin
-    let (ir, fr, ofs) = next_arg_locations 0 0 0 sg.sig_args in
+    let (ir, fr, ofs) = next_arg_locations 0 0 0 (proj_sig_args sg) in
     emit (Pmovl_ri (RAX, coqint_of_camlint (Int32.of_int fr)))
   end
 
@@ -517,7 +517,7 @@ let rec copy_fregs_to_iregs args fr ir =
 
 let fixup_funcall_win64 sg =
   if sg.sig_cc.cc_vararg <> None then
-    copy_fregs_to_iregs sg.sig_args [XMM0; XMM1; XMM2; XMM3] [RCX; RDX; R8; R9]
+    copy_fregs_to_iregs (proj_sig_args sg) [XMM0; XMM1; XMM2; XMM3] [RCX; RDX; R8; R9]
 
 let fixup_funcall sg =
   if Archi.ptr64
@@ -536,10 +536,10 @@ let expand_instruction instr =
        if is_current_function_variadic() then
          (* Save parameters passed in registers in reserved stack area *)
          emit (Pcall_s (intern_string "__compcert_va_saveregs",
-                        {sig_args = []; sig_res = Tvoid; sig_cc = cc_default}));
+                        {sig_args = []; sig_res = Xvoid; sig_cc = cc_default}));
        (* Allocate frame *)
        let sz' = Z.of_uint sz in
-       emit (Psubl_ri (RSP, sz'));
+       emit (Psubq_ri (RSP, sz'));
        emit (Pcfi_adjust sz');
        (* Stack chaining *)
        let addr1 = linear_addr RSP (Z.of_uint (sz + 8)) in
@@ -557,7 +557,7 @@ let expand_instruction instr =
          (* Save the registers *)
          emit_leaq R10 (linear_addr RSP (Z.of_uint save_regs));
          emit (Pcall_s (intern_string "__compcert_va_saveregs",
-                        {sig_args = []; sig_res = Tvoid; sig_cc = cc_default}))
+                        {sig_args = []; sig_res = Xvoid; sig_cc = cc_default}))
        end;
        (* Stack chaining *)
        let fullsz = sz + 8 in
@@ -597,7 +597,7 @@ let expand_instruction instr =
      begin
        match ef with
        | EF_builtin(name, sg) ->
-	  expand_builtin_inline (camlstring_of_coqstring name) args res
+	  expand_builtin_inline name args res
        | EF_vload chunk ->
           expand_builtin_vload chunk args res
        | EF_vstore chunk ->
@@ -689,7 +689,7 @@ let expand_function id fn =
     expand id (int_reg_to_dwarf RSP) preg_to_dwarf expand_instruction fn.fn_code;
     Errors.OK (get_current_function ())
   with Error s ->
-    Errors.Error (Errors.msg (coqstring_of_camlstring s))
+    Errors.Error (Errors.msg s)
 
 let expand_fundef id = function
   | Internal f ->

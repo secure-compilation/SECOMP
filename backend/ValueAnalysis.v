@@ -10,7 +10,7 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-Require Import FunInd.
+From Coq Require Import FunInd.
 Require Import Coqlib Maps Integers Floats Lattice Kildall.
 Require Import Compopts AST Linking.
 Require Import Values Memory Globalenvs Builtins Events.
@@ -191,7 +191,7 @@ Definition mfunction_entry :=
 
 Definition analyze (rm: romem) (f: function): PMap.t VA.t :=
   let lu := Liveness.last_uses f in
-  let entry := VA.State (einit_regs f.(fn_params)) mfunction_entry in
+  let entry := VA.State (einit_regs f.(fn_params) f.(fn_sig).(sig_args)) mfunction_entry in
   match DS.fixpoint f.(fn_code) successors_instr (transfer' f lu rm)
                     f.(fn_entrypoint) entry with
   | None => PMap.init (VA.State AE.top mtop)
@@ -259,6 +259,7 @@ Definition romem_for (p: program) : romem :=
 Lemma analyze_entrypoint:
   forall rm f vl m bc,
   (forall v, In v vl -> vmatch bc v (Ifptr Nonstack)) ->
+  Val.has_argtype_list vl f.(fn_sig).(sig_args) ->
   mmatch bc m mfunction_entry ->
   exists ae am,
      (analyze rm f)!!(fn_entrypoint f) = VA.State ae am
@@ -268,7 +269,7 @@ Proof.
   intros.
   unfold analyze.
   set (lu := Liveness.last_uses f).
-  set (entry := VA.State (einit_regs f.(fn_params)) mfunction_entry).
+  set (entry := VA.State (einit_regs f.(fn_params) f.(fn_sig).(sig_args)) mfunction_entry).
   destruct (DS.fixpoint (fn_code f) successors_instr (transfer' f lu rm)
                         (fn_entrypoint f) entry) as [res|] eqn:FIX.
 - assert (A: VA.ge res!!(fn_entrypoint f) entry) by (eapply DS.fixpoint_entry; eauto).
@@ -280,7 +281,7 @@ Proof.
   auto.
 - exists AE.top, mtop.
   split. apply PMap.gi.
-  split. apply ematch_ge with (einit_regs (fn_params f)).
+  split. apply ematch_ge with (einit_regs (fn_params f) f.(fn_sig).(sig_args)).
   apply ematch_init; auto. apply AE.ge_top.
   eapply mmatch_top'; eauto.
 Qed.
@@ -295,7 +296,7 @@ Lemma analyze_successor:
 Proof.
   unfold analyze; intros.
   set (lu := Liveness.last_uses f) in *.
-  set (entry := VA.State (einit_regs f.(fn_params)) mfunction_entry) in *.
+  set (entry := VA.State (einit_regs f.(fn_params) f.(fn_sig).(sig_args)) mfunction_entry) in *.
   destruct (DS.fixpoint (fn_code f) successors_instr (transfer' f lu rm)
                         (fn_entrypoint f) entry) as [res|] eqn:FIX.
 - assert (A: VA.ge res!!s (transfer' f lu rm n res#n)).
@@ -527,7 +528,7 @@ Proof.
 - (* romatch *)
   apply romatch_exten with bc.
   eapply romatch_alloc; eauto. eapply mmatch_below; eauto.
-  simpl; intros. destruct (eq_block b sp); intuition.
+  simpl; intros. destruct (eq_block b sp); intuition auto with va.
 - (* mmatch *)
   constructor; simpl; intros.
   + (* stack *)
@@ -621,7 +622,7 @@ Proof.
   simpl; intros. destruct (eq_block b sp); auto.
 - (* romatch *)
   apply romatch_exten with bc; auto.
-  simpl; intros. destruct (eq_block b sp); intuition.
+  simpl; intros. destruct (eq_block b sp); intuition auto with va.
 - (* mmatch top *)
   constructor; simpl; intros.
   + destruct (eq_block b sp). congruence. elim n. eapply bc_stack; eauto.
@@ -708,7 +709,7 @@ Proof.
   simpl; intros. destruct (eq_block b sp); congruence.
 - (* romatch *)
   apply romatch_exten with bc; auto.
-  simpl; intros. destruct (eq_block b sp); intuition.
+  simpl; intros. destruct (eq_block b sp); intuition auto with va.
 - (* mmatch top *)
   constructor; simpl; intros.
   + destruct (eq_block b sp). congruence. elim n. eapply bc_stack; eauto.
@@ -791,7 +792,7 @@ Proof.
   eapply ematch_incr; eauto.
 - (* romem *)
   apply romatch_exten with callee; auto.
-  intros; simpl. destruct (eq_block b sp); intuition.
+  intros; simpl. destruct (eq_block b sp); intuition auto with va.
 - (* mmatch *)
   constructor; simpl; intros.
   + (* stack *)
@@ -902,7 +903,7 @@ Proof.
   eapply ematch_incr; eauto.
 - (* romem *)
   apply romatch_exten with callee; auto.
-  intros; simpl. destruct (eq_block b sp); intuition.
+  intros; simpl. destruct (eq_block b sp); intuition auto with va.
 - (* mmatch *)
   constructor; simpl; intros.
   + (* stack *)
@@ -1305,6 +1306,46 @@ Proof.
   eapply Mem.store_can_access_block_inj in H1; eapply H1; eauto.
 
 - (* call *)
+  (* Handle SET_PERM: in all cases, sound_state is preserved *)
+  assert (SET_PERM_INV: forall b' ofs n cp' bytes,
+    Mem.loadbytes m' b' ofs n cp' = Some bytes ->
+    Mem.loadbytes m b' ofs n cp' = Some bytes).
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst m'; auto|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst m'; auto|].
+    intros. eapply Mem.loadbytes_set_perm_inv; eauto. }
+  assert (SET_PERM_ACC: forall b' cp',
+    Mem.can_access_block m b' cp' -> Mem.can_access_block m' b' cp').
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst m'; auto|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst m'; auto|].
+    intros. eapply Mem.can_access_block_set_1; eauto. }
+  assert (SET_PERM_NB: Mem.nextblock m' = Mem.nextblock m).
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst m'; auto|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst m'; auto|].
+    eapply Mem.nextblock_set; eauto. }
+  assert (SET_PERM_PERM: forall b' id ofs p',
+    bc b' = BCglob id -> Mem.perm m' b' ofs Max p' -> Mem.perm m b' ofs Max p').
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)); [subst m'; auto|].
+    destruct (cp_eq_dec (comp_of fd) bottom); [subst m'; auto|].
+    intros. destruct (eq_block b' sp0).
+    - subst b'. exfalso. (* sp0 is BCstack, not BCglob *)
+      assert (bc sp0 = BCstack) by auto with va.
+      congruence.
+    - eapply Mem.perm_set_2'; eauto. }
+  assert (STK': sound_stack bc s m' sp0).
+  { eapply sound_stack_ext; eauto. }
+  assert (RO': romatch bc m' rm).
+  { eapply romatch_ext; eauto. }
+  assert (MM_M': mmatch bc m' am).
+  { apply mk_mem_match.
+    { intros. eapply bmatch_ext with (m := m). eapply mmatch_stack; eauto. intros; eapply SET_PERM_INV; eauto. }
+    { intros. eapply bmatch_ext with (m := m). eapply mmatch_glob; eauto. intros; eapply SET_PERM_INV; eauto. }
+    { intros. eapply smatch_ext with (m := m). eapply mmatch_nonstack; eauto. intros; eapply SET_PERM_INV; eauto. }
+    { intros. eapply smatch_ext with (m := m). eapply mmatch_top; eauto. intros; eapply SET_PERM_INV; eauto. }
+    { rewrite SET_PERM_NB. eapply mmatch_below; eauto. } }
+  assert (ACC': Mem.can_access_block m' sp0 (comp_of f)) by auto.
+  (* Replace m-based facts with m'-based ones so existing proof works *)
+  clear STK RO MM ACC. rename STK' into STK. rename RO' into RO.
+  rename MM_M' into MM. rename ACC' into ACC.
   assert (TR: transfer f rm pc ae am = transfer_call ae am args res).
   { unfold transfer; rewrite H; auto. }
   unfold transfer_call, analyze_call in TR.
@@ -1316,7 +1357,7 @@ Proof.
   exploit hide_stack; eauto. apply pincl_ge; auto.
   intros (bc' & A & B & C & D & E & F & G).
   apply sound_call_state with bc'; auto.
-  * eapply sound_stack_private_call with (bound' := Mem.nextblock m) (bc' := bc); eauto.
+  * eapply sound_stack_private_call with (bound' := Mem.nextblock m') (bc' := bc); eauto.
     apply Ple_refl.
     eapply mmatch_below; eauto.
     eapply mmatch_stack; eauto.
@@ -1329,7 +1370,7 @@ Proof.
   exploit analyze_successor; eauto. simpl; eauto. rewrite TR. intros SUCC.
   exploit anonymize_stack; eauto. intros (bc' & A & B & C & D & E & F & G).
   apply sound_call_state with bc'; auto.
-  * eapply sound_stack_public_call with (bound' := Mem.nextblock m) (bc' := bc); eauto.
+  * eapply sound_stack_public_call with (bound' := Mem.nextblock m') (bc' := bc); eauto.
     apply Ple_refl.
     eapply mmatch_below; eauto.
   * intros. exploit list_in_map_inv; eauto. intros (r & P & Q). subst v.
@@ -1523,8 +1564,68 @@ Proof.
   eapply external_call_nextblock; eauto.
 
 - (* return *)
+  (* Establish SET_PERM transfer lemmas *)
+  assert (SET_PERM_INV: forall b' ofs n cp' bytes,
+    Mem.loadbytes m' b' ofs n cp' = Some bytes ->
+    Mem.loadbytes m b' ofs n cp' = Some bytes).
+  { destruct (cp_eq_dec (comp_of f) cp); [subst m'; auto|].
+    destruct (cp_eq_dec cp bottom); [subst m'; auto|].
+    destruct sp; try contradiction.
+    intros. eapply Mem.loadbytes_set_perm_inv; eauto. }
+  assert (SET_PERM_ACC: forall b' cp',
+    Mem.can_access_block m b' cp' -> Mem.can_access_block m' b' cp').
+  { destruct (cp_eq_dec (comp_of f) cp); [subst m'; auto|].
+    destruct (cp_eq_dec cp bottom); [subst m'; auto|].
+    destruct sp; try contradiction.
+    intros. eapply Mem.can_access_block_set_1; eauto. }
+  assert (SET_PERM_NB: Mem.nextblock m' = Mem.nextblock m).
+  { destruct (cp_eq_dec (comp_of f) cp); [subst m'; auto|].
+    destruct (cp_eq_dec cp bottom); [subst m'; auto|].
+    destruct sp; try contradiction.
+    eapply Mem.nextblock_set; eauto. }
+  (* Lift STK from m to m' *)
+  assert (STK': sound_stack bc (Stackframe res ty f sp pc rs :: s) m' (Mem.nextblock m)).
+  { eapply sound_stack_ext; eauto. }
+  clear STK. rename STK' into STK.
+  (* Lift RO and MM from m to m' *)
+  assert (SET_PERM_PERM: forall b' id ofs p',
+    bc b' = BCglob id -> Mem.perm m' b' ofs Max p' -> Mem.perm m b' ofs Max p').
+  { destruct (cp_eq_dec (comp_of f) cp); [subst m'; auto|].
+    destruct (cp_eq_dec cp bottom); [subst m'; auto|].
+    destruct sp; try contradiction.
+    intros. destruct (eq_block b' b).
+    - subst b'. exfalso.
+      (* b is the SP block. From STK, after inv, bc b = BCother or BCinvalid.
+         But we need to show bc b ≠ BCglob id without inverting STK.
+         Use NOSTK: bc_nostack bc means bc b ≠ BCstack.
+         We also know mmatch bc m' mtop, whose mmatch_below says bc_below bc (nextblock m').
+         If b < nextblock m, then bc b could be anything except BCstack.
+         Actually, we need a different argument. Let's use the fact that
+         bc b is BCother or BCinvalid from inverting STK. But we already inv'd...
+         Actually, STK is lifted, so inv would give us the bc info.
+         For now, just destruct the STK to see if bc b = BCglob. *)
+      inv STK; congruence.
+    - eapply Mem.perm_set_2'; eauto. }
+  assert (RO': romatch bc m' rm) by (eapply romatch_ext; eauto).
+  assert (MM': mmatch bc m' mtop).
+  { apply mk_mem_match.
+    { intros. eapply bmatch_ext with (m := m).
+      { eapply mmatch_stack; eauto. }
+      { intros; eapply SET_PERM_INV; eauto. } }
+    { intros. eapply bmatch_ext with (m := m).
+      { eapply mmatch_glob; eauto. }
+      { intros; eapply SET_PERM_INV; eauto. } }
+    { intros. eapply smatch_ext with (m := m).
+      { eapply mmatch_nonstack; eauto. }
+      { intros; eapply SET_PERM_INV; eauto. } }
+    { intros. eapply smatch_ext with (m := m).
+      { eapply mmatch_top; eauto. }
+      { intros; eapply SET_PERM_INV; eauto. } }
+    { rewrite SET_PERM_NB. eapply mmatch_below; eauto. } }
+  clear RO MM. rename RO' into RO. rename MM' into MM.
   inv STK.
   + (* from public call *)
+   rewrite <- SET_PERM_NB in INCR.
    exploit return_from_public_call; eauto.
    intros; rewrite SAME; auto.
    intros (bc1 & A & B & C & D & E & F & G).
@@ -1533,6 +1634,7 @@ Proof.
    apply sound_stack_exten with bc'; auto.
    eapply ematch_ge; eauto. apply ematch_update. auto. auto.
   + (* from private call *)
+   rewrite <- SET_PERM_NB in INCR.
    exploit return_from_private_call; eauto.
    intros; rewrite SAME; auto.
    intros (bc1 & A & B & C & D & E & F & G).

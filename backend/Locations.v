@@ -13,12 +13,9 @@
 (** Locations are a refinement of RTL pseudo-registers, used to reflect
   the results of register allocation (file [Allocation]). *)
 
-Require Import OrderedType.
-Require Import Coqlib.
-Require Import Maps.
-Require Import Ordered.
-Require Import AST.
-Require Import Values.
+From Coq Require Import OrderedType.
+Require Import Coqlib Maps Ordered.
+Require Import AST Values.
 Require Export Machregs.
 
 (** * Representation of locations *)
@@ -515,7 +512,7 @@ Module OrderedLoc <: OrderedType.
     destruct H0. auto.
     destruct H.
     right.  split. auto.
-    intuition.
+    intuition try lia.
     right; split. congruence. eapply OrderedTyp.lt_trans; eauto.
   Qed.
   Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.

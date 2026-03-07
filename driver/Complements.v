@@ -12,9 +12,9 @@
 
 (** Corollaries of the main semantic preservation theorem. *)
 
-Require Import Classical.
+From Coq Require Import Classical.
 Require Import Coqlib Errors.
-Require Import AST Linking Events Smallstep Behaviors.
+Require Import AST Linking Events Globalenvs Smallstep Behaviors.
 Require Import Csyntax Csem Cstrategy Asm.
 Require Import Compiler.
 
@@ -31,6 +31,7 @@ Require Import Compiler.
 Theorem transf_c_program_preservation:
   forall p tp beh,
   transf_c_program p = OK tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   program_behaves (Asm.semantics tp) beh ->
   exists beh', program_behaves (Csem.semantics p) beh' /\ behavior_improves beh' beh.
 Proof.
@@ -45,6 +46,7 @@ Qed.
 Theorem transf_c_program_is_refinement:
   forall p tp,
   transf_c_program p = OK tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   (forall beh, program_behaves (Csem.semantics p) beh -> not_wrong beh) ->
   (forall beh, program_behaves (Asm.semantics tp) beh -> program_behaves (Csem.semantics p) beh).
 Proof.
@@ -58,6 +60,7 @@ Qed.
 Theorem transf_cstrategy_program_preservation:
   forall p tp,
   transf_c_program p = OK tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   (forall beh, program_behaves (Cstrategy.semantics p) beh ->
      exists beh', program_behaves (Asm.semantics tp) beh' /\ behavior_improves beh beh')
 /\(forall beh, program_behaves (Asm.semantics tp) beh ->
@@ -71,20 +74,20 @@ Theorem transf_cstrategy_program_preservation:
 Proof.
   assert (WBT: forall p, well_behaved_traces (Cstrategy.semantics p)).
     intros. eapply ssr_well_behaved. apply Cstrategy.semantics_strongly_receptive.
-  intros.
+  intros p tp COMP INB.
   assert (MATCH: match_prog p tp) by (apply transf_c_program_match; auto).
   intuition auto.
   eapply forward_simulation_behavior_improves; eauto.
-    apply (proj1 (cstrategy_semantic_preservation _ _ MATCH)).
+    apply (proj1 (cstrategy_semantic_preservation _ _ MATCH INB)).
   exploit backward_simulation_behavior_improves.
-    apply (proj2 (cstrategy_semantic_preservation _ _ MATCH)).
+    apply (proj2 (cstrategy_semantic_preservation _ _ MATCH INB)).
     eauto.
   intros [beh1 [A B]]. exists beh1; split; auto. rewrite atomic_behaviors; auto.
   eapply forward_simulation_same_safe_behavior; eauto.
-    apply (proj1 (cstrategy_semantic_preservation _ _ MATCH)).
+    apply (proj1 (cstrategy_semantic_preservation _ _ MATCH INB)).
   exploit backward_simulation_same_safe_behavior.
-    apply (proj2 (cstrategy_semantic_preservation _ _ MATCH)).
-    intros. rewrite <- atomic_behaviors in H2; eauto. eauto.
+    apply (proj2 (cstrategy_semantic_preservation _ _ MATCH INB)).
+    intros. rewrite <- atomic_behaviors in H1; eauto. eauto.
     intros. rewrite atomic_behaviors; auto.
 Qed.
 
@@ -94,6 +97,7 @@ Qed.
 Theorem bigstep_cstrategy_preservation:
   forall p tp,
   transf_c_program p = OK tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   (forall t r,
      Cstrategy.bigstep_program_terminates p t r ->
      program_behaves (Asm.semantics tp) (Terminates t r))
@@ -102,7 +106,7 @@ Theorem bigstep_cstrategy_preservation:
        program_behaves (Asm.semantics tp) (Reacts T)
     \/ exists t, program_behaves (Asm.semantics tp) (Diverges t) /\ traceinf_prefix t T).
 Proof.
-  intuition.
+  intros p tp COMP INB. intuition.
   apply transf_cstrategy_program_preservation with p; auto. red; auto.
   apply behavior_bigstep_terminates with (Cstrategy.bigstep_semantics p); auto.
   apply Cstrategy.bigstep_semantics_sound.
@@ -159,11 +163,12 @@ Definition safety_enforcing_specification (spec: specification): Prop :=
 Theorem transf_c_program_preserves_spec:
   forall p tp spec,
   transf_c_program p = OK tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   safety_enforcing_specification spec ->
   c_program_satisfies_spec p spec ->
   asm_program_satisfies_spec tp spec.
 Proof.
-  intros p tp spec TRANSF SES CSAT; red; intros beh AEXEC.
+  intros p tp spec TRANSF INB SES CSAT; red; intros beh AEXEC.
   exploit transf_c_program_preservation; eauto. intros (beh' & CEXEC & IMPR).
   apply CSAT in CEXEC. destruct IMPR as [EQ | [t [A B]]].
 - congruence.
@@ -190,10 +195,11 @@ Definition asm_program_has_initial_trace (p: Asm.program) (t: trace): Prop :=
 Theorem transf_c_program_preserves_initial_trace:
   forall p tp t,
   transf_c_program p = OK tp ->
+  (forall b f, Genv.find_funct_ptr (Genv.globalenv tp) b = Some (Internal f) -> comp_of f <> bottom) ->
   c_program_has_initial_trace p t ->
   asm_program_has_initial_trace tp t.
 Proof.
-  intros p tp t TRANSF CTRACE; red; intros beh AEXEC.
+  intros p tp t TRANSF INB CTRACE; red; intros beh AEXEC.
   exploit transf_c_program_preservation; eauto. intros (beh' & CEXEC & IMPR).
   apply CTRACE in CEXEC. destruct IMPR as [EQ | [t' [A B]]].
 - congruence.
@@ -238,6 +244,9 @@ Qed.
 Let asm_program: Asm.program := proj1_sig compiled_linking_succeeds.
 Let compiled_linking: link_list asm_units = Some asm_program := proj2_sig compiled_linking_succeeds.
 
+Hypothesis asm_internal_not_bottom:
+  forall b f, Genv.find_funct_ptr (Genv.globalenv asm_program) b = Some (Internal f) -> comp_of f <> bottom.
+
 (** Then, [asm_program] preserves the semantics and the specifications of
   [c_program], in the following sense.
   First, every behavior of [asm_program] improves upon one of the possible
@@ -249,7 +258,7 @@ Theorem separate_transf_c_program_preservation:
   exists beh', program_behaves (Csem.semantics c_program) beh' /\ behavior_improves beh' beh.
 Proof.
   intros. exploit separate_transf_c_program_correct; eauto. intros (a & P & Q).
-  assert (a = asm_program) by congruence. subst a. 
+  assert (a = asm_program) by congruence. subst a.
   eapply backward_simulation_behavior_improves; eauto.
 Qed.
 

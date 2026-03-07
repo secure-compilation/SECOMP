@@ -93,20 +93,20 @@ In particular, if [n] is a representable immediate argument, we should have
 *)
 
 Definition mk_immed_mem_word (x: int): int :=
-  if Int.ltu x Int.zero then
+  if Int.lt x Int.zero then
     Int.neg (Int.zero_ext (if thumb tt then 8 else 12) (Int.neg x))
   else
     Int.zero_ext 12 x.
 
 Definition mk_immed_mem_small (x: int): int :=
-  if Int.ltu x Int.zero then
+  if Int.lt x Int.zero then
     Int.neg (Int.zero_ext 8 (Int.neg x))
   else
     Int.zero_ext 8 x.
 
 Definition mk_immed_mem_float (x: int): int :=
   let x := Int.and x (Int.repr (-4)) in   (**r mask low 2 bits off *)
-  if Int.ltu x Int.zero then
+  if Int.lt x Int.zero then
     Int.neg (Int.zero_ext 10 (Int.neg x))
   else
     Int.zero_ext 10 x.
@@ -417,15 +417,23 @@ Definition transl_op
       do r <- ireg_of res; do r1 <- ireg_of a1; do r2 <- ireg_of a2;
       OK (Pumull IR14 r r1 r2 :: k)
   | Odiv, a1 :: a2 :: nil =>
-      assertion (mreg_eq res R0);
-      assertion (mreg_eq a1 R0);
-      assertion (mreg_eq a2 R1);
-      OK (Psdiv :: k)
+      do r <- ireg_of res; do r1 <- ireg_of a1; do r2 <- ireg_of a2;
+      if Archi.hardware_idiv tt then
+        OK (Psdiv r r1 r2 :: k)
+      else
+        assertion (mreg_eq res R0);
+        assertion (mreg_eq a1 R0);
+        assertion (mreg_eq a2 R1);
+        OK (Psdiv r r1 r2 :: k)
   | Odivu, a1 :: a2 :: nil =>
-      assertion (mreg_eq res R0);
-      assertion (mreg_eq a1 R0);
-      assertion (mreg_eq a2 R1);
-      OK (Pudiv :: k)
+      do r <- ireg_of res; do r1 <- ireg_of a1; do r2 <- ireg_of a2;
+      if Archi.hardware_idiv tt then
+        OK (Pudiv r r1 r2 :: k)
+      else
+        assertion (mreg_eq res R0);
+        assertion (mreg_eq a1 R0);
+        assertion (mreg_eq a2 R1);
+        OK (Pudiv r r1 r2 :: k)
   | Oand, a1 :: a2 :: nil =>
       do r <- ireg_of res; do r1 <- ireg_of a1; do r2 <- ireg_of a2;
       OK (Pand r r1 (SOreg r2) :: k)
@@ -559,12 +567,18 @@ Definition transl_op
       match preg_of res with
       | IR r => 
           do r1 <- ireg_of a1; do r2 <- ireg_of a2;
-          transl_cond cmp args
-            (Pmovite (cond_for_cond cmp) r (SOreg r1) (SOreg r2) :: k)
+         if ireg_eq r1 r2 then
+           OK (Pmov r (SOreg r1) :: k)
+         else
+           transl_cond cmp args
+             (Pmovite (cond_for_cond cmp) r (SOreg r1) (SOreg r2) :: k)
       | FR r =>
           do r1 <- freg_of a1; do r2 <- freg_of a2;
-          transl_cond cmp args
-            (Pfmovite (cond_for_cond cmp) r r1 r2 :: k)
+         if freg_eq r1 r2 then
+           OK (Pfcpyd r r1 :: k)
+         else
+           transl_cond cmp args
+             (Pfmovite (cond_for_cond cmp) r r1 r2 :: k)
       | _ =>
           Error(msg "Asmgen.Osel")
       end
@@ -713,12 +727,8 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
 Definition transl_store (chunk: memory_chunk) (addr: addressing)
                        (args: list mreg) (src: mreg) (k: code) :=
   match chunk with
-  | Mint8signed =>
-      transl_memory_access_int Pstrb mk_immed_mem_small src addr args k
   | Mint8unsigned =>
       transl_memory_access_int Pstrb mk_immed_mem_word src addr args k
-  | Mint16signed =>
-      transl_memory_access_int Pstrh mk_immed_mem_small src addr args k
   | Mint16unsigned =>
       transl_memory_access_int Pstrh mk_immed_mem_small src addr args k
   | Mint32 =>

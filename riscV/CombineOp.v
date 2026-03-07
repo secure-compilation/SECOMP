@@ -68,6 +68,12 @@ Function combine_cond (cond: condition) (args: list valnum) : option(condition *
   | _, _ => None
   end.
 
+Definition combine_cond' (cond: condition) (args: list valnum) : option bool :=
+  match cond, args with
+  | (Ccomp c | Ccompu c | Ccompl c | Ccomplu c), x :: y :: nil => combine_comparison c x y
+  | _, _ => None
+  end.
+
 Function combine_addr (addr: addressing) (args: list valnum) : option(addressing * list valnum) :=
   match addr, args with
   | Aindexed n, x::nil =>
@@ -128,9 +134,13 @@ Function combine_op (op: operation) (args: list valnum) : option(operation * lis
       | _ => None
       end
   | Ocmp cond, _ =>
-      match combine_cond cond args with
-      | Some(cond', args') => Some(Ocmp cond', args')
-      | None => None
+      match combine_cond' cond args with
+      | Some b => Some ((if b then Ointconst Int.one else Ointconst Int.zero), nil)
+      | None =>
+          match combine_cond cond args with
+          | Some(cond', args') => Some(Ocmp cond', args')
+          | None => None
+          end
       end
   | _, _ => None
   end.

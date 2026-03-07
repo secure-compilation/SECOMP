@@ -44,6 +44,16 @@ Global Opaque captyp_eq.
 Definition list_captyp_eq: forall (l1 l2: list captyp), {l1=l2} + {l1<>l2}
                      := list_eq_dec captyp_eq.
 
+Definition captyp_of_typ (ty: AST.typ) : captyp :=
+  match ty with
+  | AST.Tint => CTint
+  | AST.Tfloat => CTfloat
+  | AST.Tlong => CTlong
+  | AST.Tsingle => CTsingle
+  | AST.Tany32 => CTany32
+  | AST.Tany64 => CTany64
+  end.
+
 Definition CTcap : captyp := if Archi.ptr64 then CTcap128 else CTcap64.
 Definition CTanycap : captyp := if Archi.ptr64 then CTany128 else CTany64.
 Definition CTptr : captyp := if Archi.ptr64 then CTlong else CTint.

@@ -25,12 +25,16 @@ Variable get: valnum -> option rhs.
 Function combine_compimm_ne_0 (x: valnum) : option(condition * list valnum) :=
   match get x with
   | Some(Op (Ocmp c) ys) => Some (c, ys)
+  | Some(Op (Oxorimm n) ys) =>
+      if Int.eq n (Int.zero_ext 12 n) then Some (Ccompimm Cne n, ys) else None
   | _ => None
   end.
 
 Function combine_compimm_eq_0 (x: valnum) : option(condition * list valnum) :=
   match get x with
   | Some(Op (Ocmp c) ys) => Some (negate_condition c, ys)
+  | Some(Op (Oxorimm n) ys) =>
+      if Int.eq n (Int.zero_ext 12 n) then Some (Ccompimm Ceq n, ys) else None
   | _ => None
   end.
 
@@ -64,6 +68,12 @@ Function combine_cond (cond: condition) (args: list valnum) : option(condition *
       if Int.eq_dec n Int.zero then combine_compimm_eq_0 x
       else if Int.eq_dec n Int.one then combine_compimm_eq_1 x
       else None
+  | _, _ => None
+  end.
+
+Definition combine_cond' (cond: condition) (args: list valnum) : option bool :=
+  match cond, args with
+  | (Ccomp c | Ccompu c | Ccompl c | Ccomplu c), x :: y :: nil => combine_comparison c x y
   | _, _ => None
   end.
 
@@ -125,9 +135,23 @@ Function combine_op (op: operation) (args: list valnum) : option(operation * lis
       | _ => None
       end
   | Ocmp cond, _ =>
-      match combine_cond cond args with
-      | Some(cond', args') => Some(Ocmp cond', args')
-      | None => None
+      match combine_cond' cond args with
+      | Some b => Some ((if b then Ointconst Int.one else Ointconst Int.zero), nil)
+      | None =>
+          match combine_cond cond args with
+          | Some(cond', args') => Some(Ocmp cond', args')
+          | None => None
+          end
+      end
+  | Osel cond ty, x :: y :: args =>
+      match combine_cond' cond args with
+      | Some b => Some (Omove, (if b then x else y) :: nil)
+      | None =>
+          if eq_valnum x y then Some (Omove, x :: nil) else
+          match combine_cond cond args with
+          | Some (cond', args') => Some (Osel cond' ty, x :: y :: args')
+          | None => None
+          end
       end
   | _, _ => None
   end.

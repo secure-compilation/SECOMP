@@ -159,7 +159,7 @@ Lemma transf_instr_charact:
 Proof.
   intros. unfold transf_instr. destruct instr; try constructor.
   destruct (is_return niter f n r && tailcall_is_possible s &&
-            rettype_eq (sig_res s) (sig_res (fn_sig f)) &&
+            xtype_eq (sig_res s) (sig_res (fn_sig f)) &&
             intra_compartment_call ce _ (comp_of f))
             eqn:B.
 - InvBooleans. eapply transf_instr_tailcall; eauto.
@@ -173,7 +173,8 @@ Lemma transf_instr_lookup:
   exists i',  (transf_function ce f).(fn_code)!pc = Some i' /\ transf_instr_spec ce f i i'.
 Proof.
   intros. unfold transf_function.
-  destruct (zeq (fn_stacksize f) 0).
+  destruct (zeq (fn_stacksize f) 0 && option_eq zeq (cc_vararg (sig_cc (fn_sig f))) None) eqn:B.
+  InvBooleans.
   simpl. rewrite PTree.gmap. rewrite H. simpl.
   exists (transf_instr ce f pc i); split. auto. apply transf_instr_charact; auto.
   exists i; split. auto. constructor.
@@ -261,20 +262,21 @@ Lemma sig_preserved:
 Proof.
   destruct f; auto. simpl. unfold transf_function.
   destruct (zeq (fn_stacksize f) 0); auto.
+  destruct (option_eq zeq (cc_vararg (sig_cc (fn_sig f))) None); auto.
 Qed.
 
 Lemma comp_preserved:
   forall ce f, comp_of (transf_fundef ce f) = comp_of f.
 Proof.
   destruct f; auto. simpl. unfold transf_function.
-  destruct (zeq (fn_stacksize f) 0); auto.
+  destruct (zeq (fn_stacksize f) 0 && option_eq zeq (cc_vararg (sig_cc (fn_sig f))) None); auto.
 Qed.
 
 Lemma stacksize_preserved:
   forall ce f, fn_stacksize (transf_function ce f) = fn_stacksize f.
 Proof.
   unfold transf_function. intros.
-  destruct (zeq (fn_stacksize f) 0); auto.
+  destruct (zeq (fn_stacksize f) 0 && option_eq zeq (cc_vararg (sig_cc (fn_sig f))) None); auto.
 Qed.
 
 Lemma find_function_translated:
@@ -665,13 +667,18 @@ Proof.
   { symmetry. apply comp_transl. }
   TransfInstr.
 + (* call turned tailcall *)
-  assert ({ m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function ce f)) (fn_comp f) = Some m''}).
+  assert (Efd: comp_of f = comp_of fd).
+  { exploit find_function_intra_compartment_call; eauto. }
+  assert (m' = m).
+  { destruct (cp_eq_dec (comp_of f) (comp_of fd)) in SET_PERM; auto.
+    destruct (cp_eq_dec (comp_of fd) bottom) in SET_PERM; auto.
+    exfalso. apply n. exact Efd. }
+  subst m'.
+  assert ({ m'' | Mem.free m'0 sp0 0 (fn_stacksize (transf_function ce f)) (fn_comp f) = Some m''}).
     apply Mem.range_perm_free. rewrite stacksize_preserved. rewrite H7.
     red; intros; extlia.
     eauto.
   destruct X as [m'' FREE].
-  assert (Efd: comp_of f = comp_of fd).
-  { exploit find_function_intra_compartment_call; eauto. }
   left.
   exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m'' (comp_of f)); split.
   assert (t = E0).
@@ -692,7 +699,6 @@ Proof.
     apply COMPAT in ce_i as [? [? ?]]; subst.
     apply Genv.find_def_symbol in H1 as [? [? ?]].
     unfold find_function in H0. simpl in *.
-    (* TODO: ???? *)
     Set Printing Implicit.
     unfold ge, fundef in FUNPTR.
     rewrite H1 in FUNPTR.
@@ -703,12 +709,8 @@ Proof.
     destruct Ptrofs.eq_dec; try congruence.
     apply Genv.find_funct_ptr_iff in H0. congruence. }
   { now rewrite <- E. }
-  (* eapply find_function_ptr_translated; eauto. *)
-  (* rewrite comp_transl. eapply allowed_call_translated; eauto. *)
-  (* rewrite comp_transl; eauto. *)
   constructor.
   eapply match_stackframes_tail; eauto.
-  (* TODO: Should be a lemma? *)
   { rewrite <- Efd.
     clear -FREE STACKS.
     revert STACKS. generalize (comp_of f).
@@ -722,9 +724,21 @@ Proof.
   eapply Mem.free_right_extends; eauto.
   rewrite stacksize_preserved. rewrite H7. intros. extlia.
 + (* call that remains a call *)
+  assert (EXT_SET: exists tm', (if cp_eq_dec (comp_of (transf_function ce f)) (comp_of (transf_fundef (compenv_program cu) fd)) then tm' = m'0
+    else if cp_eq_dec (comp_of (transf_fundef (compenv_program cu) fd)) bottom then tm' = m'0
+    else Mem.set_perm m'0 sp0 Readable = Some tm')
+    /\ Mem.extends m' tm').
+  { rewrite <- E, (comp_preserved (compenv_program cu) fd).
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst m'. eexists; split; [reflexivity | eauto].
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm' & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   left.
   eexists (Callstate (Stackframe res _ (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
-                          (transf_fundef (compenv_program cu) fd) (rs'##args) m' (comp_of f)); split.
+                          (transf_fundef (compenv_program cu) fd) (rs'##args) tm' (comp_of f)); split.
   erewrite <- @comp_transl with (f := transf_function ce); eauto using comp_transf_function.
   eapply exec_Icall; eauto. apply sig_preserved.
   eapply find_function_ptr_translated; eauto.
@@ -750,10 +764,35 @@ Proof.
   rewrite comp_transl.
   rewrite comp_preserved.
   eapply call_trace_translated; eauto.
-  constructor.
+  (* Build match_states_call *)
+  assert (STACKS': match_stackframes tm' (comp_of fd)
+    (Stackframe res (sig_res (funsig fd)) f (Vptr sp0 Ptrofs.zero) pc' rs :: s)
+    (Stackframe res (sig_res (funsig fd)) (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')).
+  { (* First, show match_stackframes for tm' instead of m'0 *)
+    assert (STACKS_T: match_stackframes tm' (comp_of f) s s').
+    { rewrite <- E in SET_T. rewrite (comp_preserved (compenv_program cu) fd) in SET_T.
+      destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+      - subst. exact STACKS.
+      - destruct (cp_eq_dec (comp_of fd) bottom).
+        + subst. exact STACKS.
+        + cut (forall cp0 s0 s0', match_stackframes m'0 cp0 s0 s0' -> match_stackframes tm' cp0 s0 s0').
+          { intro LEMMA. apply LEMMA. exact STACKS. }
+          intros cp0 s0 s0' HS.
+          induction HS.
+          * constructor.
+          * constructor; auto. eapply Mem.can_access_block_set_1; eauto.
+          * econstructor; eauto. }
+    constructor; auto.
+    (* can_access_block for sp0 in tm' *)
+    rewrite <- E in SET_T. rewrite (comp_preserved (compenv_program cu) fd) in SET_T.
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)).
+    - subst. exact ACC.
+    - destruct (cp_eq_dec (comp_of fd) bottom).
+      + subst. exact ACC.
+      + eapply Mem.can_access_block_set_1; eauto. }
   constructor; auto.
-    apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
-  apply regs_lessdef_regs; auto. auto.
+  apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
+  apply regs_lessdef_regs; auto.
 
 - (* tailcall *)
   exploit find_function_translated; eauto.
@@ -843,23 +882,30 @@ Proof.
     instantiate (1 := 0). lia.
     instantiate (1 := fn_stacksize f). lia.
   intros [m'1 [ALLOC EXT]].
-  assert (fn_stacksize (transf_function ce f) = fn_stacksize f /\
-          fn_entrypoint (transf_function ce f) = fn_entrypoint f /\
-          fn_params (transf_function ce f) = fn_params f /\
-          comp_of (transf_function ce f) = comp_of f).
-    unfold transf_function. destruct (zeq (fn_stacksize f) 0); auto.
-  destruct H0 as [EQ1 [EQ2 [EQ3 EQ4]]].
+  assert (EQ: fn_stacksize (transf_function ce f) = fn_stacksize f /\
+              fn_entrypoint (transf_function ce f) = fn_entrypoint f /\
+              fn_params (transf_function ce f) = fn_params f /\
+              fn_sig (transf_function ce f) = fn_sig f /\
+              comp_of (transf_function ce f) = comp_of f).
+  {
+    unfold transf_function. destruct (zeq (fn_stacksize f) 0 && option_eq zeq (cc_vararg (sig_cc (fn_sig f))) None); auto.
+  }
+  destruct EQ as (EQ1 & EQ2 & EQ3 & EQ4 & EQ5).
   left. econstructor; split.
-  simpl. eapply exec_function_internal; eauto. rewrite EQ1, EQ4; eauto.
-  rewrite EQ2. rewrite EQ3. constructor; auto.
-  (* TODO: Should be a lemma? *)
-  { clear -ALLOC H6. simpl in H6.
-    revert H6. generalize (comp_of f). intros cp STACKS.
-    induction STACKS.
+  simpl. eapply exec_function_internal; eauto.
+  rewrite EQ4; eauto using Val.has_argtype_list_lessdef.
+  rewrite EQ1, EQ5; eauto.
+  rewrite EQ2, EQ3. constructor; auto.
+  (* match_stackframes preserved by alloc *)
+  { change (comp_of (Internal f)) with (comp_of f) in H7.
+    cut (forall cp0 s s', match_stackframes m'0 cp0 s s' -> match_stackframes m'1 cp0 s s').
+    { intro LEMMA. apply LEMMA. exact H7. }
+    clear H7. intros cp0 s0 s0' H7.
+    induction H7.
     - constructor.
-    - constructor; auto.
+    - econstructor; eauto.
       eapply Mem.alloc_can_access_block_other_inj_1; eauto.
-    - constructor; auto. }
+    - econstructor; eauto. }
   apply regs_lessdef_init_regs. auto.
   simpl. erewrite Mem.owned_new_block; eauto. apply flowsto_refl.
 
@@ -871,9 +917,10 @@ Proof.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eauto using allowed_syscall_translated.
   constructor; auto.
-  (* TODO: Should be a lemma? *)
-  { clear -A H6.
-    simpl in H6.
+  (* match_stackframes preserved by external_call *)
+  { cut (forall cp0 s0 s0', match_stackframes m'0 cp0 s0 s0' -> match_stackframes m2' cp0 s0 s0').
+    { intro LEMMA. apply LEMMA. exact H6. }
+    clear H6. intros cp0 s0 s0' H6.
     induction H6.
     - constructor.
     - constructor; auto. eapply external_call_can_access_block; eauto.
@@ -882,6 +929,18 @@ Proof.
 - (* returnstate *)
   inv H4.
 + (* synchronous return in both programs *)
+  assert (EXT_SET: exists tm', (if cp_eq_dec (comp_of (transf_function ce f)) cp then tm' = m'0
+    else if cp_eq_dec cp bottom then tm' = m'0
+    else Mem.set_perm m'0 sp0 Freeable = Some tm')
+    /\ Mem.extends m' tm').
+  { rewrite comp_transf_function.
+    destruct (cp_eq_dec (comp_of f) cp).
+    - subst m'. eexists; split; [reflexivity | eauto].
+    - destruct (cp_eq_dec cp bottom).
+      + subst m'. eexists; split; [reflexivity | eauto].
+      + exploit Mem.set_perm_parallel_extends. eauto. eauto.
+        intros (tm' & SP & EXT). eexists; split; eauto. }
+  destruct EXT_SET as (tm' & SET_T & EXT').
   left. econstructor; split.
   apply exec_return.
   rewrite comp_transf_function.
@@ -889,8 +948,32 @@ Proof.
     inv H5; auto; contradiction. }
   rewrite comp_transf_function.
   now eapply return_trace_lessdef; eauto using senv_preserved.
-  constructor; auto. apply set_reg_lessdef; auto.
+  exact SET_T.
+  econstructor; eauto.
+  (* match_stackframes preserved by set_perm *)
+  { rewrite comp_transf_function in SET_T.
+    destruct (cp_eq_dec (comp_of f) cp).
+    - subst. exact H10.
+    - destruct (cp_eq_dec cp bottom).
+      + subst. exact H10.
+      + cut (forall cp0 s0 s0', match_stackframes m'0 cp0 s0 s0' -> match_stackframes tm' cp0 s0 s0').
+        { intro LEMMA. apply LEMMA. exact H10. }
+        intros cp0 s0 s0' HS.
+        induction HS.
+        * constructor.
+        * constructor; auto. eapply Mem.can_access_block_set_1; eauto.
+        * econstructor; eauto. }
+  apply set_reg_lessdef; auto.
+  (* can_access_block preserved by set_perm *)
+  rewrite comp_transf_function in SET_T.
+  destruct (cp_eq_dec (comp_of f) cp) in SET_T;
+    [subst; exact ACC |].
+  destruct (cp_eq_dec cp bottom) in SET_T;
+    [subst; exact ACC | eapply Mem.can_access_block_set_1; eauto].
 + (* return instr in source program, eliminated because of tailcall *)
+  assert (m' = m) as ->.
+  { destruct (cp_eq_dec (comp_of f) (comp_of f)) in SET_PERM;
+      [exact SET_PERM | exfalso; apply n; reflexivity]. }
   right. split. unfold measure. simpl length.
   change (S (length s) * (niter + 2))%nat
    with ((niter + 2) + (length s) * (niter + 2))%nat.
@@ -899,7 +982,7 @@ Proof.
   inv EV; auto. simpl in H; destruct (flowsto_dec (comp_of f) (comp_of f));
     pose proof (flowsto_refl (comp_of f)); congruence.
   econstructor; eauto.
-  rewrite Regmap.gss. auto.
+  all: try (rewrite Regmap.gss; auto).
 Qed.
 
 Lemma transf_initial_states:
@@ -919,7 +1002,7 @@ Proof.
   replace (prog_main tprog) with (prog_main prog).
   rewrite symbols_preserved. eauto.
   symmetry; eapply match_program_main; eauto.
-  rewrite <- H3. unfold transf_function; destruct zeq; auto.
+  rewrite <- H3. unfold transf_function; destruct zeq; try destruct option_eq; auto.
   constructor. constructor.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   easy.
@@ -949,4 +1032,3 @@ Proof.
 Qed.
 
 End PRESERVATION.
-

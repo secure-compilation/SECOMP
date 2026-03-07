@@ -96,7 +96,7 @@ Section GENPROOFS.
     exists ps, (gen_params x gds) ! id = Some ps /\
             Forall (fun '(id, _) => (x <= id)%positive) ps /\
             (match gd_i with
-             | Gfun fd => map typ_to_type (sig_args (funsig fd)) = map snd ps
+             | Gfun fd => map typ_to_type (proj_sig_args (funsig fd)) = map snd ps
              | Gvar _ => ps = []
              end).
   Proof.
@@ -154,7 +154,7 @@ Section GENPROOFS.
     (m <= p)%positive.
   Proof.
     unfold gen_params_one in GEN. des_ifs.
-    hexploit (Forall_numbering _ (map typ_to_type (sig_args (funsig f))) m). intros FA.
+    hexploit (Forall_numbering _ (map typ_to_type (proj_sig_args (funsig f))) m). intros FA.
     rewrite Forall_forall in FA. specialize (FA _ IN). des_ifs.
   Qed.
 

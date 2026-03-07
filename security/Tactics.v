@@ -730,7 +730,7 @@ Tactic Notation "extensionalities" ident(a) ident(b) ident(c) ident(d) ident(e) 
 
 (* short for common tactics *)
 
-Tactic Notation "inst" := instantiate.
+Tactic Notation "inst" := idtac. (* instantiate removed in Rocq 9.1 *)
 Tactic Notation "econs" := econstructor.
 Tactic Notation "econs" int_or_var(x) := econstructor x.
 Tactic Notation "i" := intros.
@@ -794,16 +794,10 @@ Ltac clear_upto H :=
 
 Definition _Evar_sflib_ (A:Type) (x:A) := x.
 
-Tactic Notation "hide_evar" int_or_var(n) := let QQ := fresh "QQ" in
-  hget_evar n; intro;
-  lazymatch goal with [ H := ?X |- _] =>
-    set (QQ := X) in *; fold (_Evar_sflib_ X) in QQ; clear H
-  end.
-
-Ltac hide_evars := repeat (hide_evar 1).
-
-Ltac show_evars := repeat (match goal with [ H := @_Evar_sflib_ _ _ |- _ ] => unfold
- _Evar_sflib_ in H; unfold H in *; clear H end).
+(* hget_evar removed in Rocq 9.1 *)
+(* Tactic Notation "hide_evar" int_or_var(n) := ... *)
+(* Ltac hide_evars := ... *)
+(* Ltac show_evars := ... *)
 
 Ltac revert1 := match goal with [H: _|-_] => revert H end.
 

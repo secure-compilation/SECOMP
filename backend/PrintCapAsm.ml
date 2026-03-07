@@ -44,7 +44,7 @@ let print_bool_capasm p b =
   else Format.fprintf p "false"
 
 let print_string_capasm p s =
-  Format.fprintf p "\"%s\"%%string" (camlstring_of_coqstring s)
+  Format.fprintf p "\"%s\"%%string" s
 
 let print_typ_capasm p = function
   | Tint ->
@@ -61,19 +61,32 @@ let print_typ_capasm p = function
      Format.fprintf p "Tany64"
 
 let print_rettype_capasm p = function
-  | Tret ty ->
-     Format.fprintf p "Tret@ ";
-     print_typ_capasm p ty
-  | Tint8signed ->
-     Format.fprintf p "Tint8signed"
-  | Tint8unsigned ->
-     Format.fprintf p "Tint8unsigned"
-  | Tint16signed ->
-     Format.fprintf p "Tint16signed"
-  | Tint16unsigned ->
-     Format.fprintf p "Tint16unsigned"
-  | Tvoid ->
-     Format.fprintf p "Tvoid"
+  | Xbool ->
+     Format.fprintf p "Xbool"
+  | Xint8signed ->
+     Format.fprintf p "Xint8signed"
+  | Xint8unsigned ->
+     Format.fprintf p "Xint8unsigned"
+  | Xint16signed ->
+     Format.fprintf p "Xint16signed"
+  | Xint16unsigned ->
+     Format.fprintf p "Xint16unsigned"
+  | Xint ->
+     Format.fprintf p "Xint"
+  | Xfloat ->
+     Format.fprintf p "Xfloat"
+  | Xlong ->
+     Format.fprintf p "Xlong"
+  | Xsingle ->
+     Format.fprintf p "Xsingle"
+  | Xptr ->
+     Format.fprintf p "Xptr"
+  | Xany32 ->
+     Format.fprintf p "Xany32"
+  | Xany64 ->
+     Format.fprintf p "Xany64"
+  | Xvoid ->
+     Format.fprintf p "Xvoid"
 
 let print_calling_convention_capasm p AST.{ cc_vararg; cc_unproto; cc_structret } =
   Format.fprintf p "{|@ cc_vararg@ :=@ ";
@@ -86,7 +99,7 @@ let print_calling_convention_capasm p AST.{ cc_vararg; cc_unproto; cc_structret 
 
 let print_signature_capasm p AST.{ sig_args; sig_res; sig_cc } =
   Format.fprintf p "{|@ sig_args@ :=@ ";
-  print_list_capasm p print_typ_capasm sig_args;
+  print_list_capasm p print_rettype_capasm sig_args;
   Format.fprintf p ";@ sig_res@ :=@ ";
   print_rettype_capasm p sig_res;
   Format.fprintf p ";@ sig_cc@ :=@ ";
@@ -718,7 +731,7 @@ let show_errmsg em =
   let open Errors in
   let fmt = Printf.sprintf in
   match em with
-  | MSG m -> fmt "MSG: %s" (Camlcoq.camlstring_of_coqstring m)
+  | MSG m -> fmt "MSG: %s" m
   | CTX p -> fmt "CTX: %d" (Camlcoq.P.to_int p)
   | POS p -> fmt "POS: %d" (Camlcoq.P.to_int p)
 

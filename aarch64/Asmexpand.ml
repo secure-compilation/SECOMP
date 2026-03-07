@@ -270,7 +270,7 @@ let expand_builtin_memcpy  sz al args =
 let expand_builtin_vload_common chunk base ofs res =
   let addr = ADimm(base, ofs) in
   match chunk, res with
-  | Mint8unsigned, BR(IR res) ->
+  | (Mbool | Mint8unsigned), BR(IR res) ->
      emit (Pldrb(W, res, addr))
   | Mint8signed, BR(IR res) ->
      emit (Pldrsb(W, res, addr))
@@ -294,14 +294,14 @@ let expand_builtin_vload chunk args res =
   | [BA(IR addr)] ->
       expand_builtin_vload_common chunk (RR1 addr) _0 res
   | [BA_addrstack ofs] ->
-      if offset_in_range (Z.add ofs (Memdata.size_chunk chunk)) then
+      if Asmgen.offset_representable (Memdata.size_chunk chunk) ofs then
         expand_builtin_vload_common chunk XSP ofs res
       else begin
         expand_addimm64 (RR1 X16) XSP ofs; (* X16 <- SP + ofs *)
         expand_builtin_vload_common chunk (RR1 X16) _0 res
       end
   | [BA_addptr(BA(IR addr), BA_long ofs)] ->
-      if offset_in_range (Z.add ofs (Memdata.size_chunk chunk)) then
+      if Asmgen.offset_representable (Memdata.size_chunk chunk) ofs then
         expand_builtin_vload_common chunk (RR1 addr) ofs res
       else begin
         expand_addimm64 (RR1 X16) (RR1 addr) ofs; (* X16 <- addr + ofs *)
@@ -313,7 +313,7 @@ let expand_builtin_vload chunk args res =
 let expand_builtin_vstore_common chunk base ofs src =
   let addr = ADimm(base, ofs) in
   match chunk, src with
-  | (Mint8signed | Mint8unsigned), BA(IR src) ->
+  | (Mbool | Mint8signed | Mint8unsigned), BA(IR src) ->
      emit (Pstrb(src, addr))
   | (Mint16signed | Mint16unsigned), BA(IR src) ->
      emit (Pstrh(src, addr))
@@ -333,14 +333,14 @@ let expand_builtin_vstore chunk args =
   | [BA(IR addr); src] ->
       expand_builtin_vstore_common chunk (RR1 addr) _0 src
   | [BA_addrstack ofs; src] ->
-      if offset_in_range (Z.add ofs (Memdata.size_chunk chunk)) then
+      if Asmgen.offset_representable (Memdata.size_chunk chunk) ofs then
         expand_builtin_vstore_common chunk XSP ofs src
       else begin
         expand_addimm64 (RR1 X16) XSP ofs; (* X16 <- SP + ofs *)
         expand_builtin_vstore_common chunk (RR1 X16) _0 src
       end
   | [BA_addptr(BA(IR addr), BA_long ofs); src] ->
-      if offset_in_range (Z.add ofs (Memdata.size_chunk chunk)) then
+      if Asmgen.offset_representable (Memdata.size_chunk chunk) ofs then
         expand_builtin_vstore_common chunk (RR1 addr) ofs src
       else begin
         expand_addimm64 (RR1 X16) (RR1 addr) ofs; (* X16 <- addr + ofs *)
@@ -423,6 +423,7 @@ let expand_instruction instr =
         current_function_stacksize := Z.to_int64 sz
       end;
       expand_addimm64 XSP XSP (Ptrofs.repr (Z.neg sz));
+      emit (Pcfi_adjust sz);
       expand_storeptr X15 XSP ofs
   | Pfreeframe (sz, ofs) ->
       expand_addimm64 XSP XSP (coqint_of_camlint64 !current_function_stacksize)
@@ -432,7 +433,7 @@ let expand_instruction instr =
   | Pbuiltin (ef,args,res) ->
      begin match ef with
      | EF_builtin (name,sg) ->
-        expand_builtin_inline (camlstring_of_coqstring name) args res
+        expand_builtin_inline name args res
      | EF_vload chunk ->
         expand_builtin_vload chunk args res
      | EF_vstore chunk ->
@@ -479,7 +480,7 @@ let expand_function id fn =
     expand id (* sp= *) 31 preg_to_dwarf expand_instruction fn.fn_code;
     Errors.OK (get_current_function ())
   with Error s ->
-    Errors.Error (Errors.msg (coqstring_of_camlstring s))
+    Errors.Error (Errors.msg s)
 
 let expand_fundef id = function
   | Internal f ->

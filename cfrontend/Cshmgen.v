@@ -578,20 +578,20 @@ with transl_lvalue (ce: composite_env) (a: Clight.expr) {struct a} : res (expr *
    casted to the corresponding types in [tyl].
    Used for function applications. *)
 
-Fixpoint transl_arglist (ce: composite_env) (al: list Clight.expr) (tyl: typelist)
+Fixpoint transl_arglist (ce: composite_env) (al: list Clight.expr) (tyl: list type)
                          {struct al}: res (list expr) :=
   match al, tyl with
-  | nil, Tnil => OK nil
-  | a1 :: a2, Tcons ty1 ty2 =>
+  | nil, nil => OK nil
+  | a1 :: a2, ty1 :: ty2 =>
       do ta1 <- transl_expr ce a1;
       do ta1' <- make_cast (typeof a1) ty1 ta1;
       do ta2 <- transl_arglist ce a2 ty2;
       OK (ta1' :: ta2)
-  | a1 :: a2, Tnil =>
+  | a1 :: a2, nil =>
       (* Tolerance for calls to K&R or variadic functions *)
       do ta1 <- transl_expr ce a1;
       do ta1' <- make_cast (typeof a1) (default_argument_conversion (typeof a1)) ta1;
-      do ta2 <- transl_arglist ce a2 Tnil;
+      do ta2 <- transl_arglist ce a2 nil;
       OK (ta1' :: ta2)
   | _, _ =>
       Error(msg "Cshmgen.transl_arglist: arity mismatch")
@@ -599,15 +599,15 @@ Fixpoint transl_arglist (ce: composite_env) (al: list Clight.expr) (tyl: typelis
 
 (** Compute the argument signature that corresponds to a function application. *)
 
-Fixpoint typlist_of_arglist (al: list Clight.expr) (tyl: typelist)
-                            {struct al}: list AST.typ :=
+Fixpoint typlist_of_arglist (al: list Clight.expr) (tyl: list type)
+                            {struct al}: list xtype :=
   match al, tyl with
   | nil, _ => nil
-  | a1 :: a2, Tcons ty1 ty2 =>
-      typ_of_type ty1 :: typlist_of_arglist a2 ty2
-  | a1 :: a2, Tnil =>
+  | a1 :: a2, ty1 :: ty2 =>
+      argtype_of_type ty1 :: typlist_of_arglist a2 ty2
+  | a1 :: a2, nil =>
       (* Tolerance for calls to K&R or variadic functions *)
-      typ_of_type (default_argument_conversion (typeof a1)) :: typlist_of_arglist a2 Tnil
+      argtype_of_type (default_argument_conversion (typeof a1)) :: typlist_of_arglist a2 nil
   end.
 
 (** Translate a function call.
@@ -616,7 +616,10 @@ Fixpoint typlist_of_arglist (al: list Clight.expr) (tyl: typelist)
     For example, in the x86 ABI, a return value of type "char" is
     returned in register AL, leaving the top 24 bits of EAX
     unspecified.  Hence, a cast to type "char" is needed to sign- or
-    zero-extend the returned integer before using it. *)
+    zero-extend the returned integer before using it.
+    Function results of type "_Bool" are generally returned as
+    one byte that is equal to 0 or to 1.  Hence, the appropriate normalization
+    is a cast to "unsigned char", not to "_Bool". *)
 
 Definition make_normalization (t: type) (a: expr) :=
   match t with
@@ -746,7 +749,7 @@ Definition transl_var (ce: composite_env) (v: ident * type) :=
   do sz <- sizeof ce (snd v); OK (fst v, sz).
 
 Definition signature_of_function (f: Clight.function) :=
-  {| sig_args := map typ_of_type (map snd (Clight.fn_params f));
+  {| sig_args := map argtype_of_type (map snd (Clight.fn_params f));
      sig_res  := rettype_of_type (Clight.fn_return f);
      sig_cc   := Clight.fn_callconv f |}.
 

@@ -16,7 +16,7 @@
 
 (** Typing rules and type-checking for the Compcert C language *)
 
-Require Import String.
+From Coq Require Import String.
 Require Import Coqlib Maps Integers Floats Errors.
 Require Import AST Linking.
 Require Import Values Memory Globalenvs Builtins Events.
@@ -201,6 +201,16 @@ Fixpoint type_combine (ty1 ty2: type) : res type :=
       then OK (Tarray t sz1 (attr_combine a1 a2))
       else Error (msg "incompatible array types")
   | Tfunction args1 res1 cc1, Tfunction args2 res2 cc2 =>
+      let fix typelist_combine (tl1 tl2: list type) : res (list type) :=
+        match tl1, tl2 with
+        | nil, nil => OK nil
+        | t1 :: tl1, t2 :: tl2 =>
+            do t <- type_combine t1 t2;
+            do tl <- typelist_combine tl1 tl2;
+            OK (t :: tl)
+        | _, _ =>
+            Error (msg "incompatible function types")
+        end in
       do res <- type_combine res1 res2;
       do args <-
         (if cc1.(cc_unproto) then OK args2 else
@@ -218,17 +228,6 @@ Fixpoint type_combine (ty1 ty2: type) : res type :=
       else Error (msg "incompatible union types")
   | _, _ =>
       Error (msg "incompatible types")
-  end
-
-with typelist_combine (tl1 tl2: typelist) : res typelist :=
-  match tl1, tl2 with
-  | Tnil, Tnil => OK Tnil
-  | Tcons t1 tl1, Tcons t2 tl2 =>
-      do t <- type_combine t1 t2;
-      do tl <- typelist_combine tl1 tl2;
-      OK (Tcons t tl)
-  | _, _ =>
-      Error (msg "incompatible function types")
   end.
 
 Definition is_void (ty: type) : bool :=
@@ -269,7 +268,7 @@ Definition wt_bool (ty: type) : Prop :=
 
 Definition wt_int (n: int) (sz: intsize) (sg: signedness) : Prop :=
   match sz, sg with
-  | IBool, _ => Int.zero_ext 8 n = n
+  | IBool, _ => n = Int.zero \/ n = Int.one
   | I8, Unsigned => Int.zero_ext 8 n = n
   | I8, Signed => Int.sign_ext 8 n = n
   | I16, Unsigned => Int.zero_ext 16 n = n
@@ -314,16 +313,16 @@ Inductive wt_val : val -> type -> Prop :=
   | wt_val_void: forall v,
       wt_val v Tvoid.
 
-Inductive wt_arguments: exprlist -> typelist -> Prop :=
+Inductive wt_arguments: exprlist -> list type -> Prop :=
   | wt_arg_nil:
-      wt_arguments Enil Tnil
+      wt_arguments Enil nil
   | wt_arg_cons: forall a al ty tyl,
       wt_cast (typeof a) ty ->
       wt_arguments al tyl ->
-      wt_arguments (Econs a al) (Tcons ty tyl)
+      wt_arguments (Econs a al) (ty :: tyl)
   | wt_arg_extra: forall a al,  (**r tolerance for varargs *)
       strict = false ->
-      wt_arguments (Econs a al) Tnil.
+      wt_arguments (Econs a al) nil.
 
 Definition subtype (t1 t2: type) : Prop :=
   forall v, wt_val v t1 -> wt_val v t2.
@@ -398,10 +397,11 @@ Inductive wt_rvalue : expr -> Prop :=
       wt_arguments rargs tyargs ->
       (* This typing rule is specialized to the builtin invocations generated
          by C2C, which are either __builtin_sel or builtins returning void. *)
-         (ty = Tvoid /\ sig_res (ef_sig ef) = AST.Tvoid)
-      \/ (tyargs = Tcons type_bool (Tcons ty (Tcons ty Tnil))
+         (ty = Tvoid /\ sig_res (ef_sig ef) = Xvoid)
+      \/ (tyargs = type_bool :: ty :: ty :: nil
           /\ let t := typ_of_type ty in
-             let sg := mksignature (AST.Tint :: t :: t :: nil) t cc_default in
+             let x := inj_type t in
+             let sg := [Xint; x; x ---> x]%asttyp in
              ef = EF_builtin "__builtin_sel"%string sg) ->
       wt_rvalue (Ebuiltin ef tyargs rargs ty)
   | wt_Eparen: forall r tycast ty,
@@ -586,12 +586,12 @@ Definition check_literal (v: val) (t: type) : res unit :=
   | _, _ => Error (msg "wrong literal")
   end.
 
-Fixpoint check_arguments (el: exprlist) (tyl: typelist) : res unit :=
+Fixpoint check_arguments (el: exprlist) (tyl: list type) : res unit :=
   match el, tyl with
-  | Enil, Tnil => OK tt
+  | Enil, nil => OK tt
   | Enil, _ => Error (msg "not enough arguments")
-  | _, Tnil => if strict then Error (msg "too many arguments") else OK tt
-  | Econs e1 el, Tcons ty1 tyl => do x <- check_cast (typeof e1) ty1; check_arguments el tyl
+  | _, nil => if strict then Error (msg "too many arguments") else OK tt
+  | Econs e1 el, ty1 :: tyl => do x <- check_cast (typeof e1) ty1; check_arguments el tyl
   end.
 
 Definition check_rval (e: expr) : res unit :=
@@ -751,11 +751,11 @@ Definition ecall (fn: expr) (args: exprlist) : res expr :=
       Error (msg "call: not a function")
   end.
 
-Definition ebuiltin (ef: external_function) (tyargs: typelist) (args: exprlist) (tyres: type) : res expr :=
+Definition ebuiltin (ef: external_function) (tyargs: list type) (args: exprlist) (tyres: type) : res expr :=
   do x1 <- check_rvals args;
   do x2 <- check_arguments args tyargs;
   if type_eq tyres Tvoid
-  && AST.rettype_eq (sig_res (ef_sig ef)) AST.Tvoid
+  && xtype_eq (sig_res (ef_sig ef)) Xvoid
   then OK (Ebuiltin ef tyargs args tyres)
   else Error (msg "builtin: wrong type decoration").
 
@@ -927,20 +927,8 @@ Definition retype_fundef (ce: composite_env) (e: typenv) (fd: fundef) : res fund
   match fd with
   | Internal f => do f' <- retype_function ce e f; OK (Internal f')
   | External ef args res cc =>
-      assertion (rettype_eq (ef_sig ef).(sig_res) (rettype_of_type res)); OK fd
+      assertion (xtype_eq (ef_sig ef).(sig_res) (rettype_of_type res)); OK fd
   end.
-
-Lemma todo_fix: forall (tp: AST.program fundef type) (p: program),
-  agr_comps (AST.prog_pol tp) (AST.prog_defs tp) ->
-    agr_comps (prog_pol p) (AST.prog_defs tp).
-Proof.
-  Admitted.
-
-Lemma todo_fix': forall (tp: AST.program fundef type) (p: program),
-  pol_complete (AST.prog_pol tp) (AST.prog_defs tp) ->
-    pol_complete (prog_pol p) (AST.prog_defs tp).
-Proof.
-  Admitted.
 
 Instance has_comp_retype_function (ce: composite_env) (e: typenv):
   has_comp_transl_partial (retype_function ce e).
@@ -963,15 +951,15 @@ Definition typecheck_program (p: program) : res program :=
   let ce := p.(prog_comp_env) in
   do tp <- transform_partial_program (retype_fundef ce e) p;
   OK {| prog_defs := tp.(AST.prog_defs);
-        prog_public := p.(prog_public);
-        prog_main := p.(prog_main);
-        prog_pol := p.(prog_pol);
+        prog_public := tp.(AST.prog_public);
+        prog_main := tp.(AST.prog_main);
+        prog_pol := tp.(AST.prog_pol);
         prog_types := p.(prog_types);
         prog_comp_env := ce;
         prog_comp_env_eq := p.(prog_comp_env_eq);
-        prog_pol_pub := p.(prog_pol_pub);
-        prog_agr_comps := todo_fix tp p tp.(AST.prog_agr_comps);
-        prog_pol_complete := todo_fix' tp p tp.(AST.prog_pol_complete)
+        prog_pol_pub := tp.(AST.prog_pol_pub);
+        prog_agr_comps := tp.(AST.prog_agr_comps);
+        prog_pol_complete := tp.(AST.prog_pol_complete)
      |}.
 
 (** Soundness of the smart constructors.  *)
@@ -1287,7 +1275,7 @@ Lemma ebuiltin_sound:
 Proof.
   intros. monadInv H.
   destruct (type_eq tyres Tvoid); simpl in EQ2; try discriminate.
-  destruct (rettype_eq (sig_res (ef_sig ef)) AST.Tvoid); inv EQ2.
+  destruct (xtype_eq (sig_res (ef_sig ef)) Xvoid); inv EQ2.
   econstructor; eauto. eapply check_arguments_sound; eauto.
 Qed.
 
@@ -1452,7 +1440,7 @@ Proof.
   intros id fd. revert MATCH; generalize (prog_defs p) (AST.prog_defs tp).
   induction 1; simpl; intros.
   contradiction.
-  destruct H0; auto. subst b1; inv H. simpl in H1. inv H1. 
+  destruct H0; auto. subst b1; inv H. simpl in H1. inv H1.
   eapply retype_fundef_sound; eauto.
 Qed.
 
@@ -1657,7 +1645,8 @@ Proof.
   destruct v; auto with ty. constructor; red. apply Int.sign_ext_idem; lia.
   destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; lia.
   destruct Archi.ptr64 eqn:SF; destruct v; auto with ty.
-  destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; lia.
+  destruct v; auto with ty.
+  destruct (Val.norm_bool_cases (Vint (Int.zero_ext 8 i))) as [A | [A | A]]; rewrite A; constructor; red; auto.
 - inv AC. destruct Archi.ptr64 eqn:SF; destruct v; auto with ty.
 - destruct f; inv AC; destruct v; auto with ty.
 - inv AC. unfold Mptr. destruct Archi.ptr64 eqn:SF; destruct v; auto with ty.
@@ -1682,7 +1671,7 @@ Proof.
   constructor; red. apply Int.zero_ext_idem; lia.
   destruct (proj_bytes vl). auto with ty. destruct Archi.ptr64 eqn:SF; auto with ty. 
   destruct (proj_bytes vl); auto with ty.
-  constructor; red. apply Int.zero_ext_idem; lia.
+  destruct (Val.norm_bool_cases (Vint (Int.zero_ext 8 (Int.repr (decode_int l))))) as [A | [A | A]]; rewrite A; constructor; red; auto.
 - inv ACC. unfold decode_val. destruct (proj_bytes vl). auto with ty.
   destruct Archi.ptr64 eqn:SF; auto with ty. 
 - destruct f; inv ACC; unfold decode_val; destruct (proj_bytes vl); auto with ty.
@@ -1710,7 +1699,13 @@ Proof.
       ** apply Int.sign_zero_ext_widen; lia.
       ** apply Int.zero_ext_widen; lia.
   + auto.
-  + apply Int.zero_ext_widen; lia.
+  + assert (width = 1) by lia. subst width.
+    assert (0 <= Int.unsigned (Int.zero_ext 1 n) < 2).
+    { rewrite Int.zero_ext_mod. apply Z.mod_pos_bound. lia. split. lia. reflexivity. }
+    rewrite <- (Int.repr_unsigned (Int.zero_ext 1 n)).
+    set (i := Int.unsigned (Int.zero_ext 1 n)) in *.
+    assert (i = 0 \/ i = 1) by lia.
+    destruct H2 as [E|E]; rewrite E; auto.
 Qed.
 
 Lemma wt_deref_loc:
@@ -1804,16 +1799,13 @@ Lemma has_rettype_wt_val:
   forall v ty,
   Val.has_rettype v (rettype_of_type ty) -> wt_val v ty.
 Proof.
-  unfold rettype_of_type, Val.has_rettype, Val.has_type; destruct ty; intros.
+  unfold rettype_of_type, Val.has_rettype; destruct ty; intros.
 - destruct v; contradiction || constructor.
-- destruct i.
-  + destruct s; destruct v; try contradiction; constructor; red; auto.
-  + destruct s; destruct v; try contradiction; constructor; red; auto.
-  + destruct v; try contradiction; constructor; auto.
-  + destruct v; try contradiction; constructor; red; auto.
+- destruct i; [destruct s | destruct s | | ]; destruct v; try contradiction;
+  constructor; unfold wt_int; auto.
 - destruct v; try contradiction; constructor; auto.
 - destruct f; destruct v; try contradiction; constructor.
-- unfold Tptr in *; destruct v; destruct Archi.ptr64 eqn:P64; try contradiction; constructor; auto.
+- destruct v; try contradiction; constructor; auto.
 - destruct v; contradiction || constructor.
 - destruct v; contradiction || constructor.
 - destruct v; contradiction || constructor.
@@ -1858,10 +1850,10 @@ Proof.
 - (* paren *) inv H3. constructor. apply H5. eapply pres_sem_cast; eauto.
 - (* builtin *) subst. destruct H7 as [(A & B) | (A & B)].
 + subst ty. auto with ty.
-+ simpl in B. set (T := typ_of_type ty) in *. 
-  set (sg := mksignature (AST.Tint :: T :: T :: nil) T cc_default) in *.
++ simpl in B. set (T := typ_of_type ty) in *. set (X := inj_type T) in *.
+  set (sg := [Xint; X; X ---> X]%asttyp) in *.
   assert (LK: lookup_builtin_function "__builtin_sel"%string sg = Some (BI_standard (BI_select T))).
-  { unfold sg, T; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
+  { unfold sg, X, T; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
     simpl; unfold Tptr; destruct Archi.ptr64; reflexivity. }
   subst ef. red in H0. red in H0. rewrite LK in H0. inv H0.
   inv H. inv H8. inv H9. inv H10. simpl in H1.
@@ -2284,3 +2276,36 @@ Proof.
 Qed.
 
 End PRESERVATION.
+
+(** * Additional type-related results *)
+
+(** Casting a value to a type that it already has does not change the value.
+    (The cast may be undefined if the value does not belong to the source type.) *)
+
+Lemma sem_cast_already_typed: forall v t1 t2 m,
+  wt_val v t2 ->
+  sem_cast v t1 t2 m = Some v \/ sem_cast v t1 t2 m = None.
+Proof.
+  assert (INT: forall n sz sg, wt_int n sz sg -> cast_int_int sz sg n = n).
+  { unfold wt_int; intros.
+    destruct sz; [destruct sg | destruct sg | | ];
+    simpl; auto. destruct H; subst n; auto. }
+  assert (BOOL: forall n sg, wt_int n IBool sg -> (if Int.eq n Int.zero then Int.zero else Int.one) = n).
+  { intros. destruct H; subst n; auto. }
+  Ltac DestructCast :=
+    auto;
+    match goal with
+    | [ |- match match ?x with _ => _ end with _ => _ end = _ \/ _] => destruct x; DestructCast
+    | [ |- match ?x with _ => _ end = _ \/ _ ] => destruct x; DestructCast
+    | _ => idtac
+    end.
+  intros. unfold sem_cast, classify_cast; inv H; DestructCast;
+  try discriminate;
+  erewrite ? INT, ? BOOL; eauto.
+Qed.
+
+Corollary sem_cast_already_typed_idem: forall v t1 t2 m v',
+  sem_cast v t1 t2 m = Some v' -> wt_val v t2 -> v' = v.
+Proof.
+  intros. destruct (sem_cast_already_typed v t1 t2 m H0); congruence.
+Qed.

@@ -605,16 +605,16 @@ module Target(System: SYSTEM): TARGET =
     | Pcfi_adjust sz ->
         cfi_adjust oc (camlint_of_coqint sz)
     | Pcfi_rel_offset ofs ->
-        cfi_rel_offset oc "lr" (camlint_of_coqint ofs)
+        cfi_rel_offset oc "x30" (camlint_of_coqint ofs)
     | Pbuiltin(ef, args, res) ->
         begin match ef with
           | EF_annot(kind,txt, targs) ->
             begin match (P.to_int kind) with
-              | 1 -> let annot = annot_text preg_annot "sp" (camlstring_of_coqstring txt) args  in
+              | 1 -> let annot = annot_text preg_annot "sp" txt args  in
                 fprintf oc "%s annotation: %S\n" comment annot
               | 2 -> let lbl = new_label () in
                 fprintf oc "%a:\n" label lbl;
-                add_ais_annot lbl preg_annot "sp" (camlstring_of_coqstring txt) args
+                add_ais_annot lbl preg_annot "sp" txt args
               | _ -> assert false
             end
          | EF_debug(kind, txt, targs) ->
@@ -622,7 +622,7 @@ module Target(System: SYSTEM): TARGET =
                               (P.to_int kind) (extern_atom txt) args
          | EF_inline_asm(txt, sg, clob) ->
              fprintf oc "%s begin inline assembly\n\t" comment;
-             print_inline_asm preg_asm oc (camlstring_of_coqstring txt) sg args res;
+             print_inline_asm preg_asm oc txt sg args res;
              fprintf oc "%s end inline assembly\n" comment
          | _ ->
              assert false
@@ -673,9 +673,6 @@ module Target(System: SYSTEM): TARGET =
       end
 
     let default_falignment = 4
-
-    let cfi_startproc oc = ()
-    let cfi_endproc oc = ()
 
   end
 

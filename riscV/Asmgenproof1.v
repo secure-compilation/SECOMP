@@ -1058,7 +1058,7 @@ Opaque Int.eq.
   split; intros; Simpl. 
 - (* addrsymbol *)
   destruct (Genv.allowed_addrof_b ge (comp_of fn) id) eqn:EQ'; try discriminate. inv EV.
-  destruct (Archi.pic_code tt && negb (Ptrofs.eq ofs Ptrofs.zero)).
+  destruct (SelectOp.symbol_is_relocatable id && negb (Ptrofs.eq ofs Ptrofs.zero)).
 + set (rs1 := nextinstr (rs#x <- (Genv.symbol_address ge id Ptrofs.zero))).
   exploit (addptrofs_correct x x ofs k rs1 m); eauto with asmgen. 
   intros (rs2 & A & B & C).
@@ -1157,6 +1157,19 @@ Opaque Int.eq.
 - (* cond *)
   exploit transl_cond_op_correct; eauto. intros (rs' & A & B & C).
   exists rs'; split. eexact A. eauto with asmgen.
+- (* sel *)
+  destruct (ireg_eq x0 x1).
+  + inv EQ3. econstructor; split; [|split].
+    * apply exec_straight_one; simpl; auto.
+    * Simpl. destruct eval_condition as [[]|]; simpl; auto using Val.lessdef_normalize.
+    * intros; Simpl.
+  + exploit transl_cond_op_correct; eauto. intros (rs1 & A & B & C).
+    econstructor; split; [|split].
+    * eapply exec_straight_trans. eexact A. apply exec_straight_one; simpl; eauto.
+    * Simpl. rewrite (C x0), (C x1); eauto with asmgen.
+      destruct eval_condition as [b|]; simpl in *; auto.
+      destruct b; inv B; apply Val.lessdef_normalize.
+    * intros; Simpl.
 Qed.
 
 (** Memory accesses *)
@@ -1488,19 +1501,15 @@ Lemma transl_store_correct:
   /\ forall r, r <> PC -> r <> X31 -> rs'#r = rs#r.
 Proof.
   intros until m'; intros TR EV STORE. 
-  assert (A: exists mk_instr chunk',
+  assert (A: exists mk_instr,
       transl_memory_access mk_instr addr args k = OK c
    /\ (forall base ofs rs,
-        exec_instr ge fn (mk_instr base ofs) rs m = exec_store ge chunk' rs m (preg_of src) base ofs)
-   /\ (forall base ofs, sig_call (mk_instr base ofs) = None /\ is_return (mk_instr base ofs) = false)
-   /\ Mem.storev chunk m a rs#(preg_of src) (comp_of fn) = Mem.storev chunk' m a rs#(preg_of src) (comp_of fn)).
+        exec_instr ge fn (mk_instr base ofs) rs m = exec_store ge chunk rs m (preg_of src) base ofs)
+   /\ (forall base ofs, sig_call (mk_instr base ofs) = None /\ is_return (mk_instr base ofs) = false)).
   { unfold transl_store in TR; destruct chunk; ArgsInv;
-    (econstructor; econstructor; split; [eassumption | (split; [| split]); [ intros; simpl; reflexivity | auto | auto]]).
-    destruct a; auto. apply Mem.store_signed_unsigned_8. 
-    destruct a; auto. apply Mem.store_signed_unsigned_16. 
+    (econstructor; split; [eassumption | split; [ intros; simpl; reflexivity | auto]]).
   }
-  destruct A as (mk_instr & chunk' & B & C & D & E).
-  rewrite E in STORE; clear E.
+  destruct A as (mk_instr & B & C & D).
   eapply transl_store_access_correct; eauto with asmgen.
 Qed.
 
@@ -1521,7 +1530,8 @@ Lemma make_epilogue_correct:
   /\ Mem.extends m' tm'
   /\ rs'#RA = dummy_parent_ra cs
   /\ rs'#SP = dummy_parent_sp cs
-  /\ (forall r, r <> PC -> r <> RA -> r <> SP -> r <> X31 -> rs'#r = rs#r).
+  /\ (forall r, r <> PC -> r <> RA -> r <> SP -> r <> X31 -> rs'#r = rs#r)
+  /\ Mem.free tm stk 0 f.(fn_stacksize) (comp_of f) = Some tm'.
 Proof.
   intros until tm; intros LP LRA FREE AG MEXT MCS COMP.
   exploit Mem.loadv_extends. eauto. eexact LP. auto. simpl. intros (parent' & LP' & LDP').
@@ -1529,8 +1539,8 @@ Proof.
   exploit lessdef_parent_sp; eauto. intros EQ; subst parent'; clear LDP'.
   exploit lessdef_parent_ra; eauto. intros EQ; subst ra'; clear LDRA'.
   exploit Mem.free_parallel_extends; eauto. intros (tm' & FREE' & MEXT').
-  unfold make_epilogue. 
-  rewrite chunk_of_Tptr in *. 
+  unfold make_epilogue.
+  rewrite chunk_of_Tptr in *.
   exploit (loadind_ptr_correct SP (fn_retaddr_ofs f) RA (Pfreeframe (fn_stacksize f) (fn_link_ofs f) :: k) rs tm).
     rewrite <- (sp_val _ _ _ AG). simpl. rewrite <- COMP. eexact LRA'. congruence.
   intros (rs1 & A1 & B1 & C1).
@@ -1538,14 +1548,15 @@ Proof.
   eapply exec_straight_trans. eexact A1. eapply exec_straight_one. simpl.
     rewrite (C1 X2) by auto with asmgen. rewrite <- (sp_val _ _ _ AG). simpl; rewrite <- COMP, LP'.
     rewrite FREE'. eauto. auto. auto. auto.
-  split. apply agree_nextinstr. apply agree_set_other; auto with asmgen. 
+  split. apply agree_nextinstr. apply agree_set_other; auto with asmgen.
     apply agree_change_sp with (Vptr stk soff).
     apply agree_exten with rs; auto. intros; apply C1; auto with asmgen.
     eapply parent_sp_def; eauto.
   split. auto.
-  split. Simpl. 
-  split. Simpl. 
-  intros. Simpl. 
+  split. Simpl.
+  split. Simpl.
+  split. intros. Simpl.
+  auto.
 Qed.
 
 End CONSTRUCTORS.

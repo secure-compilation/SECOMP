@@ -30,6 +30,16 @@ Require Import Ctypes.
 Require Import Cop.
 Require Import Clight.
 
+Section CLIGHT.
+
+(** As in the case of the small-step semantics, there are two big-step
+    semantics for Clight, depending on whether function parameters are treated
+    like variables (Clight1) or like temporaries (Clight2).
+    We abstract over both parameter semantics using the same [function_entry]
+    predicate as in the small-step semantics. *)
+
+Variable function_entry: genv -> function -> list val -> mem -> env -> temp_env -> mem -> Prop.
+
 Section BIGSTEP.
 
 Variable cp_main: compartment.
@@ -92,20 +102,28 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       eval_expr ge e c le m a v ->
       exec_stmt e c le m (Sset id a)
                E0 (PTree.set id v le) m Out_normal
-  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres t' t'',
+  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m_call m' vres m_ret t' t'',
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr ge e c le m a vf ->
       eval_exprlist ge e c le m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
-      eval_funcall c m fd vargs t m' vres ->
+      forall (SET_PERM_CALL:
+        if cp_eq_dec c (comp_of fd) then m_call = m
+        else if cp_eq_dec (comp_of fd) bottom then m_call = m
+        else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m_call),
+      eval_funcall c m_call fd vargs t m' vres ->
+      forall (SET_PERM_RET:
+        if cp_eq_dec c (comp_of fd) then m_ret = m'
+        else if cp_eq_dec (comp_of fd) bottom then m_ret = m'
+        else Mem.set_perm_list m' (blocks_of_env ge e) Freeable = Some m_ret),
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR_CALL: Genv.type_of_call c (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       forall (NO_CROSS_PTR_RETURN: Genv.type_of_call c (comp_of fd) = Genv.CrossCompartmentCall -> not_ptr vres),
-      forall (EV: call_trace ge c (comp_of fd) vf vargs (typlist_of_typelist tyargs) t'),
+      forall (EV: call_trace ge c (comp_of fd) vf vargs (List.map typ_of_type tyargs) t'),
       forall (EV': return_trace ge c (comp_of fd) vres (rettype_of_type tyres) t''),
       exec_stmt e c le m (Scall optid a al)
-                (t' ** t ** t'') (set_opttemp optid vres le) m' Out_normal
+                (t' ** t ** t'') (set_opttemp optid vres le) m_ret Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e c le m al tyargs vargs ->
       external_call ef ge c vargs m t vres m' ->
@@ -196,16 +214,20 @@ Combined Scheme exec_stmt_funcall_ind from exec_stmt_ind2, eval_funcall_ind2.
   trace of observable events performed during the execution. *)
 
 CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> traceinf -> Prop :=
-  | execinf_Scall:   forall e le m optid a al vf tyargs tyres cconv vargs c f t t',
+  | execinf_Scall:   forall e le m optid a al vf tyargs tyres cconv vargs c f t t' m_call,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr ge e c le m a vf ->
       eval_exprlist ge e c le m al tyargs vargs ->
       Genv.find_funct ge vf = Some f ->
       type_of_fundef f = Tfunction tyargs tyres cconv ->
-      evalinf_funcall m f vargs t ->
+      forall (SET_PERM_CALL:
+        if cp_eq_dec c (comp_of f) then m_call = m
+        else if cp_eq_dec (comp_of f) bottom then m_call = m
+        else Mem.set_perm_list m (blocks_of_env ge e) Readable = Some m_call),
+      evalinf_funcall m_call f vargs t ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR: Genv.type_of_call c (comp_of f) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge c (comp_of f) vf vargs (typlist_of_typelist tyargs) t'),
+      forall (EV: call_trace ge c (comp_of f) vf vargs (List.map typ_of_type tyargs) t'),
       execinf_stmt e c le m (Scall optid a al) (t' *** t)
   | execinf_Sseq_1:   forall e c le m s1 s2 t,
       execinf_stmt e c le m s1 t ->
@@ -260,7 +282,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
-      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      type_of_fundef (Internal f) = Tfunction nil type_int32s cc_default ->
       eval_funcall ge (comp_of_main p) m0 (Internal f) nil t m1 (Vint r) ->
       bigstep_program_terminates p t r.
 
@@ -270,7 +292,7 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
-      type_of_fundef (Internal f) = Tfunction Tnil type_int32s cc_default ->
+      type_of_fundef (Internal f) = Tfunction nil type_int32s cc_default ->
       evalinf_funcall ge m0 (Internal f) nil t ->
       bigstep_program_diverges p t.
 
@@ -340,9 +362,7 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  eapply star_right. eapply H5; eauto. simpl; auto. econstructor.
-  (* TODO: Move lemma to Globalenvs.v and also find other usages of the same lemma *)
-  assumption. eauto.
+  eapply star_right. eapply H5; eauto. simpl; auto. econstructor; eauto.
   reflexivity. traceEq.
   constructor.
 
@@ -615,3 +635,43 @@ Proof.
 Qed.
 
 End BIGSTEP_TO_TRANSITIONS.
+
+End CLIGHT.
+
+(** ** Specialized definitions for Clight1 and Clight2 *)
+
+(** Clight1: function parameters are variables. *)
+
+Module Clight1.
+
+(* In SECOMP, function_entry is no longer used by exec_stmt/eval_funcall
+   since they inline alloc_variables/bind_parameters directly. *)
+Definition exec_stmt := exec_stmt.
+Definition eval_funcall := eval_funcall.
+Definition bigstep_program_terminates := bigstep_program_terminates.
+Definition execinf_stmt := execinf_stmt.
+Definition evalinf_funcall := evalinf_funcall.
+Definition bigstep_program_diverges := bigstep_program_diverges.
+Definition bigstep_semantics := bigstep_semantics.
+Theorem bigstep_semantics_sound: forall prog,
+  bigstep_sound (bigstep_semantics prog) (Clight.semantics1 prog).
+Proof (bigstep_semantics_sound).
+
+End Clight1.
+
+(** Clight2: function parameters are temporaries. *)
+
+Module Clight2.
+
+Definition exec_stmt := exec_stmt.
+Definition eval_funcall := eval_funcall.
+Definition bigstep_program_terminates := bigstep_program_terminates.
+Definition execinf_stmt := execinf_stmt.
+Definition evalinf_funcall := evalinf_funcall.
+Definition bigstep_program_diverges := bigstep_program_diverges.
+Definition bigstep_semantics := bigstep_semantics.
+Theorem bigstep_semantics_sound: forall prog,
+  bigstep_sound (bigstep_semantics prog) (Clight.semantics1 prog).
+Proof (bigstep_semantics_sound).
+
+End Clight2.

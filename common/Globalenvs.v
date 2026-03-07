@@ -34,8 +34,7 @@
   place during program linking and program loading in a real operating
   system. *)
 
-Require Import Recdef.
-Require Import Zwf.
+From Coq Require Import Recdef Zwf.
 Require Import Axioms Coqlib Errors Maps AST Linking.
 Require Import Integers Floats Values Memory.
 
@@ -1305,7 +1304,7 @@ Definition read_as_zero (m: mem) (b: block) (ofs len: Z) (cp: compartment) : Pro
   (align_chunk chunk | p) ->
   Mem.load chunk m b p cp =
   Some (match chunk with
-        | Mint8unsigned | Mint8signed | Mint16unsigned | Mint16signed | Mint32 => Vint Int.zero
+        | Mbool | Mint8unsigned | Mint8signed | Mint16unsigned | Mint16signed | Mint32 => Vint Int.zero
         | Mint64 => Vlong Int64.zero
         | Mfloat32 => Vsingle Float32.zero
         | Mfloat64 => Vfloat Float.zero
@@ -1616,14 +1615,6 @@ Proof.
     + rewrite PTree.gso; trivial. apply INV.
 Qed.
 
-Lemma find_def_init_mem:
-  forall p m b,
-  init_mem p = Some m ->
-  Mem.valid_block m b ->
-  exists g, find_def (globalenv p) b = Some g /\ comp_of g = Mem.block_compartment m b.
-Proof.
-  Admitted.
-
 Lemma init_mem_genv_next: forall p m,
   init_mem p = Some m ->
   genv_next (globalenv p) = Mem.nextblock m.
@@ -1633,6 +1624,29 @@ Proof.
   generalize (genv_next_add_globals (prog_defs p)
                 (@empty_genv (prog_public p) (prog_pol p) (prog_pol_pub p))).
   fold (globalenv p). simpl genv_next. intros. congruence.
+Qed.
+
+Lemma find_def_init_mem:
+  forall p m b,
+  init_mem p = Some m ->
+  Mem.valid_block m b ->
+  exists g, find_def (globalenv p) b = Some g /\ comp_of g = Mem.block_compartment m b.
+Proof.
+  intros p m b INIT VALID.
+  assert (PLT: Plt b (genv_next (globalenv p))).
+  { erewrite init_mem_genv_next; eauto. }
+  assert (exists g, find_def (globalenv p) b = Some g) as [g Hg].
+  { unfold find_def. revert PLT. unfold globalenv.
+    apply (add_globals_preserves
+      (fun ge => Plt b (genv_next ge) -> exists g, (genv_defs ge) ! b = Some g)).
+    - intros ge id g0 IH _ LT. simpl in LT.
+      apply Plt_succ_inv in LT as [LT | ->].
+      + destruct (IH LT) as [g' Hg']. exists g'.
+        simpl. rewrite PTree.gso; auto. apply Plt_ne; auto.
+      + exists g0. simpl. apply PTree.gss.
+    - intros LT. simpl in LT. exfalso. unfold Plt in LT; lia. }
+  exists g. split. exact Hg.
+  symmetry. eapply init_mem_find_def; eauto.
 Qed.
 
 Theorem find_symbol_not_fresh:

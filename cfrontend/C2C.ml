@@ -35,6 +35,7 @@ type inline_status =
 
 type atom_info =
   { a_storage: C.storage;              (* storage class *)
+    a_defined: bool;                   (* defined in the current comp. unit? *)
     a_size: int64 option;              (* size in bytes *)
     a_alignment: int option;           (* alignment *)
     a_sections: Sections.section_name list; (* in which section to put it *)
@@ -52,10 +53,30 @@ let atom_is_static a =
   with Not_found ->
     false
 
-let atom_is_extern a =
-  try
-    (Hashtbl.find decl_atom a).a_storage = C.Storage_extern
-  with Not_found ->
+(* Is it possible for symbol [a] to be defined in a DLL?
+   Yes, unless [a] is defined in the current compilation unit, or is static.
+   (This criterion is appropriate for macOS and for Cygwin; for ELF,
+    see [atom_needs_GOT_access] below.)  *)
+let atom_is_external a =
+  match Hashtbl.find decl_atom a with
+  | { a_defined = true } -> false
+  | { a_storage = C.Storage_static } -> false
+  | { a_storage = C.Storage_default; a_size = Some _ } -> !Clflags.option_fcommon
+  | _ -> true
+  | exception Not_found -> true
+
+(* In ELF PIC code, all non-static symbols must be accessed through
+   the GOT, even if they are defined in the current compilation unit.
+   (This is to allow symbol interposition by the dynamic loader.)
+   In ELF PIE code, there is no interposition, so locally-defined
+   symbols do not need GOT access.
+   In non-PIC, non-PIE mode, the GOT is unused. *)
+let atom_needs_GOT_access a =
+  if !Clflags.option_fpic then
+    not (atom_is_static a)
+  else if !Clflags.option_fpie then
+    atom_is_external a
+  else
     false
 
 let atom_alignof a =
@@ -150,7 +171,7 @@ let warning t msg =
 
 let string_of_errmsg msg =
   let string_of_err = function
-  | Errors.MSG s -> camlstring_of_coqstring s
+  | Errors.MSG s -> s
   | Errors.CTX i -> extern_atom i
   | Errors.POS i -> Z.to_string (Z.Zpos i)
   in String.concat "" (List.map string_of_err msg)
@@ -312,9 +333,8 @@ let make_builtin_memcpy cp args =
       if not (Z.eq (Z.modulo sz1 al1) Z.zero) then
         error "alignment argument of '__builtin_memcpy_aligned' must be a divisor of the size";
       (* Issue #28: must decay array types to pointer types *)
-      Ebuiltin( AST.EF_memcpy( sz1, al1),
-               Tcons(typeconv(typeof dst),
-                     Tcons(typeconv(typeof src), Tnil)),
+      Ebuiltin(AST.EF_memcpy(sz1, al1),
+               [typeconv(typeof dst); typeconv(typeof src)],
                Econs(dst, Econs(src, Enil)), Tvoid)
   | _ ->
     assert false
@@ -329,7 +349,7 @@ let va_list_ptr e =
 
 let make_builtin_va_arg_by_val helper ty ty_ret arg =
   let ty_fun =
-    Tfunction(Tcons(Tpointer(Tvoid, noattr), Tnil), ty_ret,  AST.cc_default) in
+    Tfunction([Tpointer(Tvoid, noattr)], ty_ret,  AST.cc_default) in
   Ecast
     (Ecall(Evalof(Evar(intern_string helper, ty_fun), ty_fun),
            Econs(va_list_ptr arg, Enil),
@@ -338,7 +358,7 @@ let make_builtin_va_arg_by_val helper ty ty_ret arg =
 
 let make_builtin_va_arg_by_ref helper ty arg =
   let ty_fun =
-    Tfunction(Tcons(Tpointer(Tvoid, noattr), Tcons(Ctyping.size_t, Tnil)),
+    Tfunction([Tpointer(Tvoid, noattr); Ctyping.size_t],
               Tpointer(Tvoid, noattr),  AST.cc_default) in
   let ty_ptr =
     Tpointer(ty, noattr) in
@@ -423,6 +443,9 @@ let convertIkind k a : coq_type =
 
 let convertFkind k a : coq_type =
   match k with
+  | C.FFloat16 ->
+      unsupported "'_Float16' type";
+      Tfloat (F32, a)
   | C.FFloat -> Tfloat (F32, a)
   | C.FDouble -> Tfloat (F64, a)
   | C.FLongDouble ->
@@ -465,13 +488,13 @@ let rec convertTyp env ?bitwidth t =
   | C.TFun(tres, targs, va, a) ->
       checkFunctionType env tres targs;
       Tfunction(begin match targs with
-                | None -> Tnil
+                | None -> []
                 | Some tl -> convertParams env tl
                 end,
                 convertTyp env tres,
                 convertCallconv tres targs va a)
   | C.TNamed _ ->
-      convertTyp env (Cutil.unroll env t)
+      convertTyp env ?bitwidth (Cutil.unroll env t)
   | C.TStruct(id, a) ->
       Ctypes.Tstruct(intern_string id.name, convertAttr a)
   | C.TUnion(id, a) ->
@@ -494,8 +517,8 @@ let rec convertTyp env ?bitwidth t =
       convertIkind ik (convertAttr a)
 
 and convertParams env = function
-    | [] -> Tnil
-    | (id, ty) :: rem -> Tcons(convertTyp env ty, convertParams env rem)
+    | [] -> []
+    | (id, ty) :: rem -> convertTyp env ty :: convertParams env rem
 
 (* Convert types for the arguments to a function call.  The types for
    fixed arguments are taken from the function prototype.  The types
@@ -505,12 +528,12 @@ and convertParams env = function
 
 let rec convertTypArgs env tl el =
   match tl, el with
-  | _, [] -> Tnil
+  | _, [] -> []
   | [], e1 :: el ->
-      Tcons(convertTyp env (Cutil.default_argument_conversion env e1.etyp),
-            convertTypArgs env [] el)
+      convertTyp env (Cutil.default_argument_conversion env e1.etyp) ::
+      convertTypArgs env [] el
   | (id, t1) :: tl, e1 :: el ->
-      Tcons(convertTyp env t1, convertTypArgs env tl el)
+      convertTyp env t1 :: convertTypArgs env tl el
 
 (* Convert types for the arguments to inline asm statements and to
    the special built-in functions __builtin_annot, __builtin_ais_annot_
@@ -521,10 +544,10 @@ let rec convertTypArgs env tl el =
    and avoid inserting compiled code to convert the arguments. *)
 
 let rec convertTypAnnotArgs env = function
-  | [] -> Tnil
+  | [] -> []
   | e1 :: el ->
-      Tcons(convertTyp env (Cutil.unary_conversion env e1.etyp),
-            convertTypAnnotArgs env el)
+      convertTyp env (Cutil.unary_conversion env e1.etyp) ::
+      convertTypAnnotArgs env el
 
 let convertField env sid f =
   let id = intern_string f.fld_name
@@ -587,6 +610,7 @@ let name_for_string_literal s =
     let mergeable = if is_C_string s then 1 else 0 in
     Hashtbl.add decl_atom id
       { a_storage = C.Storage_static;
+        a_defined = true;
         a_alignment = Some 1;
         a_size = Some (Int64.of_int (String.length s + 1));
         a_sections = [Sections.for_stringlit mergeable];
@@ -624,6 +648,7 @@ let name_for_wide_string_literal s ik =
     let mergeable = if is_C_wide_string s then wchar_size else 0 in
     Hashtbl.add decl_atom id
       { a_storage = C.Storage_static;
+        a_defined = true;
         a_alignment = Some wchar_size;
         a_size = Some (Int64.(mul (of_int (List.length s + 1))
                                   (of_int wchar_size)));
@@ -700,6 +725,9 @@ let convertFloat f kind =
   match mant with
     | Z.Z0 ->
       begin match kind with
+      | FFloat16 ->
+          unsupported "'_Float16' type";
+	  Ctyping.econst_single (Float.to_single Float.zero)
       | FFloat ->
 	  Ctyping.econst_single (Float.to_single Float.zero)
       | FDouble | FLongDouble ->
@@ -717,6 +745,9 @@ let convertFloat f kind =
       let base = P.of_int (if f.C.hex then 2 else 10) in
 
       begin match kind with
+      | FFloat16 ->
+          unsupported "'_Float16' type";
+	  Ctyping.econst_single (Float.to_single Float.zero)
       | FFloat ->
 	  let f = Float32.from_parsed base mant exp in
           checkFloatOverflow f "float";
@@ -876,7 +907,7 @@ let rec convertExpr cp env e =
       let targs2 = convertTypAnnotArgs env args2 in
       Ebuiltin(
          AST.EF_debug(P.of_int64 kind, intern_string text,
-                 typlist_of_typelist targs2),
+                 List.map typ_of_type targs2),
         targs2, convertExprList cp env args2, convertTyp env e.etyp)
 
   | C.ECall({edesc = C.EVar {name = "__builtin_annot"}}, args) ->
@@ -884,7 +915,7 @@ let rec convertExpr cp env e =
       | {edesc = C.EConst(CStr txt)} :: args1 ->
           let targs1 = convertTypAnnotArgs env args1 in
           Ebuiltin(
-             AST.EF_annot(P.of_int 1,coqstring_of_camlstring txt, typlist_of_typelist targs1),
+             AST.EF_annot(P.of_int 1, txt, List.map typ_of_type targs1),
             targs1, convertExprList cp env args1, convertTyp env e.etyp)
       | _ ->
           error "argument 1 of '__builtin_annot' must be a string literal";
@@ -896,8 +927,8 @@ let rec convertExpr cp env e =
       | [ {edesc = C.EConst(CStr txt)}; arg ] ->
           let targ = convertTyp env
                          (Cutil.default_argument_conversion env arg.etyp) in
-          Ebuiltin(AST.EF_annot_val(P.of_int 1,coqstring_of_camlstring txt, typ_of_type targ),
-                   Tcons(targ, Tnil), convertExprList cp env [arg],
+          Ebuiltin(AST.EF_annot_val(P.of_int 1, txt, typ_of_type targ),
+                   [targ], convertExprList cp env [arg],
                    convertTyp env e.etyp)
       | _ ->
           error "argument 1 of '__builtin_annot_intval' must be a string literal";
@@ -913,7 +944,7 @@ let rec convertExpr cp env e =
         let targs1 = convertTypAnnotArgs env args1 in
         AisAnnot.validate_ais_annot env !currentLocation txt args1;
           Ebuiltin(
-             AST.EF_annot(P.of_int 2,coqstring_of_camlstring (loc_string ^ txt), typlist_of_typelist targs1),
+             AST.EF_annot(P.of_int 2, loc_string ^ txt, List.map typ_of_type targs1),
             targs1, convertExprList cp env args1, convertTyp env e.etyp)
       | _ ->
           error "argument 1 of '__builtin_ais_annot' must be a string literal";
@@ -934,15 +965,14 @@ let rec convertExpr cp env e =
   | C.ECall({edesc = C.EVar {name = "__builtin_va_arg"}}, [arg1; arg2]) ->
       make_builtin_va_arg env (convertTyp env e.etyp) (convertExpr cp env arg1)
 
-  | C.ECall({edesc = C.EVar {name = "__builtin_va_end"}}, _) ->
-      Ecast (ezero, Tvoid)
+  | C.ECall({edesc = C.EVar {name = "__builtin_va_end"}}, [arg]) ->
+      Ecast (convertExpr cp env arg, Tvoid)
 
   | C.ECall({edesc = C.EVar {name = "__builtin_va_copy"}}, [arg1; arg2]) ->
       let dst = convertExpr cp env arg1 in
       let src = convertExpr cp env arg2 in
-      Ebuiltin( AST.EF_memcpy(Z.of_uint CBuiltins.size_va_list, Z.of_uint 4),
-               Tcons(Tpointer(Tvoid, noattr),
-                 Tcons(Tpointer(Tvoid, noattr), Tnil)),
+      Ebuiltin(AST.EF_memcpy(Z.of_uint CBuiltins.size_va_list, Z.of_uint 4),
+               [Tpointer(Tvoid, noattr); Tpointer(Tvoid, noattr)],
                Econs(va_list_ptr dst, Econs(va_list_ptr src, Enil)),
                Tvoid)
 
@@ -960,7 +990,7 @@ let rec convertExpr cp env e =
       let sg =
         signature_of_type targs tres
            { AST.cc_vararg = Some (coqint_of_camlint 1l); cc_unproto = false; cc_structret = false} in
-      Ebuiltin( AST.EF_external(coqstring_of_camlstring "printf", sg), (* NOTE old: privileged_compartment *)
+      Ebuiltin(AST.EF_external("printf", sg), (* NOTE old: privileged_compartment *)
                targs, convertExprList cp env args, tres)
 
   | C.ECall({edesc = C.EVar {name = "fgets"}}, [arg1; arg2; arg3])
@@ -969,7 +999,7 @@ let rec convertExpr cp env e =
       let targs = convertTypArgs env [] [arg1; arg2]
       and tres = convertTyp env e.etyp in
       let sg = signature_of_type targs tres AST.cc_default in
-      Ebuiltin( AST.EF_external(coqstring_of_camlstring "fgets", sg),
+      Ebuiltin(AST.EF_external("fgets", sg),
                targs, convertExprList cp env [arg1;arg2], tres)
 
   | C.ECall(fn, args) ->
@@ -1023,14 +1053,14 @@ let convertAsm cp loc env txt outputs inputs clobber =
   let (txt', output', inputs') =
     ExtendedAsm.transf_asm loc env txt outputs inputs clobber in
   let clobber' =
-    List.map (fun s -> coqstring_uppercase_ascii_of_camlstring s) clobber in
+    List.map String.uppercase_ascii clobber in
   let ty_res =
     match output' with None -> TVoid [] | Some e -> e.etyp in
   (* Build the Ebuiltin expression *)
   let e =
     let tinputs = convertTypAnnotArgs env inputs' in
     let toutput = convertTyp env ty_res in
-    Ebuiltin( AST.EF_inline_asm(coqstring_of_camlstring txt',
+    Ebuiltin(AST.EF_inline_asm(txt',
                            signature_of_type tinputs toutput  AST.cc_default,
                            clobber'),
              tinputs,
@@ -1164,6 +1194,7 @@ let convertFundef loc env fd =
   Debug.atom_global fd.fd_name id';
   Hashtbl.add decl_atom id'
     { a_storage = fd.fd_storage;
+      a_defined = true;
       a_alignment = None;
       a_size = None;
       a_sections = Sections.for_function env loc id' fd.fd_attrib;
@@ -1189,7 +1220,6 @@ let convertFundecl env (sto, id, ty, optinit, comp) =
     | Tfunction(args, res, cconv) -> (args, res, cconv)
     | _ -> assert false in
   let id' = intern_string id.name in
-  let id'' = coqstring_of_camlstring id.name in
   let sg = signature_of_type args res cconv in
   (* TODO: should we check that the [comp] we have is indeed the compartment of the predefined *)
   (* functions such as [EF_malloc] or [EF_free]? *)
@@ -1198,8 +1228,8 @@ let convertFundecl env (sto, id, ty, optinit, comp) =
     if id.name = "free" then AST.EF_free else
     if Str.string_match re_builtin id.name 0
     && List.mem_assoc id.name builtins.builtin_functions
-    then AST.EF_builtin(id'', sg)
-    else AST.EF_external(id'', sg) in
+    then AST.EF_builtin(id.name, sg)
+    else AST.EF_external(id.name, sg) in
   (id',  AST.Gfun(Ctypes.External(ef, args, res, cconv)))
 
 (** Initializers *)
@@ -1259,6 +1289,7 @@ let convertGlobvar loc env (sto, id, ty, optinit, comp) =
     error "'%s' has incomplete type" id.name;
   Hashtbl.add decl_atom id'
     { a_storage = sto;
+      a_defined = optinit <> None;
       a_alignment = Some (Z.to_int al);
       a_size = Some (Z.to_int64 sz);
       a_sections = [section];
@@ -1383,11 +1414,8 @@ let helper_functions () = [
 ]
 
 let helper_function_declaration cp (name, tyres, tyargs) =
-  let tyargs =
-    List.fold_right (fun t tl -> Tcons(t, tl)) tyargs Tnil in
   let ef =
-    (* AST.EF_runtime(cp, coqstring_of_camlstring name, *)
-    AST.EF_runtime((coqstring_of_camlstring name),
+    AST.EF_runtime(name,
                    signature_of_type tyargs tyres AST.cc_default) in
   (intern_string name,
    AST.Gfun (Ctypes.External(ef, tyargs, tyres, AST.cc_default)))
@@ -1506,7 +1534,7 @@ let build_policy (gl: (AST.ident * ('f Ctypes.fundef, Ctypes.coq_type) AST.globd
       (id, AST.comp_of (AST.comp_of (AST.has_comp_globdef (Ctypes.has_comp_fundef Csyntax.has_comp_function))) gd)) gl);
       policy_export = exports'';
       policy_import = imports'';
-      policy_syscalls = of_list' (List.map (function ImportSyscall(id, sys_name) -> (Comp (intern_string id.name), coqstring_of_camlstring sys_name))
+      policy_syscalls = of_list' (List.map (function ImportSyscall(id, sys_name) -> (Comp (intern_string id.name), sys_name))
           syscall_imports)
     } in
   p

@@ -98,16 +98,17 @@ Ltac SimplVM :=
   end.
 
 Lemma const_for_result_correct:
-  forall cp a op v,
+  forall a op v,
   const_for_result a = Some op ->
   vmatch bc v a ->
-  exists v', eval_operation ge cp (Vptr sp Ptrofs.zero) op nil m = Some v' /\ Val.lessdef v v'.
+  exists v', eval_operation ge (Vptr sp Ptrofs.zero) op nil m = Some v' /\ Val.lessdef v v'.
 Proof.
   unfold const_for_result; intros.
   destruct a; inv H; SimplVM.
 - (* integer *)
   exists (Vint n); auto.
-- admit.
+- (* integer or undef *)
+  exists (Vint n); split; auto. inv H0; auto.
 - (* float *)
   destruct (generate_float_constants tt); inv H2. exists (Vfloat f); auto.
 - (* single *)

@@ -153,7 +153,8 @@ Inductive operation : Type :=
   | Osingleoflong            (**r [rd = float32_of_signed_long(r1)] *)
   | Osingleoflongu           (**r [rd = float32_of_unsigned_int(r1)] *)
 (*c Boolean tests: *)
-  | Ocmp (cond: condition).  (**r [rd = 1] if condition holds, [rd = 0] otherwise. *)
+  | Ocmp (cond: condition)   (**r [rd = 1] if condition holds, [rd = 0] otherwise. *)
+  | Osel (cond: condition) (ty: typ).
 
 (** Addressing modes.  [r1], [r2], etc, are the arguments to the
   addressing. *)
@@ -180,7 +181,7 @@ Defined.
 
 Definition eq_operation: forall (x y: operation), {x=y} + {x<>y}.
 Proof.
-  generalize Int.eq_dec Int64.eq_dec Ptrofs.eq_dec Float.eq_dec Float32.eq_dec ident_eq eq_condition; intros.
+  generalize Int.eq_dec Int64.eq_dec Ptrofs.eq_dec Float.eq_dec Float32.eq_dec ident_eq eq_condition typ_eq; intros.
   decide equality.
 Defined.
 
@@ -321,6 +322,7 @@ Definition eval_operation
   | Osingleoflong, v1::nil => Val.singleoflong v1
   | Osingleoflongu, v1::nil => Val.singleoflongu v1
   | Ocmp c, _ => Some (Val.of_optbool (eval_condition c vl m a oc))
+  | Osel c ty, v1::v2::vl => Some (Val.select (eval_condition c vl m a oc) v1 v2 (captyp_of_typ ty))
   | _, _ => None
   end.
 
@@ -477,6 +479,7 @@ Definition type_of_operation (op: operation) : list typ * typ :=
   | Osingleoflong => (Tlong :: nil, Tsingle)
   | Osingleoflongu => (Tlong :: nil, Tsingle)
   | Ocmp c => (type_of_condition c, Tint)
+  | Osel c ty => (ty :: ty :: type_of_condition c, ty)
   end.
 
 Definition type_of_addressing (addr: addressing) : list typ :=

@@ -37,6 +37,8 @@ Let tge := Genv.globalenv tprog.
 Let cp_main := Mach.comp_of_main prog.
 Let cp_main' := comp_of_main tprog.
 
+Hypothesis INTERNAL_NOT_BOTTOM:
+  forall b f, Genv.find_funct_ptr ge b = Some (Internal f) -> comp_of f <> bottom.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -331,7 +333,7 @@ Opaque Int.eq.
 - destruct (preg_of r); try discriminate; destruct (preg_of m); inv H; TailNoLabel.
 - destruct (Float.eq_dec n Float.zero); TailNoLabel.
 - destruct (Float32.eq_dec n Float32.zero); TailNoLabel.
-- destruct (Archi.pic_code tt && negb (Ptrofs.eq ofs Ptrofs.zero)).
+- destruct (SelectOp.symbol_is_relocatable id && negb (Ptrofs.eq ofs Ptrofs.zero)).
 + eapply tail_nolabel_trans; [|apply addptrofs_label]. TailNoLabel.
 + TailNoLabel. 
 - apply opimm32_label; intros; exact I.
@@ -345,6 +347,7 @@ Opaque Int.eq.
 - apply opimm64_label; intros; exact I.
 - destruct (Int.eq n Int.zero); TailNoLabel.
 - eapply transl_cond_op_label; eauto.
+- eapply tail_nolabel_trans; eauto using transl_cond_op_label; TailNoLabel.
 Qed.
 
 Remark indexed_memory_access_label:
@@ -464,8 +467,8 @@ Lemma transl_find_label:
   end.
 Proof.
   intros. monadInv H. destruct (zlt Ptrofs.max_unsigned (list_length_z x.(fn_code))); inv EQ0.
-  monadInv EQ. rewrite transl_code'_transl_code in EQ0. unfold fn_code. 
-  simpl. destruct (storeind_ptr_label X1 X2 (fn_retaddr_ofs f) x) as [A B]; rewrite B. 
+  monadInv EQ. rewrite transl_code'_transl_code in EQ0. unfold fn_code.
+  simpl. erewrite tail_nolabel_find_label by (apply storeind_ptr_label). simpl.
   eapply transl_code_label; eauto.
 Qed.
 
@@ -511,7 +514,9 @@ Proof.
   destruct (zlt Ptrofs.max_unsigned (list_length_z x.(fn_code))); inv EQ0. monadInv EQ.
   rewrite transl_code'_transl_code in EQ0.
   exists x; exists true; split; auto. unfold fn_code.
-  constructor. apply (storeind_ptr_label X1 X2 (fn_retaddr_ofs f0) x).
+  constructor.  eapply is_tail_trans.
+  2: apply (storeind_ptr_label X1 X2 (fn_retaddr_ofs f0) (Pcfi_rel_offset (Ptrofs.to_int (fn_retaddr_ofs f0)) :: x)).
+  repeat constructor.
 - exact transf_function_no_overflow.
 Qed.
 
@@ -561,12 +566,111 @@ Qed.
 - Mach register values and Asm register values agree.
 *)
 
-Inductive match_stackframe: Mach.stackframe -> stackframe -> Prop :=
+Inductive match_stackframe (m: mem): Mach.stackframe -> stackframe -> Prop :=
 | match_sf: forall b ofs sg v c cp db1 db2,
-    match_stackframe
+  forall (NOPERM: forall ofs1 k p, ~ Mem.perm m db2 ofs1 k p),
+  forall (VB: Mem.valid_block m db2),
+  forall (NO_DEF_DB1: Genv.find_def ge db1 = None),
+    match_stackframe m
       (Mach.Stackframe b sg v ofs c (Some db1) (Some db2))
       (Stackframe b sg cp v ofs db1 db2)
 .
+
+Lemma noperm_noload: forall m b,
+    (forall ofs k p, ~ Mem.perm m b ofs k p) ->
+    forall ch ofs cp, Mem.load ch m b ofs cp = None.
+Proof.
+  intros m b NP ch ofs cp.
+  destruct (Mem.load ch m b ofs cp) eqn:LOAD; auto.
+  exfalso. apply Mem.load_valid_access in LOAD.
+  destruct LOAD as [RP _].
+  red in RP. specialize (RP ofs ltac:(pose proof (size_chunk_pos ch); lia)).
+  eapply NP; eauto.
+Qed.
+
+Lemma find_def_above_nextblock: forall b,
+    ~ Plt b (Genv.genv_next ge) ->
+    Genv.find_def ge b = None.
+Proof.
+  intros b ABOVE.
+  destruct (Genv.find_def ge b) eqn:FD; auto.
+  exfalso. apply ABOVE. eapply Genv.genv_defs_range; eauto.
+Qed.
+
+Ltac unfold_storev :=
+  match goal with
+  | [ H: Mem.storev _ _ ?a _ = Some _ |- _ ] =>
+    unfold Mem.storev in H; destruct a; try discriminate
+  end.
+
+Lemma ge_nb_store: forall m m' chunk b ofs v cp,
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  Mem.store chunk m b ofs v cp = Some m' ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof. intros. rewrite (Mem.nextblock_store _ _ _ _ _ _ _ H0). auto. Qed.
+
+Lemma ge_nb_storev: forall m m' chunk a v cp,
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  Mem.storev chunk m a v cp = Some m' ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof. unfold Mem.storev; intros. destruct a; try discriminate. eapply ge_nb_store; eauto. Qed.
+
+Lemma ge_nb_alloc: forall m m' cp lo hi b,
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  Mem.alloc m cp lo hi = (m', b) ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof.
+  intros. rewrite (Mem.nextblock_alloc _ _ _ _ _ _ H0).
+  eapply Ple_trans; eauto. apply Ple_succ.
+Qed.
+
+Lemma ge_nb_free: forall m m' b lo hi cp,
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  Mem.free m b lo hi cp = Some m' ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof. intros. rewrite (Mem.nextblock_free _ _ _ _ _ _ H0). auto. Qed.
+
+Lemma ge_nb_set_perm: forall m m' b p,
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  Mem.set_perm m b p = Some m' ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof.
+  unfold Mem.set_perm. intros. destruct (plt b (Mem.nextblock m)); try discriminate.
+  inv H0. simpl. auto.
+Qed.
+
+Lemma ge_nb_set_perm_list: forall m m' l p,
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  Mem.set_perm_list m l p = Some m' ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof. intros. rewrite (Mem.nextblock_set_perm_list _ _ _ _ H0). auto. Qed.
+
+Lemma ge_nb_extcall: forall ef cp vargs m t vres m',
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  external_call ef ge cp vargs m t vres m' ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof. intros. eapply Ple_trans; eauto. eapply external_call_nextblock; eauto. Qed.
+
+Lemma ge_nb_extends: forall m m',
+  Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+  Mem.extends m m' ->
+  Ple (Genv.genv_next ge) (Mem.nextblock m').
+Proof. intros. rewrite <- (Mem.mext_next _ _ H0). auto. Qed.
+
+Ltac solve_ge_nb :=
+  match goal with
+  | [ H: Ple (Genv.genv_next ge) (Mem.nextblock ?m)
+      |- Ple (Genv.genv_next ge) (Mem.nextblock ?m) ] => exact H
+  | _ => first
+    [ eapply ge_nb_storev; [| eassumption]; solve_ge_nb
+    | eapply ge_nb_store; [| eassumption]; solve_ge_nb
+    | eapply ge_nb_alloc; [| eassumption]; solve_ge_nb
+    | eapply ge_nb_free; [| eassumption]; solve_ge_nb
+    | eapply ge_nb_set_perm; [| eassumption]; solve_ge_nb
+    | eapply ge_nb_set_perm_list; [| eassumption]; solve_ge_nb
+    | eapply ge_nb_extcall; [| eassumption]; solve_ge_nb
+    ]
+  end.
 
 Definition val_of_stackframe (f: Mach.stackframe) :=
   match f with
@@ -582,36 +686,37 @@ Definition stack_wf (s: stack) :=
                               end
                  end) s.
 
-Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop :=
+Inductive match_stacks (m: mem): compartment -> list Mach.stackframe -> stack -> Prop :=
 | match_stacks_nil: forall cp,
-      match_stacks cp nil nil
+      match_stacks m cp nil nil
 | match_stacks_intra_compartment:
     (* Intra-compartment calls create a new frame in the source, but not the target *)
     forall cp cp' s s' f,
-    match_stacks cp s s' ->
+    match_stacks m cp s s' ->
     Mach.call_comp ge cp_main (f :: s) = cp -> (* meaning, we are staying in the same
                                                compartment *)
     forall (ISEMPTY: match f with
     | Mach.Stackframe _ _ _ _ _ dra dsp => dra = None /\ dsp = None
      end),
     cp' = cp ->
-    match_stacks cp' (f :: s) s'
+    match_stacks m cp' (f :: s) s'
 | match_stacks_cross_compartment:
     (* Cross-compartment calls create a new frame in both the source and the target *)
     forall cp cp' s s' f f',
-    match_stacks cp' s s' ->
+    match_stacks m cp' s s' ->
     Mach.call_comp ge cp_main (f :: s) = cp' ->
     call_comp tge (f' :: s') = cp' ->
     cp <> cp' ->
-    match_stackframe f f' ->
-    match_stacks cp (f :: s) (f' :: s')
+    cp <> bottom ->
+    match_stackframe m f f' ->
+    match_stacks m cp (f :: s) (f' :: s')
 .
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s s' fb sp c ep ms m m' rs f tf tc bsp osp
         (STACKS: match_stack ge m (Mach.fn_sig f) s)
-        (STACKS': match_stacks (comp_of f) s s')
+        (STACKS': match_stacks m' (comp_of f) s s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (TAIL: is_tail c (Mach.fn_code f))
@@ -621,7 +726,8 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (SP_OK: sp = Vptr bsp osp)
         (SP_VALID: Mem.valid_block m bsp)
         (COMP_SP: Mem.val_compartment m sp = comp_of f)
-        (DXP: ep = true -> rs#X30 = dummy_parent_sp s),
+        (DXP: ep = true -> rs#X30 = dummy_parent_sp s)
+        (GE_NB: Ple (Genv.genv_next ge) (Mem.nextblock m)),
       match_states (Mach.State s fb sp c ms m)
         (Asm.State s' rs m' (comp_of f))
   | match_states_call:
@@ -634,11 +740,12 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (LOC_RES: sig_res sig = sig_res (Mach.parent_signature s))
 
         (* (EXT: forall ef, Genv.find_funct_ptr ge fb <> Some (External ef)) *)
-        (STACKS': match_stacks cp s s')
+        (STACKS': match_stacks m' cp s s')
         (MEXT: Mem.extends m m')
         (AG: agree (Mach.undef_caller_save_regs_ext ms sig) (dummy_parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
-        (ATLR: rs RA = dummy_parent_ra s),
+        (ATLR: rs RA = dummy_parent_ra s)
+        (GE_NB: Ple (Genv.genv_next ge) (Mem.nextblock m)),
       match_states (Mach.Callstate s fb sig ms m cp')
                    (Asm.State s' rs m' cp')
 
@@ -661,7 +768,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_return:
     forall s s' ms m m' rs cp sg
       (STACKS: match_stack ge m sg s)
-      (STACKS': match_stacks cp s s')
+      (STACKS': match_stacks m' cp s s')
       (MEXT: Mem.extends m m')
       (AG: agree ms (dummy_parent_sp s) rs)
       (ATPC: rs PC = dummy_parent_ra s)
@@ -670,7 +777,8 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
           LTL.in_mreg r (regs_of_rpair
                            (loc_result sg)) =
             false ->
-          ms r = Vundef),
+          ms r = Vundef)
+      (GE_NB: Ple (Genv.genv_next ge) (Mem.nextblock m)),
       match_states (Mach.Returnstate s ms m cp)
                    (Asm.ReturnState s' rs m' sg cp)
   | match_states_return_external:
@@ -692,8 +800,9 @@ Lemma exec_straight_steps:
   forall (SP_OK: sp = Vptr bsp osp),
   forall (SP_VALID: Mem.valid_block m2 bsp),
   forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
-  forall (STACKS: match_stacks (comp_of f) s s'),
+  forall (STACKS: match_stacks m2' (comp_of f) s s'),
   forall (LOC_RES: sig_res (Mach.fn_sig f) = sig_res (Mach.parent_signature s)),
+  forall (GE_NB: Ple (Genv.genv_next ge) (Mem.nextblock m2)),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
@@ -727,7 +836,8 @@ Lemma exec_straight_steps_goto:
   forall (SP_VALID: Mem.valid_block m2 bsp),
   forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
   forall (LOC_RES: sig_res (Mach.fn_sig f) = sig_res (Mach.parent_signature s)),
-  forall (STACKS: match_stacks (comp_of f) s s'),
+  forall (STACKS: match_stacks m2' (comp_of f) s s'),
+  forall (GE_NB: Ple (Genv.genv_next ge) (Mem.nextblock m2)),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -778,8 +888,9 @@ Lemma exec_straight_opt_steps_goto:
   forall (SP_OK: sp = Vptr bsp osp),
   forall (SP_VALID: Mem.valid_block m2 bsp),
   forall (COMP_SP: Mem.val_compartment m2 sp = comp_of f),
-  forall (STACKS: match_stacks (comp_of f) s s'),
+  forall (STACKS: match_stacks m2' (comp_of f) s s'),
   forall (LOC_RES: sig_res (Mach.fn_sig f) = sig_res (Mach.parent_signature s)),
+  forall (GE_NB: Ple (Genv.genv_next ge) (Mem.nextblock m2)),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -874,6 +985,161 @@ Proof.
     + intros; subst.
       destruct ptr; simpl in *; try congruence.
       eapply Mem.store_valid_block_1; eauto.
+Qed.
+
+Lemma match_stackframe_store: forall m m' ch b ofs v cp f f',
+    match_stackframe m f f' ->
+    Mem.store ch m b ofs v cp = Some m' ->
+    match_stackframe m' f f'.
+Proof.
+  intros. inv H. econstructor.
+  - intros ofs1 k p HP. eapply NOPERM. eapply Mem.perm_store_2; eauto.
+  - eapply Mem.store_valid_block_1; eauto.
+  - auto.
+Qed.
+
+Lemma match_stacks_store: forall m m' ch b ofs v cp0 cp s s',
+    match_stacks m cp s s' ->
+    Mem.store ch m b ofs v cp0 = Some m' ->
+    match_stacks m' cp s s'.
+Proof.
+  intros. induction H.
+  - constructor.
+  - eapply match_stacks_intra_compartment; eauto.
+  - eapply match_stacks_cross_compartment; eauto.
+    eapply match_stackframe_store; eauto.
+Qed.
+
+Lemma match_stacks_storev: forall m m' ch ptr v cp0 cp s s',
+    match_stacks m cp s s' ->
+    Mem.storev ch m ptr v cp0 = Some m' ->
+    match_stacks m' cp s s'.
+Proof.
+  intros. destruct ptr; simpl in *; try congruence.
+  eapply match_stacks_store; eauto.
+Qed.
+
+Lemma match_stackframe_alloc: forall m m' b cp lo hi f f',
+    match_stackframe m f f' ->
+    Mem.alloc m cp lo hi = (m', b) ->
+    match_stackframe m' f f'.
+Proof.
+  intros. inv H. econstructor.
+  - intros ofs1 k p HP. destruct (eq_block db2 b).
+    + subst. eapply Mem.fresh_block_alloc; eauto.
+    + eapply NOPERM. eapply Mem.perm_alloc_4; eauto.
+  - eapply Mem.valid_block_alloc; eauto.
+  - auto.
+Qed.
+
+Lemma match_stackframe_alloc_zero: forall m m' b cp f f',
+    match_stackframe m f f' ->
+    Mem.alloc m cp 0 0 = (m', b) ->
+    match_stackframe m' f f'.
+Proof.
+  intros. eapply match_stackframe_alloc; eauto.
+Qed.
+
+Lemma match_stacks_alloc: forall m m' b cp0 lo hi cp s s',
+    match_stacks m cp s s' ->
+    Mem.alloc m cp0 lo hi = (m', b) ->
+    match_stacks m' cp s s'.
+Proof.
+  intros m m' b cp0 lo hi cp s s' MS ALLOC.
+  induction MS.
+  - constructor.
+  - eapply match_stacks_intra_compartment; eauto.
+  - eapply match_stacks_cross_compartment; eauto.
+    eapply match_stackframe_alloc; eauto.
+Qed.
+
+Lemma match_stacks_alloc_zero: forall m m' b cp0 cp s s',
+    match_stacks m cp s s' ->
+    Mem.alloc m cp0 0 0 = (m', b) ->
+    match_stacks m' cp s s'.
+Proof.
+  intros. eapply match_stacks_alloc; eauto.
+Qed.
+
+Lemma match_stackframe_set_perm: forall m m' b p f f',
+    match_stackframe m f f' ->
+    Mem.set_perm m b p = Some m' ->
+    match_stackframe m' f f'.
+Proof.
+  intros m0 m0' b0 p0 f0 f0' MSF SP.
+  inv MSF. econstructor.
+  - intros ofs1 k q HP.
+    destruct (peq db2 b0).
+    + subst.
+      assert (HP_MAX: Mem.perm m0' b0 ofs1 Max q) by (eapply Mem.perm_max; eauto).
+      eapply Mem.set_perm_perm in HP_MAX as [q' HP']; eauto.
+      eapply NOPERM; eauto.
+    + eapply NOPERM. eapply Mem.set_perm_perm_other; eauto.
+  - eapply Mem.set_perm_valid_block_1; eauto.
+  - auto.
+Qed.
+
+Lemma match_stacks_set_perm: forall m m' b p cp s s',
+    match_stacks m cp s s' ->
+    Mem.set_perm m b p = Some m' ->
+    match_stacks m' cp s s'.
+Proof.
+  intros. induction H.
+  - constructor.
+  - eapply match_stacks_intra_compartment; eauto.
+  - eapply match_stacks_cross_compartment; eauto.
+    eapply match_stackframe_set_perm; eauto.
+Qed.
+
+Lemma match_stackframe_free: forall m m' bf lo hi cp f f',
+    match_stackframe m f f' ->
+    Mem.free m bf lo hi cp = Some m' ->
+    match_stackframe m' f f'.
+Proof.
+  intros. inv H. econstructor.
+  - intros ofs1 k p HP. eapply NOPERM. eapply Mem.perm_free_3; eauto.
+  - eapply Mem.valid_block_free_1; eauto.
+  - auto.
+Qed.
+
+Lemma match_stacks_free: forall m m' bf lo hi cp0 cp s s',
+    match_stacks m cp s s' ->
+    Mem.free m bf lo hi cp0 = Some m' ->
+    match_stacks m' cp s s'.
+Proof.
+  intros. induction H.
+  - constructor.
+  - eapply match_stacks_intra_compartment; eauto.
+  - eapply match_stacks_cross_compartment; eauto.
+    eapply match_stackframe_free; eauto.
+Qed.
+
+Lemma match_stackframe_extcall: forall m m_ext m' f f',
+    match_stackframe m_ext f f' ->
+    Mem.extends m m_ext ->
+    Mem.unchanged_on (loc_out_of_bounds m) m_ext m' ->
+    match_stackframe m' f f'.
+Proof.
+  intros. inv H. econstructor.
+  - intros ofs1 k p HP.
+    assert (LOB: loc_out_of_bounds m db2 ofs1).
+    { red. intro PERM. eapply NOPERM. eapply Mem.perm_extends; eauto. }
+    eapply NOPERM. eapply Mem.unchanged_on_perm; eauto.
+  - eapply Mem.valid_block_unchanged_on; eauto.
+  - auto.
+Qed.
+
+Lemma match_stacks_extcall: forall m m_ext m' cp s s',
+    match_stacks m_ext cp s s' ->
+    Mem.extends m m_ext ->
+    Mem.unchanged_on (loc_out_of_bounds m) m_ext m' ->
+    match_stacks m' cp s s'.
+Proof.
+  intros. induction H.
+  - constructor.
+  - eapply match_stacks_intra_compartment; eauto.
+  - eapply match_stacks_cross_compartment; eauto.
+    eapply match_stackframe_extcall; eauto.
 Qed.
 
 Lemma match_stack_alloc: forall m m' b s cp lo hi sg,
@@ -1241,7 +1507,7 @@ Lemma loadarg_cross_correct:
   forall (ATDUM: asm_parent_dummy_sp st = Vptr dsp Ptrofs.zero),
   (* forall (SIG: parent_signature st = fn_sig tf), *)
   forall (IN_X30: rs X30 = Vptr dsp Ptrofs.zero),
-  (* forall (COMP_X30: Mem.val_compartment m (rs X30) ⊆ comp_of f), *)
+  forall (DSP_NOLOAD: forall ch ofs cp, Mem.load ch m dsp ofs cp = None),
   exists (rs' : regset),
     plus step tge (State st rs m cp) E0 (State st rs' m (comp_of tf)) /\
       rs' (preg_of dst) = v /\ (forall r : preg, r <> PC -> r <> X31 -> r <> preg_of dst -> rs' r = rs r)
@@ -1287,6 +1553,10 @@ Lemma loadarg_cross_correct:
         eapply plus_one.
         eapply exec_step_load_arg_cross; eauto.
         eapply find_instr_tail. rewrite <- H4; eauto.
+        { intros ird0 X; inv X.
+          unfold exec_load. unfold Mem.loadv. rewrite IN_X30. simpl.
+          erewrite DSP_NOLOAD; auto. }
+        { intros frd X; inv X. }
         { rewrite Ptrofs.add_zero_l.
           inv AT. monadInv H2. destruct zlt; try congruence. inv EQ0.
           monadInv EQ; eauto. }
@@ -1327,6 +1597,10 @@ Lemma loadarg_cross_correct:
         assert (b0 = dsp) as -> by now inv OFF_PC.
         eapply exec_step_load_arg_cross; eauto.
         eapply find_instr_tail; eauto.
+        { intros ird0 X; inv X.
+          unfold exec_load. unfold Mem.loadv. rewrite rs'_base'.
+          simpl. erewrite DSP_NOLOAD; auto. }
+        { intros frd X; inv X. }
         { simpl in OFF_PC; rewrite Ptrofs.add_zero_l in OFF_PC.
           inv OFF_PC.
           inv AT. monadInv H5. destruct zlt; try congruence. inv EQ0.
@@ -1382,6 +1656,10 @@ Lemma loadarg_cross_correct:
         eapply plus_one.
         eapply exec_step_load_arg_cross; eauto.
         eapply find_instr_tail. rewrite <- H4; eauto.
+        { intros ird X; inv X. }
+        { intros frd0 X; inv X.
+          unfold exec_load. unfold Mem.loadv. rewrite IN_X30.
+          simpl. erewrite DSP_NOLOAD; auto. }
         { rewrite Ptrofs.add_zero_l.
           inv AT. monadInv H2. destruct zlt; try congruence. inv EQ0.
           monadInv EQ; eauto. }
@@ -1422,6 +1700,10 @@ Lemma loadarg_cross_correct:
         assert (b0 = dsp) as -> by now inv OFF_PC.
         eapply exec_step_load_arg_cross; eauto.
         eapply find_instr_tail; eauto.
+        { intros ird X; inv X. }
+        { intros frd0 X; inv X.
+          unfold exec_load. unfold Mem.loadv. rewrite rs'_base'.
+          simpl. erewrite DSP_NOLOAD; auto. }
         { simpl in OFF_PC; rewrite Ptrofs.add_zero_l in OFF_PC.
           inv OFF_PC.
           inv AT. monadInv H5. destruct zlt; try congruence. inv EQ0.
@@ -1534,6 +1816,8 @@ Proof.
   eapply match_stack_storev; eauto.
   simpl in *; eapply Mem.store_valid_block_1; eauto.
   simpl in *; now erewrite <- Mem.store_preserves_comp; eauto.
+  eapply match_stacks_storev; eauto.
+  { eapply ge_nb_storev; eauto. }
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
   inv AT.
   unfold Genv.find_comp_of_block in A; unfold Genv.find_funct_ptr in FIND.
@@ -1582,24 +1866,17 @@ Opaque loadind.
         eapply agree_set_mreg. eapply agree_set_mreg; eauto.
         congruence. auto with asmgen.
         intros. rewrite rs'_others; auto using preg_of_not_X30; try congruence. }
-    * inv H6. remember (Stackframe b sg cp v0 ofs0 db1 db2) as f'.
-      exploit loadarg_cross_correct; eauto.
+    * inv H7. remember (Stackframe b sg cp v0 ofs0 db1 db2) as f'.
+      exploit loadarg_cross_correct; eauto using noperm_noload.
       simpl in VALID_PARAM.
       instantiate (1 := (f' :: s'0)); subst; eauto.
-      (* { simpl in *; subst sg. inv AT. *)
-      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
-      (*   monadInv EQ. eauto. } *)
       subst; simpl; eauto.
       subst; simpl; eauto.
-      (* subst; simpl; eauto. *)
-      (* { simpl in *; subst sg. inv AT. *)
-      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
-      (*   monadInv EQ. eauto. } *)
       intros [rs' [PLUS [rs'_dst [rs'_others [tc' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply PLUS.
       { inv AT. rewrite <- comp_transf_function; eauto.
-        monadInv H7.
+        monadInv H8.
         eapply match_states_intro with (rs := rs'); eauto.
         eapply match_stacks_cross_compartment; eauto.
         econstructor; eauto.
@@ -1645,26 +1922,17 @@ Opaque loadind.
         intros. unfold Pregmap.set. destruct (PregEq.eq r' X30). congruence. auto with asmgen.
         intros. rewrite rs''_others; auto using preg_of_not_X30; try congruence.
       }
-    * inv H6. remember (Stackframe b sg cp v0 ofs0 db1 db2) as f'.
-      (* simpl in H5. simpl in H4. subst f'. simpl in H2. *)
-      exploit loadarg_cross_correct; eauto.
+    * inv H7. remember (Stackframe b sg cp v0 ofs0 db1 db2) as f'.
+      exploit loadarg_cross_correct; eauto using noperm_noload.
       simpl in VALID_PARAM.
       instantiate (1 := (f' :: s'0)); subst; eauto.
-      (* { simpl in *; subst sg. inv AT. *)
-      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
-      (*   monadInv EQ. eauto. } *)
       subst; simpl; eauto.
       subst; simpl; eauto.
-      (* { simpl in *; subst sg. inv AT. *)
-      (*   unfold transf_function in H7. monadInv H7. destruct zlt; inv EQ0. *)
-      (*   monadInv EQ. eauto. } *)
-      (* instantiate (2 := (f' :: s'0)); subst; eauto. *)
-      (* subst; simpl; eauto. *)
       intros [rs'' [PLUS [rs''_dst [rs''_others [tc'' [code_transl code_at_pc_transl]]]]]].
       left; eexists; split.
       eapply star_plus_trans; eauto.
       { inv AT. rewrite <- comp_transf_function; eauto.
-        monadInv H7.
+        monadInv H8.
         eapply match_states_intro with (rs := rs''); eauto.
         eapply match_stacks_cross_compartment; eauto.
         econstructor; eauto.
@@ -1740,6 +2008,8 @@ Local Transparent destroyed_by_op.
   { destruct sp; simpl in *; try congruence.
     destruct a; simpl in *; try congruence.
     now erewrite <- Mem.store_preserves_comp; eauto. }
+  eapply match_stacks_storev; eauto.
+  { solve_ge_nb. }
   inv AT.
   unfold Genv.find_comp_of_block in C; unfold Genv.find_funct_ptr in FIND.
     unfold ge in FIND; simpl in A.
@@ -1940,6 +2210,8 @@ Local Transparent destroyed_by_op.
   intros [args' [ARGS' LDARGS]].
   subst.
   simpl in allc.
+  destruct (cp_eq_dec (comp_of fdi) bottom) as [CPbot|CPnbot].
+  { exfalso; exact (INTERNAL_NOT_BOTTOM _ _ CALLED CPbot). }
   destruct (Mem.alloc m (comp_of fdi) 0 0) as [m1 ?] eqn:allc1.
   destruct (Mem.alloc m1 (comp_of fdi) 0 0) as [m2 ?] eqn:allc2.
   destruct (Genv.find_def (Genv.globalenv prog) bsp) eqn:fd1; try contradiction.
@@ -1974,12 +2246,30 @@ Local Transparent destroyed_by_op.
     rewrite <- (comp_transl_partial _ H4).
     rewrite <- (comp_transl_partial _ TTRANSF).
     destruct cp_eq_dec; try (simpl in *; congruence).
+    destruct (cp_eq_dec); [exfalso; apply CPnbot; simpl in *; auto|].
     rewrite <- H2. simpl. rewrite allc1', allc2'.
     erewrite agree_sp; eauto; simpl.
     assert (Genv.find_def (Genv.globalenv tprog) bsp = None) as ->.
     { destruct (Genv.find_def (Genv.globalenv tprog) bsp) eqn:fd1'; auto.
       apply (Genv.find_def_match_conv TRANSF) in fd1' as [? [? ?]];
         congruence. }
+    assert (Mem.block_compartment m' bsp = comp_of f) as COMP_SP_T.
+    { simpl in COMP_SP.
+      assert (bsp_ne_dsp: bsp <> snd (Mem.alloc m1 (comp_of fdi) 0 0)).
+      { rewrite allc2; simpl.
+        intro Heq; subst; eapply Mem.perm_alloc_3 in p1; [|exact allc2]; lia. }
+      assert (p1': Mem.perm m1 bsp 0 Max Freeable).
+      { eapply Mem.perm_alloc_4 with (1 := allc2). exact p1.
+        rewrite allc2 in bsp_ne_dsp; exact bsp_ne_dsp. }
+      assert (bsp_ne_dra: bsp <> snd (Mem.alloc m (comp_of fdi) 0 0)).
+      { rewrite allc1; simpl.
+        intro Heq; subst; eapply Mem.perm_alloc_3 in p1'; [|exact allc1]; lia. }
+      assert (p0: Mem.perm m bsp 0 Max Freeable).
+      { eapply Mem.perm_alloc_4 with (1 := allc1). exact p1'.
+        rewrite allc1 in bsp_ne_dra; exact bsp_ne_dra. }
+      erewrite <- (Mem.mi_access _ _ _ (Mem.mext_inj _ _ MEXT)); eauto.
+      reflexivity. }
+    destruct (cp_eq_dec (Mem.block_compartment _ bsp) _); try congruence.
     assert (Mem.perm m2'' bsp 0 Max Freeable).
     { eapply Mem.perm_extends in p1; eauto. }
     destruct Mem.perm_dec; try congruence.
@@ -2022,13 +2312,30 @@ Local Transparent destroyed_by_op.
       - eapply match_stack_set_perm in perm; eauto.
         eapply match_stack_alloc in allc1; eauto.
         eapply match_stack_alloc; eauto. }
-    { eapply match_stacks_cross_compartment. exact STACKS'.
+    { assert (STACKS3: match_stacks m3' (comp_of f) s s').
+      { eapply match_stacks_set_perm.
+        - eapply match_stacks_alloc_zero with (m := m2'); eauto.
+          eapply match_stacks_alloc_zero with (m := m'); eauto.
+        - eauto. }
+      eapply match_stacks_cross_compartment. exact STACKS3.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
       - simpl. rewrite <- find_comp_of_block_translated.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
       - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). eauto.
-      - constructor. }
+      - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
+        simpl. exact CPnbot.
+      - econstructor.
+        + intros ofs1 k p0 HP.
+          assert (HP2: Mem.perm m2'' b0 ofs1 k p0)
+            by (eapply Mem.set_perm_perm_decrease; eauto; apply perm_refl).
+          pose proof (Mem.perm_alloc_3 _ _ _ _ _ _ allc2' _ _ _ HP2). lia.
+        + eapply Mem.set_perm_valid_block_1; eauto.
+          eapply Mem.valid_new_block; eauto.
+        + apply find_def_above_nextblock.
+          pose proof (Mem.alloc_result _ _ _ _ _ _ allc1') as ->.
+          rewrite <- (Mem.mext_next _ _ MEXT).
+          intro LT. eapply Pos.lt_irrefl. eapply Pos.lt_le_trans; eauto. }
     { constructor.
       - unfold invalidate_call. Simpl.
       - simpl. discriminate.
@@ -2043,6 +2350,7 @@ Local Transparent destroyed_by_op.
         destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto.
         exfalso. apply n2.
         eapply in_all_mregs_filter; eauto. }
+    { solve_ge_nb. }
   -- eauto.
 
     (* eapply match_states_call_external; eauto. *)
@@ -2103,6 +2411,8 @@ Local Transparent destroyed_by_op.
 
     subst.
     simpl in allc.
+    destruct (cp_eq_dec (comp_of fdi) bottom) as [CPbot|CPnbot].
+    { exfalso; exact (INTERNAL_NOT_BOTTOM _ _ CALLED CPbot). }
     destruct (Mem.alloc m (comp_of fdi) 0 0) as [m1 ?] eqn:allc1.
     destruct (Mem.alloc m1 (comp_of fdi) 0 0) as [m2 ?] eqn:allc2.
     destruct (Genv.find_def (Genv.globalenv prog) bsp) eqn:fd1; try contradiction.
@@ -2143,12 +2453,30 @@ Local Transparent destroyed_by_op.
        rewrite <- (comp_transl_partial _ H4).
        rewrite <- (comp_transl_partial _ TTRANSF).
        destruct cp_eq_dec; try (simpl in *; congruence).
+       destruct (cp_eq_dec); [exfalso; apply CPnbot; simpl in *; auto|].
        rewrite <- H2. simpl. rewrite allc1', allc2'.
        erewrite agree_sp; eauto; simpl.
     assert (Genv.find_def (Genv.globalenv tprog) bsp = None) as ->.
     { destruct (Genv.find_def (Genv.globalenv tprog) bsp) eqn:fd1'; auto.
       apply (Genv.find_def_match_conv TRANSF) in fd1' as [? [? ?]];
         congruence. }
+    assert (Mem.block_compartment m' bsp = comp_of f) as COMP_SP_T.
+    { simpl in COMP_SP.
+      assert (bsp_ne_dsp: bsp <> snd (Mem.alloc m1 (comp_of fdi) 0 0)).
+      { rewrite allc2; simpl.
+        intro Heq; subst; eapply Mem.perm_alloc_3 in p1; [|exact allc2]; lia. }
+      assert (p1': Mem.perm m1 bsp 0 Max Freeable).
+      { eapply Mem.perm_alloc_4 with (1 := allc2). exact p1.
+        rewrite allc2 in bsp_ne_dsp; exact bsp_ne_dsp. }
+      assert (bsp_ne_dra: bsp <> snd (Mem.alloc m (comp_of fdi) 0 0)).
+      { rewrite allc1; simpl.
+        intro Heq; subst; eapply Mem.perm_alloc_3 in p1'; [|exact allc1]; lia. }
+      assert (p0: Mem.perm m bsp 0 Max Freeable).
+      { eapply Mem.perm_alloc_4 with (1 := allc1). exact p1'.
+        rewrite allc1 in bsp_ne_dra; exact bsp_ne_dra. }
+      erewrite <- (Mem.mi_access _ _ _ (Mem.mext_inj _ _ MEXT)); eauto.
+      reflexivity. }
+    destruct (cp_eq_dec (Mem.block_compartment _ bsp) _); try congruence.
     assert (Mem.perm m2'' bsp 0 Max Freeable).
     { eapply Mem.perm_extends in p1; eauto. }
        destruct Mem.perm_dec; try congruence.
@@ -2190,13 +2518,30 @@ Local Transparent destroyed_by_op.
       - eapply match_stack_set_perm in perm; eauto.
         eapply match_stack_alloc in allc1; eauto.
         eapply match_stack_alloc; eauto. }
-    { eapply match_stacks_cross_compartment. exact STACKS'.
+    { assert (STACKS3: match_stacks m3' (comp_of f) s s').
+      { eapply match_stacks_set_perm.
+        - eapply match_stacks_alloc_zero with (m := m2'); eauto.
+          eapply match_stacks_alloc_zero with (m := m'); eauto.
+        - eauto. }
+      eapply match_stacks_cross_compartment. exact STACKS3.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
       - simpl. rewrite <- find_comp_of_block_translated.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
       - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED). eauto.
-      - constructor. }
+      - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
+        simpl. exact CPnbot.
+      - econstructor.
+        + intros ofs1 k p0 HP.
+          assert (HP2: Mem.perm m2'' b0 ofs1 k p0)
+            by (eapply Mem.set_perm_perm_decrease; eauto; apply perm_refl).
+          pose proof (Mem.perm_alloc_3 _ _ _ _ _ _ allc2' _ _ _ HP2). lia.
+        + eapply Mem.set_perm_valid_block_1; eauto.
+          eapply Mem.valid_new_block; eauto.
+        + apply find_def_above_nextblock.
+          pose proof (Mem.alloc_result _ _ _ _ _ _ allc1') as ->.
+          rewrite <- (Mem.mext_next _ _ MEXT).
+          intro LT. eapply Pos.lt_irrefl. eapply Pos.lt_le_trans; eauto. }
     { constructor.
       - unfold invalidate_call. Simpl.
       - simpl. discriminate.
@@ -2211,6 +2556,7 @@ Local Transparent destroyed_by_op.
         destruct in_dec; auto. simpl. Simpl. eapply agree_mregs; eauto.
         exfalso. apply n2.
         eapply in_all_mregs_filter; eauto. }
+    { solve_ge_nb. }
     -- eauto.
   + exfalso. apply not_mergeable.
     eapply MachMerge.mergeable_call_cross; eauto.
@@ -2279,7 +2625,7 @@ Local Transparent destroyed_by_op.
       assert (rs0 x0 = Vptr f' Ptrofs.zero).
       exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
       exploit make_epilogue_correct; eauto using (comp_transl_partial _ H6).
-      intros (rs1 & m1 & U & V & W & X & Y & Z).
+      intros (rs1 & m1 & U & V & W & X & Y & Z & FREE_T).
       exploit exec_straight_steps_2; eauto using functions_transl.
       intros (ofs' & P & Q).
       left; econstructor; split.
@@ -2297,6 +2643,8 @@ Local Transparent destroyed_by_op.
       traceEq.
       (* match states *)
       rewrite comp_transf_function; eauto.
+      assert (STACKS_TC: match_stacks m1 (comp_of f) s s')
+        by (eapply match_stacks_free; eauto).
       econstructor; eauto.
       { eapply match_stack_free; eauto.
         clear -LOC_RES SIG_RES SIG_RES' STACKS.
@@ -2312,9 +2660,10 @@ Local Transparent destroyed_by_op.
           eapply in_map with (f := preg_of) in I.
           eapply agree_mregs; eauto. }
       Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). assumption.
+      eapply ge_nb_free; eauto.
   + (* Direct call *)
     exploit make_epilogue_correct; eauto using (comp_transl_partial _ H6).
-    intros (rs1 & m1 & U & V & W & X & Y & Z).
+    intros (rs1 & m1 & U & V & W & X & Y & Z & FREE_T).
     exploit exec_straight_steps_2; eauto using functions_transl.
     intros (ofs' & P & Q).
     left; econstructor; split.
@@ -2339,6 +2688,8 @@ Local Transparent destroyed_by_op.
     traceEq.
     (* match states *)
     rewrite comp_transf_function; eauto.
+    assert (STACKS_TC: match_stacks m1 (comp_of f) s s')
+      by (eapply match_stacks_free; eauto).
     econstructor; eauto.
       { eapply match_stack_free; eauto.
         clear -LOC_RES SIG_RES SIG_RES' STACKS.
@@ -2355,6 +2706,7 @@ Local Transparent destroyed_by_op.
         eapply in_map with (f := preg_of) in I.
         eapply agree_mregs; eauto. }
     Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. unfold ge. rewrite H. auto.
+    eapply ge_nb_free; eauto.
 
 - (* Mbuiltin *)
   inv AT. monadInv H4.
@@ -2380,6 +2732,8 @@ Local Transparent destroyed_by_op.
   rewrite <- comp_transf_function; eauto using allowed_syscall_translated.
   eauto.
   rewrite <- comp_transf_function; eauto.
+  assert (STACKS_EC: match_stacks m2' (comp_of f) s s')
+    by (eapply match_stacks_extcall; eauto).
   econstructor; eauto.
   { eapply match_stack_external_call; eauto. }
   eapply is_tail_cons_left; eauto.
@@ -2397,6 +2751,7 @@ Local Transparent destroyed_by_op.
   eapply ec_valid_block; eauto using external_call_spec.
   simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec.
   congruence.
+  eapply ge_nb_extcall; eauto.
 
 - (* Mgoto *)
   unfold ge in FIND; simpl in *.
@@ -2480,7 +2835,7 @@ Local Transparent destroyed_by_op.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
   { eapply transf_function_no_overflow; eauto. }
   exploit make_epilogue_correct; eauto using (comp_transf_function _ _ H5).
-  intros (rs1 & m1 & U & V & W & X & Y & Z).
+  intros (rs1 & m1 & U & V & W & X & Y & Z & FREE_T).
   exploit exec_straight_steps_2; eauto using functions_transl.
 
   intros (ofs' & P & Q).
@@ -2496,7 +2851,9 @@ Local Transparent destroyed_by_op.
   { replace (fn_sig tf) with (Mach.fn_sig f). eauto.
     unfold transf_function in H5; monadInv H5; destruct zlt; try congruence. inv EQ1.
     unfold transl_function in EQ0; monadInv EQ0; auto.  }
-  econstructor; eauto.
+  assert (STACKS_RET: match_stacks m1 (comp_of f) s s').
+  { eapply match_stacks_free; eauto. }
+  eapply match_states_return; eauto.
   { eapply match_stack_free; eauto. replace (fn_sig tf) with (Mach.fn_sig f). eauto.
     unfold transf_function in H5; monadInv H5; destruct zlt; try congruence. inv EQ1.
     unfold transl_function in EQ0; monadInv EQ0; auto. }
@@ -2514,7 +2871,7 @@ Local Transparent destroyed_by_op.
   { unfold undef_non_return_regs_ext.
     unfold loc_result, proj_sig_res.
     rewrite SIG_EQ. intros ->. reflexivity. }
-
+  eapply ge_nb_free; eauto.
 
 - (* internal function *)
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
@@ -2533,21 +2890,23 @@ Local Transparent destroyed_by_op.
   assert (fi = f) as -> by (unfold ge in *; simpl in *; congruence).
   (* Execution of function prologue *)
   monadInv EQ0. rewrite transl_code'_transl_code in EQ1.
+  set (x1 := Pcfi_rel_offset (Ptrofs.to_int (fn_retaddr_ofs f)) :: x0) in *.
   set (tfbody := Pallocframe (fn_stacksize f) (fn_link_ofs f) ::
-                 storeind_ptr RA SP (fn_retaddr_ofs f) x0) in *.
+                 storeind_ptr RA SP (fn_retaddr_ofs f) x1) in *.
   set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *.
   set (rs2 := nextinstr (rs0#X30 <- (dummy_parent_sp s) #SP <- sp #X31 <- Vundef)).
-  exploit (storeind_ptr_correct tge tf SP (fn_retaddr_ofs f) RA x0 rs2 m2').
+  exploit (storeind_ptr_correct tge tf SP (fn_retaddr_ofs f) RA x1 rs2 m2').
     rewrite chunk_of_Tptr in P. change (rs2 X1) with (rs0 X1). rewrite ATLR.
     change (rs2 X2) with sp. eexact P.
     congruence. congruence.
   intros (rs3 & U & V).
+  set (rs4 := nextinstr rs3).
   assert (EXEC_PROLOGUE:
             exec_straight tge tf
               tf.(fn_code) rs0 m'
-              x0 rs3 m3').
+              x0 rs4 m3').
   { change (fn_code tf) with tfbody; unfold tfbody.
-    eapply exec_straight_step with rs2 m2'.
+    apply exec_straight_step with rs2 m2'.
     unfold exec_instr.
     change (comp_of tf) with (comp_of f).
     change (comp_of (Internal f)) with (comp_of f) in *.
@@ -2555,19 +2914,24 @@ Local Transparent destroyed_by_op.
     rewrite <- (sp_val _ _ _ AG). rewrite chunk_of_Tptr in F.
     rewrite F. reflexivity.
     reflexivity. reflexivity. reflexivity.
-    eexact U. }
+    eapply exec_straight_trans with (rs2 := rs3) (m2 := m3').
+    eexact U. eapply exec_straight_one; eauto. }
   exploit exec_straight_steps_2; eauto using functions_transl. lia. constructor.
   intros (ofs' & X & Y).
   left; eexists; split.
   eapply exec_straight_steps_1; eauto. lia. simpl. constructor.
+  assert (STACKS_FN: match_stacks m3' (comp_of f) s s').
+  { erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto.
+    simpl in STACKS'.
+    eapply match_stacks_storev; [| eexact P].
+    eapply match_stacks_storev; [| eexact F].
+    eapply match_stacks_alloc; eauto. }
   econstructor; eauto.
   eapply match_stack_alloc with (m' := m1) in STACKS; eauto.
   eapply match_stack_storev with (m' := m2) in STACKS; eauto.
   eapply match_stack_storev with (m' := m3) in STACKS; eauto.
   { clear -LOC_RES SIG_RES STACKS.
     inv STACKS; econstructor; eauto; congruence. }
-  erewrite Genv.find_funct_ptr_find_comp_of_block in STACKS'; eauto.
-  now simpl in STACKS'.
   constructor.
   rewrite X; econstructor; eauto.
   apply agree_exten with rs2; eauto with asmgen.
@@ -2580,6 +2944,7 @@ Local Transparent destroyed_by_op.
 Local Transparent destroyed_at_function_entry.
   simpl; intros; Simpl.
   unfold sp; congruence.
+  intros; unfold rs4; rewrite nextinstr_inv; [apply V |]; eauto with asmgen.
   congruence.
   unfold sp; auto.
   { unfold sp in *.
@@ -2592,7 +2957,10 @@ Local Transparent destroyed_at_function_entry.
     erewrite <- Mem.store_preserves_comp; eauto.
     erewrite <- Mem.store_preserves_comp; eauto.
     eapply Mem.owned_new_block; eauto. }
-  intros. rewrite V by auto with asmgen. reflexivity.
+  intros. unfold rs4. rewrite nextinstr_inv by eauto with asmgen.
+  rewrite V by auto with asmgen. reflexivity.
+  unfold store_stack in H1, H2. eapply ge_nb_storev. 2: eexact H2.
+  eapply ge_nb_storev. 2: eexact H1. eapply ge_nb_alloc; eauto.
 
   - simpl in *; unfold ge in *; congruence.
 (* - (* external function *) *)
@@ -2715,7 +3083,8 @@ Local Transparent destroyed_at_function_entry.
     easy.
 
 
-  + inv H8. inv H9.
+
+  + inv H12. inv H9.
     assert (Val.lessdef (Mach.return_value rs sg0) (return_value rs0 sg0)).
     { unfold Mach.return_value, return_value.
       destruct loc_result.
@@ -2724,6 +3093,8 @@ Local Transparent destroyed_at_function_entry.
         eapply agree_mregs; eauto.
         eapply agree_mregs; eauto. }
     destruct cp_eq_dec; try (simpl in *; unfold ge in *; congruence).
+    destruct (cp_eq_dec cp bottom).
+    { contradiction. }
     exploit Mem.set_perm_parallel_extends; eauto.
     intros [m'' [SET_PERM' MEXT']].
     left.
@@ -2732,7 +3103,12 @@ Local Transparent destroyed_at_function_entry.
     rewrite ATPC. unfold Vnullptr; now destruct Archi.ptr64.
     rewrite ATPC; discriminate.
     rewrite ATPC; reflexivity.
-    eauto.
+    { (* NO_DEF: dummy RA block has no global definition *)
+      simpl. intros b0 ofs0 Heq. inv Heq.
+      destruct (Genv.find_def tge b0) eqn:FD; auto.
+      apply (Genv.find_def_match_conv TRANSF) in FD as [? [? _]].
+      unfold ge in NO_DEF_DB1. congruence. }
+    exact H5.
     eapply agree_sp; eauto.
     simpl; reflexivity.
     simpl; eauto.
@@ -2750,11 +3126,14 @@ Local Transparent destroyed_at_function_entry.
     reflexivity.
     simpl; eauto.
     erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
+    assert (STACKS_RET: match_stacks m'' (comp_of f0) s s'0).
+    { erewrite Genv.find_funct_ptr_find_comp_of_block in H1; eauto.
+      simpl in H1.
+      eapply match_stacks_set_perm.
+      - exact H1.
+      - exact SET_PERM'. }
     econstructor; eauto.
-
     eapply match_stack_set_perm; eauto.
-    erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto. simpl in *. eauto.
-    eapply functions_transl; eauto.
 
     unfold invalidate_cross_return, invalidate_return. simpl.
     econstructor; eauto.
@@ -2820,14 +3199,17 @@ Local Transparent destroyed_at_function_entry.
     eapply Mem.set_perm_valid_block_1; eauto.
     simpl; erewrite <- Mem.set_preserves_comp; eauto.
     easy.
+    eapply ge_nb_set_perm; eauto.
 
 - inv H4. simpl. right. split; eauto.
   destruct dsp.
   destruct sp0; try contradiction.
   destruct cp_eq_dec; subst.
   + split; auto. inv EV; inv EV0; auto; try contradiction.
-  + assert (m'0 = m') by congruence. subst m'0.
-    split; auto. inv EV; inv EV0; auto; try contradiction.
+  + destruct (cp_eq_dec cp bottom).
+    * subst. split; auto. inv EV; inv EV0; auto; try contradiction.
+    * assert (m'0 = m') by congruence. subst m'0.
+      split; auto. inv EV; inv EV0; auto; try contradiction.
   + subst m'0. subst m'.
     split; auto. inv EV; inv EV0; auto; try contradiction.
 
@@ -2922,6 +3304,7 @@ Local Transparent destroyed_at_function_entry.
       rewrite <- comp_transf_function; eauto.
       eapply match_states_intro; eauto.
       { eapply match_stack_external_call; eauto. }
+      { eapply match_stacks_extcall; eauto. }
       { Simpl; rewrite <- H; eauto. }
       { assert (AG': agree
                        (Mach.set_pair (loc_result (ef_sig ef)) res
@@ -2963,6 +3346,7 @@ Local Transparent destroyed_at_function_entry.
       { eapply external_call_valid_block; eauto. }
       { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
       { congruence. }
+      { eapply ge_nb_extcall; eauto. }
     * (* direct call *)
       generalize (code_tail_next_int _ _ _ _ NOOV H3). intro CT1.
       assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c0 false tf x).
@@ -3038,6 +3422,7 @@ Local Transparent destroyed_at_function_entry.
       rewrite <- comp_transf_function; eauto.
       eapply match_states_intro; eauto.
       { eapply match_stack_external_call; eauto. }
+      { eapply match_stacks_extcall; eauto. }
       { Simpl; rewrite <- H; eauto. }
       { assert (AG': agree
                        (Mach.set_pair (loc_result (ef_sig ef)) res
@@ -3079,6 +3464,7 @@ Local Transparent destroyed_at_function_entry.
       { eapply external_call_valid_block; eauto. }
       { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
       { congruence. }
+      { eapply ge_nb_extcall; eauto. }
   + simpl in *.
     assert (f'0 = f') as -> by congruence.
     assert (fd = External ef) as -> by congruence.
@@ -3181,6 +3567,7 @@ Local Transparent destroyed_at_function_entry.
       rewrite <- comp_transf_function; eauto.
       eapply match_states_intro; eauto.
       { eapply match_stack_external_call; eauto. }
+      { eapply match_stacks_extcall; eauto. }
       { Simpl; rewrite <- H; eauto. }
       { assert (AG': agree
                        (Mach.set_pair (loc_result (ef_sig ef)) res
@@ -3222,6 +3609,7 @@ Local Transparent destroyed_at_function_entry.
       { eapply external_call_valid_block; eauto. }
       { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
       { congruence. }
+      { eapply ge_nb_extcall; eauto. }
     * (* direct call *)
       generalize (code_tail_next_int _ _ _ _ NOOV H3). intro CT1.
       assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c0 false tf x).
@@ -3302,6 +3690,7 @@ Local Transparent destroyed_at_function_entry.
       rewrite <- comp_transf_function; eauto.
       eapply match_states_intro; eauto.
       { eapply match_stack_external_call; eauto. }
+      { eapply match_stacks_extcall; eauto. }
       { Simpl; rewrite <- H; eauto. }
       { assert (AG': agree
                        (Mach.set_pair (loc_result (ef_sig ef)) res
@@ -3343,6 +3732,7 @@ Local Transparent destroyed_at_function_entry.
       { eapply external_call_valid_block; eauto. }
       { simpl. erewrite <- ec_preserves_comp; eauto using external_call_spec. }
       { congruence. }
+      { eapply Ple_trans; eauto. eapply external_call_nextblock; eauto. }
 Qed.
 
 Lemma transf_initial_states:
@@ -3377,6 +3767,7 @@ Proof.
   simpl. unfold Vnullptr; destruct Archi.ptr64; now congruence.
   constructor; eauto.
   (* simpl. unfold Vnullptr; destruct Archi.ptr64; now congruence. *)
+  { erewrite <- Genv.init_mem_genv_next; eauto. apply Ple_refl. }
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.

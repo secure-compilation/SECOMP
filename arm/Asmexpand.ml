@@ -37,29 +37,16 @@ let _64 = coqint_of_camlint 64l
 (* No S suffix because they are applied to SP most of the time. *)
 
 let expand_movimm dst n =
-  match Asmgen.decompose_int n with
-  | [] -> assert false
-  | hd::tl->
-     emit (Pmov (dst,SOimm hd));
-     List.iter
-       (fun n -> emit (Porr (dst,dst, SOimm n))) tl
+  List.iter emit (Asmgen.loadimm dst n [])
 
 let expand_subimm dst src n =
   if dst <> src || n <> _0 then begin
-    match Asmgen.decompose_int n with
-    | [] -> assert false
-    | hd::tl ->
-       emit (Psub(dst,src,SOimm hd));
-       List.iter (fun n -> emit (Psub (dst,dst,SOimm n))) tl
+    List.iter emit (Asmgen.addimm dst src (Int.neg n) [])
   end
 
 let expand_addimm dst src n =
   if dst <> src || n <> _0 then begin
-    match Asmgen.decompose_int n with
-    | [] -> assert false
-    | hd::tl ->
-       emit (Padd (dst,src,SOimm hd));
-       List.iter (fun n -> emit (Padd (dst,dst,SOimm n))) tl
+    List.iter emit (Asmgen.addimm dst src n [])
   end
 
 let expand_int64_arith conflict rl fn =
@@ -95,10 +82,9 @@ let expand_annot_val kind txt targ args res =
 (* The ARM has strict alignment constraints for 2 and 4 byte accesses.
    8-byte accesses must be 4-aligned. *)
 
-let offset_in_range ofs =
-  let n = camlint_of_coqint ofs in n <= 128l && n >= -128l
-
 let memcpy_small_arg sz arg tmp =
+  let offset_in_range ofs =
+    let n = camlint_of_coqint ofs in n <= 128l && n >= -128l in
   match arg with
   | BA (IR r) ->
       (r, _0)
@@ -175,9 +161,25 @@ let expand_builtin_memcpy  sz al args =
 
 (* Handling of volatile reads and writes *)
 
+(* Offset checks *)
+
+let offset_in_range chunk ofs =
+  match chunk with
+  | Mint8signed | Mint16signed | Mint16unsigned  ->
+    Int.eq (Asmgen.mk_immed_mem_small ofs) ofs
+  | Mint8unsigned | Mint32 ->
+    Int.eq (Asmgen.mk_immed_mem_word ofs) ofs
+  | Mfloat32 | Mfloat64 ->
+    Int.eq (Asmgen.mk_immed_mem_float ofs) ofs
+  | Mint64 ->
+    Int.eq (Asmgen.mk_immed_mem_word ofs) ofs &&
+    Int.eq (Asmgen.mk_immed_mem_word (Int.add ofs _4)) (Int.add ofs _4)
+  | _ ->
+    assert false
+
 let expand_builtin_vload_common chunk base ofs res =
   match chunk, res with
-  | Mint8unsigned, BR(IR res) ->
+  | (Mbool | Mint8unsigned), BR(IR res) ->
      emit (Pldrb (res, base, SOimm ofs))
   | Mint8signed, BR(IR res) ->
      emit (Pldrsb (res, base, SOimm ofs))
@@ -209,7 +211,7 @@ let expand_builtin_vload chunk args res =
   | [BA(IR addr)] ->
       expand_builtin_vload_common chunk addr _0 res
   | [BA_addrstack ofs] ->
-      if offset_in_range (Int.add ofs (Memdata.size_chunk chunk)) then
+      if offset_in_range chunk ofs then
         expand_builtin_vload_common chunk IR13 ofs res
       else begin
         expand_addimm IR14 IR13 ofs;
@@ -219,7 +221,7 @@ let expand_builtin_vload chunk args res =
       emit (Ploadsymbol (IR14,id,ofs));
       expand_builtin_vload_common chunk IR14 _0 res
   | [BA_addptr(BA(IR addr), BA_int ofs)] ->
-      if offset_in_range (Int.add ofs (Memdata.size_chunk chunk)) then
+      if offset_in_range chunk ofs then
         expand_builtin_vload_common chunk addr ofs res
       else begin
         expand_addimm IR14 addr ofs;
@@ -230,7 +232,7 @@ let expand_builtin_vload chunk args res =
 
 let expand_builtin_vstore_common chunk base ofs src =
   match chunk, src with
-  | (Mint8signed | Mint8unsigned), BA(IR src) ->
+  | (Mbool | Mint8signed | Mint8unsigned), BA(IR src) ->
      emit (Pstrb (src, base, SOimm ofs))
   | (Mint16signed | Mint16unsigned), BA(IR src) ->
      emit (Pstrh (src, base, SOimm ofs))
@@ -253,7 +255,7 @@ let expand_builtin_vstore chunk args =
   | [BA(IR addr); src] ->
       expand_builtin_vstore_common chunk addr _0 src
   | [BA_addrstack ofs; src] ->
-      if offset_in_range (Int.add ofs (Memdata.size_chunk chunk)) then
+      if offset_in_range chunk ofs then
         expand_builtin_vstore_common chunk IR13 ofs src
       else begin
         expand_addimm IR14 IR13 ofs;
@@ -263,7 +265,7 @@ let expand_builtin_vstore chunk args =
       emit (Ploadsymbol (IR14,id,ofs));
       expand_builtin_vstore_common chunk IR14 _0 src
   | [BA_addptr(BA(IR addr), BA_int ofs); src] ->
-      if offset_in_range (Int.add ofs (Memdata.size_chunk chunk)) then
+      if offset_in_range chunk ofs then
         expand_builtin_vstore_common chunk addr ofs src
       else begin
         expand_addimm IR14 addr ofs;
@@ -467,7 +469,7 @@ module FixupEABI = struct
     in fixup 0 tyl
 
   let fixup_arguments dir sg =
-    fixup_conventions dir sg.sig_args
+    fixup_conventions dir (proj_sig_args sg)
 
   let fixup_result dir sg =
     fixup_conventions dir (proj_sig_res sg :: [])
@@ -526,9 +528,11 @@ module FixupHF = struct
       end;
       fixup_outgoing act
     | (fr, Single, sr) :: act ->
-      let fr = freg_param fr
-      and sr = sreg_param sr in
-      emit (Pfcpy_sf (sr, fr));
+      if (2 * fr) <> sr then begin
+        let fr = freg_param fr
+        and sr = sreg_param sr in
+        emit (Pfcpy_sf (sr, fr))
+      end;
       fixup_outgoing act
 
   let rec fixup_incoming = function
@@ -552,7 +556,7 @@ module FixupHF = struct
     if sg.sig_cc.cc_vararg <> None then
       FixupEABI.fixup_arguments dir sg
     else begin
-      let act = fixup_actions (Array.make 16 false) 0 sg.sig_args in
+      let act = fixup_actions (Array.make 16 false) 0 (proj_sig_args sg) in
       match dir with
       | Outgoing -> fixup_outgoing act
       | Incoming -> fixup_incoming act
@@ -600,7 +604,7 @@ let expand_instruction instr =
        then coqint_of_camlint (Int32.add 16l (camlint_of_coqint sz))
        else sz in
      if Asmgen.is_immed_arith sz
-     then emit (Padd (IR13,IR13,SOimm sz))
+     then expand_addimm IR13 IR13 sz
      else begin
        if camlint_of_coqint ofs >= 4096l then begin
          expand_addimm IR13 IR13 ofs;
@@ -611,7 +615,7 @@ let expand_instruction instr =
   | Pbuiltin (ef,args,res) ->
      begin match ef with
 	   | EF_builtin (name,sg) ->
-	      expand_builtin_inline (camlstring_of_coqstring name) args res
+	      expand_builtin_inline name args res
 	   | EF_vload chunk ->
 	      expand_builtin_vload chunk args res
 	   | EF_vstore chunk ->
@@ -679,7 +683,7 @@ let expand_function id fn =
     let fn = Constantexpand.expand_constants fn in
     Errors.OK fn
   with Error s ->
-    Errors.Error (Errors.msg (coqstring_of_camlstring s))
+    Errors.Error (Errors.msg s)
 
 let expand_fundef id = function
   | Internal f ->

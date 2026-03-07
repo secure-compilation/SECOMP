@@ -12,8 +12,8 @@
 
 (** Translation from Mach to AArch64. *)
 
-Require Import Recdef Coqlib Zwf Zbits.
-Require Import Errors AST Integers Floats Op.
+From Coq Require Import Recdef Zwf.
+Require Import Zbits Coqlib Errors AST Integers Floats Op.
 Require Import Locations Mach Asm.
 Require SelectOp.
 
@@ -897,10 +897,16 @@ Definition transl_op
       match preg_of res with
       | IR r => 
           do r1 <- ireg_of a1; do r2 <- ireg_of a2;
-          transl_cond cmp args (Pcsel r r1 r2 (cond_for_cond cmp) :: k)
+          if ireg_eq r1 r2 then
+            OK (Pmov r r1 :: k)
+          else
+            transl_cond cmp args (Pcsel r r1 r2 (cond_for_cond cmp) :: k)
       | FR r =>
           do r1 <- freg_of a1; do r2 <- freg_of a2;
-          transl_cond cmp args (Pfsel r r1 r2 (cond_for_cond cmp) :: k)
+          if freg_eq r1 r2 then
+            OK (Pfmov r r1 :: k)
+          else
+            transl_cond cmp args (Pfsel r r1 r2 (cond_for_cond cmp) :: k)
       | _ =>
           Error(msg "Asmgen.Osel")
       end
@@ -986,14 +992,16 @@ Definition transl_load (chunk: memory_chunk) (addr: Op.addressing)
       do rd <- ireg_of dst; transl_addressing 4 addr args (Pldrw_a rd) k
   | Many64 =>
       do rd <- ireg_of dst; transl_addressing 8 addr args (Pldrx_a rd) k
+  | _ =>
+      Error (msg "Asmgen.transl_load")
   end.
 
 Definition transl_store (chunk: memory_chunk) (addr: Op.addressing)
                         (args: list mreg) (src: mreg) (k: code) : res code :=
   match chunk with
-  | Mint8unsigned | Mint8signed =>
+  | Mint8unsigned =>
       do r1 <- ireg_of src; transl_addressing 1 addr args (Pstrb r1) k
-  | Mint16unsigned | Mint16signed =>
+  | Mint16unsigned =>
       do r1 <- ireg_of src; transl_addressing 2 addr args (Pstrh r1) k
   | Mint32 =>
       do r1 <- ireg_of src; transl_addressing 4 addr args (Pstrw r1) k
@@ -1007,6 +1015,8 @@ Definition transl_store (chunk: memory_chunk) (addr: Op.addressing)
       do r1 <- ireg_of src; transl_addressing 4 addr args (Pstrw_a r1) k
   | Many64 =>
       do r1 <- ireg_of src; transl_addressing 8 addr args (Pstrx_a r1) k
+  | _ =>
+      Error (msg "Asmgen.transl_store")
   end.
 
 (** Register-indexed loads and stores *)
@@ -1142,7 +1152,8 @@ Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) true;
   OK (mkfunction f.(Mach.fn_comp) f.(Mach.fn_sig)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) ::
-         storeptr RA XSP f.(fn_retaddr_ofs) c)).
+         storeptr RA XSP f.(fn_retaddr_ofs)
+          (Pcfi_rel_offset (Ptrofs.to_int f.(fn_retaddr_ofs)):: c))).
 
 Definition transf_function (f: Mach.function) : res Asm.function :=
   do tf <- transl_function f;

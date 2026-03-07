@@ -33,10 +33,40 @@ Parameter inlining_analysis: program -> inlining_info.
 
 Parameter should_inline: inlining_info -> ident -> function -> bool.
 
-Definition add_globdef (io: inlining_info) (fenv: funenv) (idg: ident * globdef fundef unit) : funenv :=
+(** Check if an instruction is a cross-compartment call.
+    Returns [true] for calls to a different, non-bottom compartment,
+    and conservatively for indirect calls (which cannot be inlined anyway). *)
+
+Definition is_cross_call (dm: PTree.t (globdef fundef unit)) (cp: compartment) (i: instruction) : bool :=
+  match i with
+  | Icall _ (inr id) _ _ _ | Itailcall _ (inr id) _ =>
+    match dm!id with
+    | Some (Gfun (Internal f)) =>
+      if cp_eq_dec cp (comp_of f) then false else true
+    | Some (Gfun (External ef)) =>
+      match ef with
+      | EF_external _ _ => true  (* linkable: may become Internal after linking *)
+      | _ => false  (* builtins/runtime: always External, comp_of = bottom *)
+      end
+    | _ => true  (* missing or Gvar: conservatively reject *)
+    end
+  | Icall _ (inl _) _ _ _ | Itailcall _ (inl _) _ =>
+    true
+  | _ => false
+  end.
+
+(** A function has no cross-compartment calls if every instruction
+    in its code is not a cross-compartment call. *)
+
+Definition no_cross_calls (dm: PTree.t (globdef fundef unit)) (f: function) : bool :=
+  PTree.fold (fun acc _ i => acc && negb (is_cross_call dm (comp_of f) i))
+             f.(fn_code) true.
+
+Definition add_globdef (io: inlining_info) (dm: PTree.t (globdef fundef unit))
+                       (fenv: funenv) (idg: ident * globdef fundef unit) : funenv :=
   match idg with
   | (id, Gfun (Internal f)) =>
-      if should_inline io id f
+      if should_inline io id f && no_cross_calls dm f
       then PTree.set id f fenv
       else PTree.remove id fenv
   | (id, _) =>
@@ -45,7 +75,8 @@ Definition add_globdef (io: inlining_info) (fenv: funenv) (idg: ident * globdef 
 
 Definition funenv_program (p: program) : funenv :=
   let io := inlining_analysis p in
-  List.fold_left (add_globdef io) p.(prog_defs) (PTree.empty function).
+  let dm := prog_defmap p in
+  List.fold_left (add_globdef io dm) p.(prog_defs) (PTree.empty function).
 
 (** State monad *)
 
@@ -100,7 +131,7 @@ Definition bind {A B: Type} (x: mon A) (f: A -> mon B): mon B :=
             end.
 
 Notation "'do' X <- A ; B" := (bind A (fun X => B))
-   (at level 200, X ident, A at level 100, B at level 200).
+   (at level 200, X name, A at level 100, B at level 200).
 
 Definition initstate :=
   mkstate 1%positive 1%positive (PTree.empty instruction) 0.
@@ -457,8 +488,9 @@ Local Open Scope string_scope.
   address computations within the stack would overflow and produce incorrect
   results. *)
 
-Definition transf_function (fenv: funenv) (f: function) : Errors.res function :=
-  let '(R ctx s _) := expand_function fenv f initstate in
+Definition transf_function (fenv: funenv) (dm: PTree.t (globdef fundef unit)) (f: function) : Errors.res function :=
+  let fenv' := if no_cross_calls dm f then fenv else PTree.empty _ in
+  let '(R ctx s _) := expand_function fenv' f initstate in
   if zlt s.(st_stksize) Ptrofs.max_unsigned then
     OK (mkfunction (comp_of f)
                    f.(fn_sig)
@@ -469,21 +501,20 @@ Definition transf_function (fenv: funenv) (f: function) : Errors.res function :=
   else
     Error(msg "Inlining: stack too big").
 
-Definition transf_fundef (fenv: funenv) (fd: fundef) : Errors.res fundef :=
-  AST.transf_partial_fundef (transf_function fenv) fd.
+Definition transf_fundef (fenv: funenv) (dm: PTree.t (globdef fundef unit)) (fd: fundef) : Errors.res fundef :=
+  AST.transf_partial_fundef (transf_function fenv dm) fd.
 
-#[global] Instance comp_transl_function fenv:
-  has_comp_transl_partial (transf_function fenv).
+#[global] Instance comp_transl_function fenv dm:
+  has_comp_transl_partial (transf_function fenv dm).
 Proof.
   unfold transf_function.
   intros f tf H; try now inv H.
-  destruct (expand_function _ _ _).
-  destruct (zlt _ _); try easy.
-  simpl in *.
-  now inv H.
+  destruct (no_cross_calls _ _); destruct (expand_function _ _ _);
+  destruct (zlt _ _); try easy; simpl in *; now inv H.
 Qed.
 
 Definition transf_program (p: program): Errors.res program :=
   let fenv := funenv_program p in
-  AST.transform_partial_program (transf_fundef fenv) p.
+  let dm := prog_defmap p in
+  AST.transform_partial_program (transf_fundef fenv dm) p.
 

@@ -21,6 +21,7 @@ Require Archi.
 Require Import Coqlib Errors.
 Require Import AST Integers Floats Memdata.
 Require Import Op Locations Mach Asm.
+Require SelectOp.
 
 Local Open Scope string_scope.
 Local Open Scope error_monad_scope.
@@ -419,7 +420,7 @@ Definition transl_op
           else Ploadsi rd f :: k)
   | Oaddrsymbol s ofs, nil =>
       do rd <- ireg_of res;
-      OK (if Archi.pic_code tt && negb (Ptrofs.eq ofs Ptrofs.zero)
+      OK (if SelectOp.symbol_is_relocatable s && negb (Ptrofs.eq ofs Ptrofs.zero)
           then Ploadsymbol rd s Ptrofs.zero :: addptrofs rd rd ofs k
           else Ploadsymbol rd s ofs :: k)
   | Oaddrstack n, nil =>
@@ -696,7 +697,12 @@ Definition transl_op
   | Ocmp cmp, _ =>
       do rd <- ireg_of res;
       transl_cond_op cmp rd args k
-
+  | Osel cmp ty, a1 :: a2 :: args =>
+      do rd <- ireg_of res; do rs1 <- ireg_of a1; do rs2 <- ireg_of a2;
+      if ireg_eq rs1 rs2 then
+        OK (Pmv rd rs1 :: k)
+      else
+        transl_cond_op cmp X31 args (Pcsel rd X31 rs1 rs2 :: k)
   | _, _ =>
       Error(msg "Asmgen.transl_op")
   end.
@@ -805,10 +811,10 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
 Definition transl_store (chunk: memory_chunk) (addr: addressing)
            (args: list mreg) (src: mreg) (k: code) :=
   match chunk with
-  | Mint8signed | Mint8unsigned =>
+  | Mint8unsigned =>
       do r <- ireg_of src;
       transl_memory_access (Psb r)  addr args k
-  | Mint16signed | Mint16unsigned =>
+  | Mint16unsigned =>
       do r <- ireg_of src;
       transl_memory_access (Psh r)  addr args k
   | Mint32 =>
@@ -935,7 +941,7 @@ Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) true;
   OK (mkfunction f.(Mach.fn_comp) f.(Mach.fn_sig)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) ::
-         storeind_ptr RA SP f.(fn_retaddr_ofs) c)).
+         storeind_ptr RA SP f.(fn_retaddr_ofs) (Pcfi_rel_offset (Ptrofs.to_int f.(fn_retaddr_ofs)):: c))).
 
 Definition transf_function (f: Mach.function) : res Asm.function :=
   do tf <- transl_function f;

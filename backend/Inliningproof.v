@@ -18,7 +18,7 @@ Require Import Op Registers RTL.
 Require Import Inlining Inliningspec.
 
 Definition match_prog (prog tprog: program) :=
-  match_program (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) eq prog tprog.
+  match_program (fun cunit f tf => transf_fundef (funenv_program cunit) (prog_defmap cunit) f = OK tf) eq prog tprog.
 
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
@@ -35,6 +35,12 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Let HYPOTHESIS := @has_comp_fundef function _.
+
+#[local] Instance comp_match_transf_fundef:
+  has_comp_match (fun cunit (f: fundef) tf => transf_fundef (funenv_program cunit) (prog_defmap cunit) f = OK tf).
+Proof.
+  intros cunit f tf H. eapply comp_transl_partial; eauto.
+Qed.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -61,13 +67,13 @@ Qed.
 Lemma functions_translated:
   forall (v: val) (f: fundef),
   Genv.find_funct ge v = Some f ->
-  exists cu f', Genv.find_funct tge v = Some f' /\ transf_fundef (funenv_program cu) f = OK f' /\ linkorder cu prog.
+  exists cu f', Genv.find_funct tge v = Some f' /\ transf_fundef (funenv_program cu) (prog_defmap cu) f = OK f' /\ linkorder cu prog.
 Proof (Genv.find_funct_match TRANSF).
 
 Lemma function_ptr_translated:
   forall (b: block) (f: fundef),
   Genv.find_funct_ptr ge b = Some f ->
-  exists cu f', Genv.find_funct_ptr tge b = Some f' /\ transf_fundef (funenv_program cu) f = OK f' /\ linkorder cu prog.
+  exists cu f', Genv.find_funct_ptr tge b = Some f' /\ transf_fundef (funenv_program cu) (prog_defmap cu) f = OK f' /\ linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
 
 Lemma allowed_call_translated:
@@ -97,7 +103,7 @@ Proof.
 Qed.
 
 Lemma sig_function_translated:
-  forall cu f f', transf_fundef (funenv_program cu) f = OK f' -> funsig f' = funsig f.
+  forall cu f f', transf_fundef (funenv_program cu) (prog_defmap cu) f = OK f' -> funsig f' = funsig f.
 Proof.
   intros. destruct f; Errors.monadInv H.
   exploit transf_function_spec; eauto. intros SP; inv SP. auto.
@@ -441,7 +447,7 @@ Lemma find_function_agree:
   match_globalenvs F bound ->
   exists cu fd',
   find_function tge (sros ctx ros) rs' = Some fd' /\
-  transf_fundef (funenv_program cu) fd = OK fd' /\
+  transf_fundef (funenv_program cu) (prog_defmap cu) fd = OK fd' /\
   linkorder cu prog.
 Proof.
   intros. unfold find_function in *. destruct ros as [r | id]; simpl in *.
@@ -495,6 +501,37 @@ Proof.
   simpl in H0. unfold ge, fundef, Genv.find_funct in H0. rewrite A in H0.
   rewrite <- Genv.find_funct_ptr_iff in B.
   destruct Ptrofs.eq_dec; congruence.
+Qed.
+
+Lemma find_function_prog_defmap:
+  forall id rs fd,
+  find_function ge (inr id) rs = Some fd ->
+  (prog_defmap prog)!id = Some (Gfun fd).
+Proof.
+  intros id rs fd H.
+  unfold find_function, find_function_ptr in H.
+  destruct (Genv.find_symbol ge id) eqn:FS; [|discriminate].
+  unfold Genv.find_funct in H.
+  destruct Ptrofs.eq_dec; [|discriminate]. subst.
+  apply Genv.find_def_symbol. exists b. split; auto.
+  apply Genv.find_funct_ptr_iff. exact H.
+Qed.
+
+Lemma no_cross_calls_comp_rel:
+  forall f ros rs fd pc sig args res s,
+  no_cross_calls (prog_defmap prog) f = true ->
+  (fn_code f)!pc = Some (Icall sig ros args res s) ->
+  find_function ge ros rs = Some fd ->
+  comp_of f = comp_of fd \/ comp_of fd = bottom.
+Proof.
+  intros f ros rs fd pc sig args res s NCC CODE FF.
+  exploit no_cross_calls_spec; eauto. simpl.
+  destruct ros as [r | callee_id].
+  - intro; discriminate.
+  - apply find_function_prog_defmap in FF. rewrite FF.
+    destruct fd as [f0 | e].
+    + destruct (cp_eq_dec (comp_of f) (comp_of f0)); [auto|]. intro; discriminate.
+    + destruct e; intro H; try discriminate; right; reflexivity.
 Qed.
 
 (** Translation of builtin arguments. *)
@@ -579,7 +616,17 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (RES: Ple res ctx.(mreg))
         (BELOW: Plt sp' bound)
-        (ACCESS: Mem.block_compartment m' sp' = comp_of f'),
+        (ACCESS: Mem.block_compartment m' sp' = comp_of f')
+        (NCC_NOALIAS: (exists id, fenv!id = Some f) \/
+          no_cross_calls (prog_defmap prog) f = true \/
+          (fenv = PTree.empty _ /\
+           (forall b1 delta', b1 <> sp -> F b1 = Some (sp', delta') -> False) /\
+           ctx.(dstk) + ctx.(mstk) >= f'.(fn_stacksize)))
+        (NCC_FENV: fenv_no_cross_calls prog fenv)
+        (CP_REL: comp_of f = cp \/ cp = bottom \/
+          (comp_of f <> cp /\ cp <> bottom /\
+           (forall b1 delta', b1 <> sp -> F b1 = Some (sp', delta') -> False) /\
+           ctx.(dstk) + ctx.(mstk) >= f'.(fn_stacksize))),
         (* (ACCESS: Mem.can_access_block m' sp' (comp_of f')), *)
       match_stacks F m m' cp
                    (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
@@ -620,7 +667,13 @@ with match_stacks_inside (F: meminj) (m m': mem):
         (BELOW: context_below ctx' ctx)
         (SBELOW: context_stack_call ctx' ctx)
         (* (ACCESS: Mem.can_access_block m' sp' (comp_of f')), *)
-        (ACCESS: Mem.block_compartment m' sp' = comp_of f'),
+        (ACCESS: Mem.block_compartment m' sp' = comp_of f')
+        (NCC_FENV: fenv_no_cross_calls prog fenv)
+        (NCC_NOALIAS_F: (exists id, fenv!id = Some f) \/
+          no_cross_calls (prog_defmap prog) f = true \/
+          (forall b1 delta', b1 <> sp -> F b1 = Some (sp', delta') -> False))
+        (IN_FENV: (exists id, fenv!id = Some f) \/
+          no_cross_calls (prog_defmap prog) f = true),
       match_stacks_inside F m m'
         (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk' f' ctx sp' rs'.
@@ -771,6 +824,11 @@ Proof.
   eapply agree_regs_incr; eauto.
   eapply range_private_invariant; eauto.
   erewrite PERM4; eauto; extlia.
+  { destruct NCC_NOALIAS as [NCC | [NCC | [FEMPTY [NA SZEQ]]]]; [left; auto | right; left; auto |].
+    right; right. split; [exact FEMPTY|]. split; [|exact SZEQ]. intros b1 delta' Hneq HF1. apply (NA b1 delta' Hneq). eapply INJ. eexact HF1. extlia. }
+  { destruct CP_REL as [?|[?|[DIFF [NBOT [NA0 SZEQ0]]]]]; [left; auto | right; left; auto |].
+    right; right. split; [exact DIFF|split; [exact NBOT|split; [|exact SZEQ0]]].
+    intros b1 delta' Hneq HF1. apply (NA0 b1 delta' Hneq). eapply INJ. eexact HF1. extlia. }
   (* untailcall *)
   eapply match_stacks_untailcall with (ctx := ctx); eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -802,6 +860,8 @@ Proof.
     intros. split. eapply INJ; eauto. extlia. eapply PERM1; eauto. extlia.
     intros. eapply PERM2; eauto. extlia.
   erewrite PERM4; eauto; extlia.
+  { destruct NCC_NOALIAS_F as [NCC | [NCC | NA]]; [left; auto | right; left; auto |].
+    right; right. intros b1 delta' Hneq HF1. apply (NA b1 delta' Hneq). eapply INJ. eexact HF1. extlia. }
 Qed.
 
 Lemma match_stacks_empty:
@@ -885,8 +945,9 @@ Proof.
   eapply agree_regs_incr; eauto.
   eapply range_private_invariant; eauto.
   intros. exploit Mem.perm_alloc_inv; eauto. destruct (eq_block b0 b); intros.
-  subst b0. rewrite H2 in H5; inv H5. elimtype False; extlia.
+  subst b0. rewrite H2 in H5; inv H5. exfalso; extlia.
   rewrite H3 in H5; auto.
+  { destruct IN_FENV as [NCC | NCC]; [left; auto | right; left; auto]. }
 Qed.
 
 (** Preservation by freeing *)
@@ -932,9 +993,7 @@ Proof.
     destruct (zle sz 2). extlia.
     destruct (zle sz 4). extlia.
     auto.
-  destruct chunk; simpl in *; auto.
-  apply Z.divide_1_l.
-  apply Z.divide_1_l.
+  destruct chunk; simpl in *; auto using Z.divide_1_l.
   apply H2; lia.
   apply H2; lia.
 Qed.
@@ -978,6 +1037,19 @@ Proof.
     intros. apply SSZ2; auto. apply MAXPERM'; auto. red; extlia.
     erewrite Mem.unchanged_on_own; eauto.
     eapply Mem.valid_block_inject_2; eauto.
+  { destruct NCC_NOALIAS as [NCC | [NCC | [FEMPTY [NA SZEQ]]]]; [left; auto | right; left; auto |].
+    right; right. split; [exact FEMPTY|]. split; [|exact SZEQ]. intros b1 delta' Hneq HF2.
+    destruct (F1 b1) as [[b1' d1']|] eqn:HF1.
+    assert (F2 b1 = Some (b1', d1')) by (apply INCR; auto).
+    rewrite HF2 in *; inv H0. eapply NA; eauto.
+    exploit SEP; eauto. intros [_ B]. elim B. red. extlia. }
+  { destruct CP_REL as [?|[?|[DIFF [NBOT [NA0 SZEQ0]]]]]; [left; auto | right; left; auto |].
+    right; right. split; [exact DIFF|split; [exact NBOT|split; [|exact SZEQ0]]].
+    intros b1 delta' Hneq HF2.
+    destruct (F1 b1) as [[b1' d1']|] eqn:HF1.
+    assert (F2 b1 = Some (b1', d1')) by (apply INCR; auto).
+    rewrite HF2 in *; inv H0. eapply NA0; eauto.
+    exploit SEP; eauto. intros [_ B]. elim B. red. extlia. }
   eapply match_stacks_untailcall; eauto.
     eapply match_stacks_inside_extcall; eauto. extlia.
     eapply range_private_extcall; eauto. red; extlia.
@@ -990,6 +1062,12 @@ Proof.
     eapply agree_regs_incr; eauto.
     eapply range_private_extcall; eauto.
     erewrite Mem.unchanged_on_own; eauto.
+  { destruct NCC_NOALIAS_F as [NCC | [NCC | NA0]]; [left; auto | right; left; auto |].
+    right; right. intros b1 delta' Hneq HF2.
+    destruct (F1 b1) as [[b1' d1']|] eqn:HF1.
+    assert (F2 b1 = Some (b1', d1')) by (apply INCR; auto).
+    rewrite HF2 in *; inv H1. eapply NA0; eauto.
+    exploit SEP; eauto. intros [_ B]. elim B. red. extlia. }
 Qed.
 
 End EXTCALL.
@@ -1044,13 +1122,19 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (* (AC: Mem.can_access_block m' sp' (comp_of f')) *)
         (PRIV: range_private F m m' sp' (ctx.(dstk) + ctx.(mstk)) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
+        (NCC_NOALIAS: (exists id, fenv!id = Some f) \/
+          no_cross_calls (prog_defmap prog) f = true \/
+          (fenv = PTree.empty _ /\
+           (forall b1 delta', b1 <> sp -> F b1 = Some (sp', delta') -> False) /\
+           ctx.(dstk) + ctx.(mstk) >= f'.(fn_stacksize)))
+        (NCC_FENV: fenv_no_cross_calls prog fenv),
       match_states (State stk f (Vptr sp Ptrofs.zero) pc rs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
   | match_call_states: forall stk fd args m stk' fd' args' m' cp cunit F
         (MS: match_stacks F m m' (comp_of fd) stk stk' (Mem.nextblock m'))
         (LINK: linkorder cunit prog)
-        (FD: transf_fundef (funenv_program cunit) fd = OK fd')
+        (FD: transf_fundef (funenv_program cunit) (prog_defmap cunit) fd = OK fd')
         (VINJ: Val.inject_list F args args')
         (MINJ: Mem.inject F m m'),
       match_states (Callstate stk fd args m cp)
@@ -1070,7 +1154,9 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (* (AC: Mem.can_access_block m' sp' (comp_of f')) *)
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
+        (NCC: exists id, fenv!id = Some f)
+        (NCC_FENV: fenv_no_cross_calls prog fenv),
       match_states (Callstate stk (Internal f) vargs m (comp_of f'))
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
   | match_return_states: forall stk v m stk' v' m' F cp
@@ -1195,24 +1281,34 @@ Proof.
   exploit find_function_agree; eauto. intros (cu & fd' & A & B & C).
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
 + (* not inlined *)
-  left; econstructor; split.
-  eapply plus_one. eapply exec_Icall; eauto.
-  eapply sig_function_translated; eauto.
-  eapply find_function_ptr_translated; eauto.
-  rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
-  (* TODO: write lemma for that *)
-  assert (forall F ctx rs rs', agree_regs F ctx rs rs' ->
-                          (* tr_funbody fenv (fn_stacksize f') ctx f (fn_code f') -> *)
-                          forall args,
-                            Forall not_ptr rs ## args ->
-                            Forall not_ptr rs' ## (sregs ctx args)).
-  { clear. intros F ctx rs rs' AG (* FB *).
-    induction args; intros.
+  (* Derive COMP_REL_OR_NOALIAS before econstructor to avoid evar issues *)
+  assert (COMP_REL_OR_NOALIAS:
+    (comp_of f = comp_of fd \/ comp_of fd = bottom) \/
+    ((forall b1 delta', b1 <> sp0 -> F b1 = Some (sp', delta') -> False) /\
+     ctx.(dstk) + ctx.(mstk) >= f'.(fn_stacksize))).
+  { destruct NCC_NOALIAS as [[id_f INFENV] | [NCC_F | [_ [NOALIAS SZEQ]]]].
+    - left. destruct ros as [r | callee_id].
+      + exfalso. exact (NCC_FENV _ _ _ _ _ _ _ _ INFENV H).
+      + pose proof (H0' := H0). apply find_function_prog_defmap in H0'.
+        specialize (NCC_FENV _ _ _ _ _ _ _ _ INFENV H) as NCC'.
+        simpl in NCC'. rewrite H0' in NCC'.
+        destruct fd as [fi | ef].
+        * left. exact NCC'.
+        * right. reflexivity.
+    - left. eapply no_cross_calls_comp_rel; eauto.
+    - right. split; [exact NOALIAS | exact SZEQ]. }
+  (* Helper for not_ptr translation *)
+  assert (NOT_PTR_LEMMA: forall F0 ctx0 rs0 rs0', agree_regs F0 ctx0 rs0 rs0' ->
+                          forall args0,
+                            Forall not_ptr rs0 ## args0 ->
+                            Forall not_ptr rs0' ## (sregs ctx0 args0)).
+  { clear. intros F0 ctx0 rs0 rs0' AG0.
+    induction args0; intros.
     - eauto.
     - inv H.
       constructor.
-      + destruct AG as [AG1 AG2].
-        destruct (Plt_Ple_dec (mreg ctx) a).
+      + destruct AG0 as [AG1 AG2].
+        destruct (Plt_Ple_dec (mreg ctx0) a).
         * specialize (AG2 _ p); rewrite AG2 in H2; contradiction.
         * specialize (AG1 _ p).
           inv AG1; simpl in *; auto.
@@ -1220,18 +1316,201 @@ Proof.
           rewrite <- H0 in H2; simpl in H2; contradiction.
       + eauto.
   }
-  intros CROSS. eapply H1; eauto.
-  eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP; eauto.
-  now rewrite (comp_transf_partial_fundef _ B).
-  rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B).
-  eapply call_trace_translated; eauto.
-  rewrite SAMECOMP.
-  econstructor; eauto.
-  eapply match_stacks_cons; eauto.
-  eapply agree_val_regs; eauto.
+  destruct COMP_REL_OR_NOALIAS as [COMP_REL | [NOALIAS SZEQ]].
+  * (* COMP_REL: same comp or bottom callee → m' = m *)
+    assert (SRC_EQ: m' = m).
+    { destruct COMP_REL as [EQ | BOT].
+      + destruct (cp_eq_dec (comp_of f) (comp_of fd)) in SET_PERM; [exact SET_PERM|contradiction].
+      + destruct (cp_eq_dec (comp_of f) (comp_of fd)) in SET_PERM; [exact SET_PERM|].
+        destruct (cp_eq_dec (comp_of fd) bottom) in SET_PERM; [exact SET_PERM|contradiction]. }
+    subst m'.
+    left; econstructor; split.
+    eapply plus_one. eapply exec_Icall; eauto.
+    eapply sig_function_translated; eauto.
+    eapply find_function_ptr_translated; eauto.
+    rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+    intros CROSS. eapply NOT_PTR_LEMMA; eauto.
+    eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP; eauto.
+    now rewrite (comp_transf_partial_fundef _ B).
+    rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B).
+    eapply call_trace_translated; eauto.
+    { (* target SET_PERM *)
+      destruct COMP_REL as [EQ | BOT].
+      - destruct (cp_eq_dec (comp_of f') (comp_of fd')); [reflexivity|].
+        exfalso; apply n; rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B); auto.
+      - destruct (cp_eq_dec (comp_of f') (comp_of fd')); [reflexivity|].
+        destruct (cp_eq_dec (comp_of fd') bottom); [reflexivity|].
+        exfalso; apply n0; rewrite <- (comp_transf_partial_fundef _ B); auto. }
+    (* match_states *)
+    rewrite SAMECOMP. eapply match_call_states; eauto.
+    eapply match_stacks_cons; eauto.
+    destruct COMP_REL as [?|?]; [left|right;left]; auto.
+    eapply agree_val_regs; eauto.
+  * (* NOALIAS: same-comp/bottom gives m' = m; true cross-comp uses set_parallel_inject *)
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)) as [SAME|DIFF].
+    { (* same comp → m' = m *)
+      destruct (cp_eq_dec (comp_of f) (comp_of fd)) in SET_PERM; [|contradiction].
+      subst m'.
+      left; econstructor; split.
+      eapply plus_one. eapply exec_Icall; eauto.
+      eapply sig_function_translated; eauto.
+      eapply find_function_ptr_translated; eauto.
+      rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+      { intros CROSS. eapply NOT_PTR_LEMMA; eauto. apply NO_CROSS_PTR.
+        rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B) in CROSS. exact CROSS. }
+      rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B).
+      eapply call_trace_translated; eauto.
+      { destruct (cp_eq_dec (comp_of f') (comp_of fd')); [reflexivity|].
+        exfalso; apply n; rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B); auto. }
+      rewrite SAMECOMP. eapply match_call_states; eauto.
+      { eapply match_stacks_cons; eauto. }
+      eapply agree_val_regs; eauto. }
+    destruct (cp_eq_dec (comp_of fd) bottom) as [BOT|NBOT].
+    { (* bottom callee → m' = m *)
+      destruct (cp_eq_dec (comp_of f) (comp_of fd)) in SET_PERM; [contradiction|].
+      destruct (cp_eq_dec (comp_of fd) bottom) in SET_PERM; [|contradiction].
+      subst m'.
+      left; econstructor; split.
+      eapply plus_one. eapply exec_Icall; eauto.
+      eapply sig_function_translated; eauto.
+      eapply find_function_ptr_translated; eauto.
+      rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+      { intros CROSS. eapply NOT_PTR_LEMMA; eauto. apply NO_CROSS_PTR.
+        rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B) in CROSS. exact CROSS. }
+      rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B).
+      eapply call_trace_translated; eauto.
+      destruct (cp_eq_dec (comp_of f') (comp_of fd')); [reflexivity|].
+      destruct (cp_eq_dec (comp_of fd') bottom); [reflexivity|].
+      exfalso. apply n1. rewrite <- (comp_transf_partial_fundef _ B). exact e.
+      rewrite SAMECOMP. eapply match_call_states; eauto.
+      { eapply match_stacks_cons; eauto. }
+      eapply agree_val_regs; eauto. }
+    (* True cross-comp NOALIAS case: use set_parallel_inject *)
+    destruct (cp_eq_dec (comp_of f) (comp_of fd)) in SET_PERM; [contradiction|].
+    destruct (cp_eq_dec (comp_of fd) bottom) in SET_PERM; [contradiction|].
+    (* SET_PERM: Mem.set_perm m sp0 Readable = Some m' *)
+    exploit Mem.set_parallel_inject; eauto.
+    { intros b1 b1' delta' Hneq HFb1.
+      destruct (eq_block b1' sp') as [->|NEQ].
+      - exfalso. eapply NOALIAS; eauto.
+      - exact (not_eq_sym NEQ). }
+    intros [m1' [SET_T MINJ']].
+    (* Assert the target step explicitly to fix target memory as m1' *)
+    assert (TGT_SET_PERM:
+      if cp_eq_dec (comp_of f') (comp_of fd') then m1' = m'0
+      else if cp_eq_dec (comp_of fd') bottom then m1' = m'0
+      else Mem.set_perm m'0 sp' Readable = Some m1').
+    { destruct (cp_eq_dec (comp_of f') (comp_of fd')).
+      - exfalso. apply DIFF. rewrite SAMECOMP, (comp_transf_partial_fundef _ B). exact e.
+      - destruct (cp_eq_dec (comp_of fd') bottom).
+        + exfalso. apply NBOT. rewrite (comp_transf_partial_fundef _ B). exact e.
+        + exact SET_T. }
+    left; econstructor; split.
+    eapply plus_one. eapply exec_Icall; eauto.
+    eapply sig_function_translated; eauto.
+    eapply find_function_ptr_translated; eauto.
+    rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+    { intros CROSS. eapply NOT_PTR_LEMMA; eauto. apply NO_CROSS_PTR.
+      rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B) in CROSS. exact CROSS. }
+    rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B).
+    eapply call_trace_translated; eauto.
+    (* match_states *)
+    rewrite SAMECOMP. eapply match_call_states; eauto.
+    eapply match_stacks_cons; eauto.
+    (* match_stacks_inside F m' m1' stk stk' f' ctx sp' rs': transfer through set_perm *)
+    { (* match_stacks_inside: transfer through set_perm *)
+      inv MS0.
+      - (* base case: transfer match_stacks through set_perm *)
+        constructor; auto.
+        eapply match_stacks_invariant; eauto.
+        + (* PERM1: source perm backward through set_perm *)
+          intros b1 b2 delta ofs HF Hlt Hperm.
+          eapply Mem.set_perm_perm in Hperm as [p' Hp']; eauto.
+          eapply Mem.perm_implies; eauto with mem.
+        + (* PERM2: target Freeable forward — b < sp', so b ≠ sp', set_perm unchanged *)
+          intros b ofs Hlt Hfree.
+          eapply Mem.perm_set_2; eauto.
+          apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+        + (* PERM3: target perm backward — b < sp', so b ≠ sp', set_perm unchanged *)
+          intros b ofs k p Hlt Hperm.
+          eapply Mem.perm_set_2'; eauto.
+          apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+        + (* PERM4: block_compartment preserved — set_perm preserves mem_compartments *)
+          intros b Hlt.
+          unfold Mem.block_compartment, Mem.set_perm in SET_T.
+          destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+          inv SET_T. reflexivity.
+      - (* inlined case: sp ≠ sp0 contradicts NOALIAS; sp = sp0 is degenerate *)
+        destruct (eq_block sp sp0).
+        + subst sp. rewrite SP in SP0. inv SP0.
+          (* degenerate case: same SP, same offset *)
+          assert (MSTK0: mstk ctx' = 0) by (unfold context_stack_call in SBELOW; lia).
+          (* Build outer frame; transfer inner MS by induction *)
+          eapply match_stacks_inside_inlined; eauto.
+          * (* Inner MS: induction on MS *)
+            clear - MS SET_PERM SET_T SP NOALIAS H2 MSTK0.
+            revert H2 MSTK0.
+            induction MS; intros H2 MSTK0.
+            -- (* base case *)
+               constructor; auto.
+               eapply match_stacks_invariant; eauto using inject_incr_refl.
+               ++ intros b1 b2 delta ofs HF Hlt Hperm.
+                  eapply Mem.set_perm_perm in Hperm as [p' Hp']; eauto.
+                  eapply Mem.perm_implies; eauto with mem.
+               ++ intros b ofs Hlt Hfree.
+                  eapply Mem.perm_set_2; eauto.
+                  apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+               ++ intros b ofs k p Hlt Hperm.
+                  eapply Mem.perm_set_2'; eauto.
+                  apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+               ++ intros b Hlt.
+                  unfold Mem.block_compartment, Mem.set_perm in SET_T.
+                  destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+                  inv SET_T. reflexivity.
+            -- (* inlined case *)
+               destruct (eq_block sp sp0).
+               ++ subst sp. rewrite SP0 in SP. inv SP.
+                  assert (MSTK1: mstk ctx' = 0) by (unfold context_stack_call in SBELOW; lia).
+                  eapply match_stacks_inside_inlined; eauto.
+                  ** rewrite H0 in SP0. apply IHMS; auto.
+                  ** red; intros. rewrite MSTK1 in *. lia.
+                  ** unfold Mem.block_compartment, Mem.set_perm in SET_T.
+                     destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+                     inv SET_T. unfold Mem.block_compartment in *; simpl in *.
+                     rewrite ACCESS. reflexivity.
+               ++ exfalso. eapply NOALIAS; eauto.
+          * (* SP: F sp0 = Some(sp', dstk ctx') *)
+            rewrite <- H2. exact SP.
+          * (* PAD: empty range *)
+            red; intros. rewrite MSTK0 in *. lia.
+          * (* ACCESS *)
+            unfold Mem.block_compartment, Mem.set_perm in SET_T.
+            destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+                     inv SET_T. unfold Mem.block_compartment in *; simpl in *.
+                     rewrite ACCESS. reflexivity.
+        + exfalso. eapply NOALIAS; eauto. }
+    (* range_private: vacuously true by SZEQ *)
+    { red; intros; lia. }
+    (* SSZ2: perm bounds preserved *)
+    { intros ofs Hperm. apply SSZ2. eapply Mem.set_perm_perm in Hperm as [? ?]; eauto. eapply Mem.perm_implies; eauto with mem. }
+    (* BELOW: sp' < nextblock m1' *)
+    { eapply Mem.set_perm_valid_block_1; eauto. }
+    (* ACCESS: block_compartment m1' sp' = comp_of f' *)
+    { unfold Mem.block_compartment, Mem.set_perm in SET_T.
+      destruct (plt sp' (Mem.nextblock m'0)); try discriminate. inv SET_T. simpl. exact AC. }
+    (* CP_REL: true cross-comp with NOALIAS and SZEQ *)
+    { right; right. exact (conj DIFF (conj NBOT (conj NOALIAS SZEQ))). }
+    (* Val.inject_list *)
+    eapply agree_val_regs; eauto.
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
+  (* Inlined call is intra-compartment, so SET_PERM gives m' = m *)
+  assert (m' = m).
+  { change (comp_of (Internal f0)) with (comp_of f0) in SET_PERM.
+    destruct (cp_eq_dec (comp_of f) (comp_of f0)); [exact SET_PERM|].
+    exfalso; apply n; exact (eq_sym SAMECOMP0). }
+  subst m'.
   right; split. simpl; lia. split.
   eapply call_trace_internal_call; eauto. simpl.
   rewrite SAMECOMP0.
@@ -1241,6 +1520,9 @@ Proof.
   econstructor; eauto.
   eapply match_stacks_inside_inlined; eauto.
   red; intros; apply PRIV. inv H14. destruct H17. lia.
+  { destruct NCC_NOALIAS as [NCC | [NCC | [_ [NA _]]]]; [left; auto | right; left; auto | right; right; auto]. }
+  { destruct NCC_NOALIAS as [NCC | [NCC | [FEMPTY _]]]; [left; auto | right; auto |].
+    exfalso. rewrite FEMPTY in H7. rewrite PTree.gempty in H7. discriminate. }
   congruence.
   apply agree_val_regs_gen; auto.
   red; intros. apply PRIV. inv H14. destruct H17. extlia.
@@ -1318,6 +1600,9 @@ Proof.
   rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP.
   simpl; destruct (flowsto_dec (comp_of f) (comp_of f)); pose proof (flowsto_refl (comp_of f));
     now auto.
+  (* SET_PERM: tailcall is intra-compartment, so same comp => reflexivity *)
+  rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP.
+  destruct (cp_eq_dec (comp_of f) (comp_of f)); [reflexivity | exfalso; apply n; reflexivity].
   rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
@@ -1371,6 +1656,12 @@ Proof.
     intros; eapply external_call_max_perm; eauto.
   auto.
   intros. apply SSZ2. eapply external_call_max_perm; eauto.
+  { destruct NCC_NOALIAS as [NCC | [NCC | [FEMPTY [NA SZEQ]]]]; [left; auto | right; left; auto |].
+    right; right. split; [exact FEMPTY|]. split; [|exact SZEQ]. intros b1 delta' Hneq HF1.
+    destruct (F b1) as [[b1' d1']|] eqn:HF.
+    { apply (NA b1 delta' Hneq). pose proof (J _ _ _ HF). congruence. }
+    { destruct (K _ _ _ HF HF1) as [_ NVB]. elim NVB. exact VB. } }
+  exact NCC_FENV.
 
 - (* cond *)
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
@@ -1441,42 +1732,55 @@ Proof.
   { eapply tr_function_linkorder; eauto. }
   inversion TR; subst.
   exploit Mem.alloc_parallel_inject. eauto. eauto. apply Z.le_refl.
-    instantiate (1 := fn_stacksize f'). inv H1. extlia.
+    instantiate (1 := fn_stacksize f'). match goal with H: tr_funbody _ _ _ _ _ |- _ => inv H end. extlia.
   intros [F' [m1' [sp' [A [B [C [D E]]]]]]].
   left; econstructor; split.
-  eapply plus_one. eapply exec_function_internal.
-    now rewrite H4; eauto.
-  rewrite H7. econstructor.
+  eapply plus_one. eapply exec_function_internal; eauto.
+  match goal with H: fn_sig ?x = fn_sig ?y |- _ => rewrite H end;
+    eauto using Val.has_argtype_list_inject.
+  match goal with H: comp_of ?x = comp_of ?y |- _ => rewrite H end; eauto.
+  match goal with H: fn_entrypoint _ = spc _ _ |- _ => rewrite H end. econstructor.
   instantiate (1 := F'). apply match_stacks_inside_base.
   assert (SP: sp' = Mem.nextblock m'0) by (eapply Mem.alloc_result; eauto).
-  rewrite <- SP in MS0. rewrite H4.
+  rewrite <- SP in MS0.
+  match goal with H: comp_of f' = comp_of f |- _ => rewrite H end.
   eapply match_stacks_invariant; eauto.
     intros. destruct (eq_block b1 stk).
-    subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
-    rewrite E in H9; auto.
-    intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
+    subst b1. rewrite D in H12; inv H12. eelim Plt_strict; eauto.
+    rewrite E in H12; auto.
+    intros. exploit Mem.perm_alloc_inv. eexact H0. eauto.
     destruct (eq_block b1 stk); intros; auto.
-    subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
+    subst b1. rewrite D in H12; inv H12. eelim Plt_strict; eauto.
     intros. eapply Mem.perm_alloc_1; eauto.
     intros. exploit Mem.perm_alloc_inv. eexact A. eauto.
     rewrite dec_eq_false; auto with ordered_type.
   { intros. erewrite Mem.alloc_block_compartment; eauto.
     destruct eq_block; auto. extlia. }
-  (* { intros; split; intros. *)
-  (*   eapply Mem.alloc_can_access_block_other_inj_2; eauto. extlia. *)
-  (*   eapply Mem.alloc_can_access_block_other_inj_1; eauto. } *)
   auto. auto. auto. eauto. auto.
-  rewrite H6. apply agree_regs_init_regs. eauto. auto. inv H1; auto. congruence. auto.
+  match goal with H: fn_params f' = sregs ctx (fn_params f) |- _ => rewrite H end.
+  apply agree_regs_init_regs. eauto. auto. inv H3; auto. congruence. auto.
   eapply Mem.valid_new_block; eauto. simpl.
-  rewrite H4; erewrite <- Mem.owned_new_block; eauto with comps.
+  match goal with H: comp_of f' = comp_of f |- _ => rewrite H end;
+  erewrite <- Mem.owned_new_block; eauto with comps.
   red; intros. split.
-  eapply Mem.perm_alloc_2; eauto. inv H1; extlia.
-  intros; red; intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
+  eapply Mem.perm_alloc_2; eauto. inv H3; extlia.
+  intros; red; intros. exploit Mem.perm_alloc_inv. eexact H0. eauto.
   destruct (eq_block b stk); intros.
-  subst. rewrite D in H10; inv H10. inv H1; extlia.
-  rewrite E in H10; auto. eelim Mem.fresh_block_alloc. eexact A. eapply Mem.mi_mappedblocks; eauto.
+  subst. rewrite D in H13; inv H13. inv H3; extlia.
+  rewrite E in H13; auto. eelim Mem.fresh_block_alloc. eexact A. eapply Mem.mi_mappedblocks; eauto.
   auto.
   intros. exploit Mem.perm_alloc_inv; eauto. rewrite dec_eq_true. lia.
+  { destruct H11 as [NCC | [EMPTY STKSIZE_EQ]].
+    - right; left; exact NCC.
+    - right; right. split; [exact EMPTY|]. split.
+      + intros b1 delta' Hneq HF'.
+        rewrite E in HF' by auto.
+        assert (VBsp: Mem.valid_block m'0 sp').
+        { eapply Mem.mi_mappedblocks; eauto. }
+        assert (sp' = Mem.nextblock m'0) by (eapply Mem.alloc_result; eauto).
+        subst sp'. eelim Plt_strict; eauto.
+      + lia. }
+  exact H2.
 
 - (* internal function, inlined *)
   inversion FB; subst.
@@ -1516,8 +1820,10 @@ Proof.
   eauto. eauto. auto.
   apply agree_regs_incr with F; auto.
   auto. auto. auto. auto.
-  rewrite H2. eapply range_private_alloc_left; eauto.
+  rewrite H3. eapply range_private_alloc_left; eauto.
   auto. auto.
+  left; exact NCC.
+  exact NCC_FENV.
 
 - (* external function *)
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
@@ -1542,14 +1848,131 @@ Proof.
 - (* return from noninlined function *)
   inv MS0.
 + (* normal case *)
-  left; econstructor; split.
-  eapply plus_one. eapply exec_return.
-  rewrite <- SAMECOMP.
-  intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
-  rewrite <- SAMECOMP. eapply return_trace_inj; eauto.
-  econstructor; eauto.
-  eapply match_stacks_inside_set_reg; eauto.
-  apply agree_set_reg; auto.
+  destruct CP_REL as [EQ | [BOT | [DIFF_CP [NBOT_CP [NOALIAS SZEQ]]]]].
+  * (* same comp: m' = m *)
+    assert (SRC_EQ: m' = m).
+    { destruct (cp_eq_dec (comp_of f) cp) in SET_PERM; [exact SET_PERM|contradiction]. }
+    subst m'.
+    left; econstructor; split.
+    eapply plus_one. eapply exec_return.
+    rewrite <- SAMECOMP.
+    intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
+    rewrite <- SAMECOMP. eapply return_trace_inj; eauto.
+    { destruct (cp_eq_dec (comp_of f') cp); [reflexivity|].
+      exfalso; apply n; rewrite <- SAMECOMP; exact EQ. }
+    econstructor; eauto.
+    eapply match_stacks_inside_set_reg; eauto.
+    apply agree_set_reg; auto.
+  * (* bottom callee: m' = m *)
+    assert (SRC_EQ: m' = m).
+    { destruct (cp_eq_dec (comp_of f) cp) in SET_PERM; [exact SET_PERM|].
+      destruct (cp_eq_dec cp bottom) in SET_PERM; [exact SET_PERM|contradiction]. }
+    subst m'.
+    left; econstructor; split.
+    eapply plus_one. eapply exec_return.
+    rewrite <- SAMECOMP.
+    intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
+    rewrite <- SAMECOMP. eapply return_trace_inj; eauto.
+    { destruct (cp_eq_dec (comp_of f') cp); [reflexivity|].
+      destruct (cp_eq_dec cp bottom); [reflexivity|contradiction]. }
+    econstructor; eauto.
+    eapply match_stacks_inside_set_reg; eauto.
+    apply agree_set_reg; auto.
+  * (* true cross-comp NOALIAS: return case — NOALIAS and SZEQ come from CP_REL *)
+    destruct (cp_eq_dec (comp_of f) cp) in SET_PERM; [contradiction|].
+    destruct (cp_eq_dec cp bottom) in SET_PERM; [contradiction|].
+    (* SET_PERM: Mem.set_perm m sp0 Freeable = Some m' *)
+    exploit Mem.set_parallel_inject; eauto.
+    { intros b1 b1' delta' Hneq HFb1.
+      destruct (eq_block b1' sp') as [->|NEQ].
+      - exfalso. eapply NOALIAS; eauto.
+      - exact (not_eq_sym NEQ). }
+    intros [m1' [SET_T MINJ']].
+    left; econstructor; split.
+    eapply plus_one. eapply exec_return.
+    rewrite <- SAMECOMP.
+    intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
+    rewrite <- SAMECOMP. eapply return_trace_inj; eauto.
+    { (* target SET_PERM *)
+      destruct (cp_eq_dec (comp_of f') cp).
+      - exfalso; apply DIFF_CP; rewrite SAMECOMP; exact e.
+      - destruct (cp_eq_dec cp bottom); [contradiction|exact SET_T]. }
+    econstructor; eauto.
+    eapply match_stacks_inside_set_reg; eauto.
+    { (* match_stacks_inside: transfer through set_perm, same as call case *)
+      inv MS.
+      - constructor; auto.
+        eapply match_stacks_invariant; eauto.
+        + intros b1 b2 delta ofs HF Hlt Hperm.
+          eapply Mem.set_perm_perm in Hperm as [p' Hp']; eauto.
+          eapply Mem.perm_implies; eauto with mem.
+        + intros b ofs Hlt Hfree.
+          eapply Mem.perm_set_2; eauto.
+          apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+        + intros b ofs k p Hlt Hperm.
+          eapply Mem.perm_set_2'; eauto.
+          apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+        + intros b Hlt.
+          unfold Mem.block_compartment, Mem.set_perm in SET_T.
+          destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+          inv SET_T. reflexivity.
+      - destruct (eq_block sp sp0).
+        + subst sp. rewrite SP in SP0. inv SP0.
+          (* degenerate case: same SP, same offset *)
+          assert (MSTK0: mstk ctx' = 0) by (unfold context_stack_call in SBELOW; lia).
+          eapply match_stacks_inside_inlined; eauto.
+          * (* Inner MS: induction on MS0 *)
+            clear - MS0 SET_PERM SET_T SP NOALIAS H0 MSTK0 ACCESS SAMECOMP.
+            revert H0 MSTK0.
+            induction MS0; intros H0 MSTK0.
+            -- (* base case *)
+               constructor; auto.
+               eapply match_stacks_invariant; eauto using inject_incr_refl.
+               ++ intros b1 b2 delta ofs HF Hlt Hperm.
+                  eapply Mem.set_perm_perm in Hperm as [p' Hp']; eauto.
+                  eapply Mem.perm_implies; eauto with mem.
+               ++ intros b ofs Hlt Hfree.
+                  eapply Mem.perm_set_2; eauto.
+                  apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+               ++ intros b ofs k p Hlt Hperm.
+                  eapply Mem.perm_set_2'; eauto.
+                  apply Plt_ne in Hlt. exact (not_eq_sym Hlt).
+               ++ intros b Hlt.
+                  unfold Mem.block_compartment, Mem.set_perm in SET_T.
+                  destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+                  inv SET_T. reflexivity.
+            -- (* inlined case *)
+               destruct (eq_block sp sp0).
+               ++ subst sp. rewrite SP0 in SP. inv SP.
+                  assert (MSTK1: mstk ctx' = 0) by (unfold context_stack_call in SBELOW; lia).
+                  eapply match_stacks_inside_inlined; eauto.
+                  ** rewrite H1 in SP0. apply IHMS0; auto.
+                  ** red; intros. rewrite MSTK1 in *. lia.
+                  ** unfold Mem.block_compartment, Mem.set_perm in SET_T.
+                     destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+                     inv SET_T. unfold Mem.block_compartment in *; simpl in *.
+                     rewrite ACCESS. reflexivity.
+               ++ exfalso. eapply NOALIAS; eauto.
+          * (* SP *)
+            rewrite <- H0. exact SP.
+          * (* PAD: empty range *)
+            red; intros. rewrite MSTK0 in *. lia.
+          * (* ACCESS *)
+            unfold Mem.block_compartment, Mem.set_perm in SET_T.
+            destruct (plt sp' (Mem.nextblock m'0)); try discriminate.
+            inv SET_T. unfold Mem.block_compartment in *; simpl in *.
+            rewrite ACCESS. reflexivity.
+        + exfalso. eapply NOALIAS; eauto. }
+    apply agree_set_reg; auto.
+    (* valid_block *)
+    { eapply Mem.set_perm_valid_block_1; eauto. }
+    (* block_compartment *)
+    { unfold Mem.block_compartment, Mem.set_perm in SET_T.
+      destruct (plt sp' (Mem.nextblock m'0)); try discriminate. inv SET_T. simpl. exact ACCESS. }
+    (* range_private: vacuously true by SZEQ *)
+    { red; intros; lia. }
+    (* SSZ2: perm bounds preserved *)
+    { intros ofs Hperm. apply SSZ2. eapply Mem.set_perm_perm in Hperm as [? ?]; eauto. eapply Mem.perm_implies; eauto with mem. }
 + (* untailcall case *)
   inv MS; try congruence.
   rewrite RET in RET0; inv RET0.
@@ -1567,18 +1990,31 @@ Proof.
   subst; constructor; simpl; eauto using Genv.type_of_call_same_cp.
   destruct (flowsto_dec (comp_of f') (comp_of f')); pose proof (flowsto_refl (comp_of f'));
     congruence.
-  eapply match_regular_states.
+  (* SET_PERM: both source and target are intra-compartment (same comp) *)
+  { destruct (cp_eq_dec (comp_of f') (comp_of f'));
+      [reflexivity | exfalso; apply n; reflexivity]. }
+  (* match_states: m' = m from source SET_PERM (same comp) *)
+  assert (m' = m).
+  { rewrite <- SAMECOMP in SET_PERM.
+    destruct (cp_eq_dec (comp_of f) (comp_of f)) in SET_PERM; [exact SET_PERM |].
+    exfalso; apply n; reflexivity. }
+  subst m'.
+  econstructor; eauto.
   eapply match_stacks_inside_set_reg; eauto.
-  auto. eauto. auto.
   apply agree_set_reg; auto.
-  auto. auto. auto. auto.
-  red; intros. destruct (zlt ofs (dstk ctx)). apply PAD; lia. apply PRIV; lia.
-  auto. auto.
+  red; intros. destruct (zlt ofs (dstk ctx)). apply PAD. lia. apply PRIV. lia.
+  destruct IN_FENV as [NCC | NCC]; [left; auto | right; left; auto].
 
 - (* return from inlined function *)
   inv MS0; try congruence. rewrite RET0 in RET; inv RET.
   unfold inline_return in AT.
-  assert (PRIV': range_private F m m' sp' (dstk ctx' + mstk ctx') f'.(fn_stacksize)).
+  (* Inlined return is intra-compartment, so SET_PERM gives m' = m *)
+  assert (m' = m).
+  { rewrite <- SAMECOMP in SET_PERM.
+    destruct (cp_eq_dec (comp_of f) (comp_of f)) in SET_PERM; [exact SET_PERM |].
+    exfalso; apply n; reflexivity. }
+  subst m'.
+  assert (PRIV': range_private F m m'0 sp' (dstk ctx' + mstk ctx') f'.(fn_stacksize)).
     red; intros. destruct (zlt ofs (dstk ctx)). apply PAD. lia. apply PRIV. lia.
   assert (t = E0).
   { clear -EV SAMECOMP. inv EV; auto.
@@ -1593,11 +2029,13 @@ Proof.
   eapply exec_Iop; eauto. simpl. reflexivity.
   econstructor; eauto. eapply match_stacks_inside_set_reg; eauto.
   apply agree_set_reg; auto.
+  destruct IN_FENV as [NCC | NCC]; [left; auto | right; left; auto].
 + (* without a result *)
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto.
   subst vres. apply agree_set_reg_undef'; auto.
+  destruct IN_FENV as [NCC | NCC]; [left; auto | right; left; auto].
 Qed.
 
 Lemma transf_initial_states:

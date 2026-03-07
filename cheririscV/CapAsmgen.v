@@ -1624,6 +1624,7 @@ Definition transl_operation (r: Op.operation): operation :=
   | Op.Osingleoflong => Osingleoflong
   | Op.Osingleoflongu => Osingleoflongu
   | Op.Ocmp cond => Ocmp (transl_condition cond)
+  | Op.Osel c ty => Osel (transl_condition c) ty
 end.
 
 Definition transl_addressing (r: Op.addressing): addressing :=
@@ -1649,18 +1650,25 @@ Definition transl_typ (t : typ) : captyp :=
   | Tany64 => CTany64
   end.
 
-Definition transl_rettype (t : rettype) : caprettype :=
+Definition transl_rettype (t : xtype) : caprettype :=
   match t with
-  | Tret r => CTret (transl_typ r)
-  | Tint8signed => CTint8signed
-  | Tint8unsigned => CTint8unsigned
-  | Tint16signed => CTint16signed
-  | Tint16unsigned => CTint16unsigned
-  | Tvoid => CTvoid
+  | Xbool => CTret CTint
+  | Xint8signed => CTint8signed
+  | Xint8unsigned => CTint8unsigned
+  | Xint16signed => CTint16signed
+  | Xint16unsigned => CTint16unsigned
+  | Xint => CTret CTint
+  | Xfloat => CTret CTfloat
+  | Xlong => CTret CTlong
+  | Xsingle => CTret CTsingle
+  | Xptr => CTret CTcap
+  | Xany32 => CTret CTany32
+  | Xany64 => CTret CTany64
+  | Xvoid => CTvoid
   end.
 
 Definition transl_signature (sig: signature): capsignature :=
-  let arg_types := AST.sig_args sig in
+  let arg_types := AST.proj_sig_args sig in
   let ret_type := AST.sig_res sig in
   let cc := AST.sig_cc sig in
   mksignature (List.map transl_typ arg_types) (transl_rettype ret_type) cc.
@@ -1854,7 +1862,7 @@ Program Definition test_program_1 :=
   let main_cp := 1%positive in
   let twice_id := 20%positive in
   let twice_cp := 2%positive in
-  let twice_sig := AST.mksignature (Tint :: nil) Tint cc_default in
+  let twice_sig := AST.mksignature (Xint :: nil) Xint cc_default in
   let main :=
     Mach.mkfunction
       (Comp main_cp)
@@ -1894,32 +1902,22 @@ Program Definition test_program_1 :=
     _
     : Mach.program.
 Next Obligation.
-  unfold Policy.in_pub. split.
-  - unfold Policy.in_pub_exports.
-    intros cp idents.
-    simpl Policy.policy_export.
-    simpl.
-    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl; try discriminate.
-    + destruct p; simpl; intros; try discriminate.
-      * inversion H. rewrite <- H2 in H0. contradiction.
-    + destruct p; simpl.
-      * intros. discriminate.
-      * destruct p; simpl; try discriminate.
-        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. right. assumption.
-      * discriminate.
-  - unfold Policy.in_pub_imports.
-    intros cp idents.
-    simpl Policy.policy_import.
-    simpl.
-    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl.
-    + destruct p; simpl; try discriminate.
-      * intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
-        -- inversion H0. right. left. reflexivity.
-        -- contradiction.
-    + destruct p; simpl; try discriminate.
-      * destruct p; simpl; try discriminate.
-        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
-    + simpl. discriminate.
+  unfold Policy.in_pub, Policy.in_pub_exports, Policy.in_pub_imports; split;
+    intros cp idents;
+    unfold CompTree.get, CompTree.set, CompTree.empty,
+           COMPARTMENT_INDEXED_TYPE.index, comp_to_pos;
+    destruct cp as [| | i]; simpl; try discriminate;
+    [ destruct i; simpl; try discriminate;
+      repeat (try destruct i; simpl; try discriminate);
+      intros H id Hin; injection H; intros; subst; simpl in *;
+      repeat match goal with
+      | [H0: (_ , _) = (_, _) |- _] => injection H0; intros; subst
+      | [H0: _ \/ _ |- _] => destruct H0
+      | [H0: False |- _] => destruct H0
+      | [H0: In _ (_ :: _) |- _] => destruct H0
+      | [H0: In _ nil |- _] => destruct H0
+      | [H0: _ = _ |- _] => subst
+      end; tauto ..].
 Qed.
 Next Obligation.
   unfold agr_comps.
@@ -1943,10 +1941,10 @@ Program Definition test_program_2 :=
   let minmax_cp := 2%positive in
   let clip_id := 40%positive in
   let clip_cp := 4%positive in
-  let maximum_sig := AST.mksignature (Tint :: Tint :: nil) Tint cc_default in
-  let minimum_sig := AST.mksignature (Tint :: Tint :: nil) Tint cc_default in
+  let maximum_sig := AST.mksignature (Xint :: Xint :: nil) Xint cc_default in
+  let minimum_sig := AST.mksignature (Xint :: Xint :: nil) Xint cc_default in
   (* clip(lower, upper, x) an integer x to an interval *)
-  let clip_sig := AST.mksignature (Tint :: Tint :: Tint :: nil) Tint cc_default in
+  let clip_sig := AST.mksignature (Xint :: Xint :: Xint :: nil) Xint cc_default in
   let main :=
     Mach.mkfunction
       (Comp main_cp)
@@ -2059,43 +2057,24 @@ Program Definition test_program_2 :=
     _
     : Mach.program.
 Next Obligation.
-  unfold Policy.in_pub. split.
-  - unfold Policy.in_pub_exports.
-    intros cp idents.
-    simpl Policy.policy_export.
-    simpl.
-    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl; try discriminate.
-    + destruct p; simpl; intros; try discriminate.
-      * inversion H. rewrite <- H2 in H0. contradiction.
-    + destruct p; simpl.
-      * destruct p; simpl; try discriminate. intros. inversion H. rewrite <- H2 in H0. unfold In in H0.
-        right. right. right. assumption.
-      * destruct p; simpl; try discriminate. intros. inversion H. rewrite <- H2 in H0. unfold In in H0.
-        destruct H0.
-        -- rewrite H0. auto.
-        -- destruct H0.
-          ++ rewrite H0. auto.
-          ++ contradiction.
-      * discriminate.
-  - unfold Policy.in_pub_imports.
-    intros cp idents.
-    simpl Policy.policy_import.
-    simpl.
-    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl.
-    + destruct p; simpl; try discriminate.
-      * intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
-        -- inversion H0. auto.
-        -- contradiction.
-    + destruct p; simpl; try discriminate.
-      * destruct p; simpl; try discriminate.
-        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
-          ++ inversion H0. rewrite H4. auto.
-          ++ destruct H0.
-            ** inversion H0. rewrite H4. auto.
-            ** contradiction.
-      * destruct p; simpl; try discriminate.
-        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
-    + intros.  discriminate.
+  unfold Policy.in_pub, Policy.in_pub_exports, Policy.in_pub_imports; split;
+    intros cp idents;
+    unfold CompTree.get, CompTree.set, CompTree.empty,
+           COMPARTMENT_INDEXED_TYPE.index, comp_to_pos;
+    destruct cp as [| | i]; simpl; try discriminate;
+    [ destruct i; simpl; try discriminate;
+      repeat (try destruct i; simpl; try discriminate);
+      intros H id Hin; injection H; intros; subst; simpl in *;
+      repeat match goal with
+      | [H0: (_ , _) = (_, _) |- _] => injection H0; intros; subst
+      | [H0: _ \/ _ |- _] => destruct H0
+      | [H0: False |- _] => destruct H0
+      | [H0: In _ (_ :: _) |- _] => destruct H0
+      | [H0: In _ nil |- _] => destruct H0
+      | [H0: _ = _ |- _] => subst
+      end; try (left; reflexivity); try (right; left; reflexivity);
+      try (right; right; left; reflexivity);
+      tauto ..].
 Qed.
 Next Obligation.
   unfold agr_comps.
@@ -2119,7 +2098,7 @@ Program Definition test_program_3 :=
   let sum_id := 20%positive in
   let sum_cp := 2%positive in
   (* sum(n) *recursively* computes the sum from 0 to n *)
-  let sum_sig := AST.mksignature (Tint ::  nil) Tint cc_default in
+  let sum_sig := AST.mksignature (Xint :: nil) Xint cc_default in
   let main :=
     Mach.mkfunction
       (Comp main_cp)
@@ -2185,34 +2164,24 @@ Program Definition test_program_3 :=
     _
     : Mach.program.
 Next Obligation.
-unfold Policy.in_pub. split.
-- unfold Policy.in_pub_exports.
-  intros cp idents.
-  simpl Policy.policy_export.
-  simpl.
-  destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl; try discriminate.
-  + destruct p; simpl; intros.
-    * discriminate.
-    * discriminate.
-    * inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
-  + destruct p; simpl.
-    * intros. discriminate.
-    * destruct p; simpl; try discriminate.
-      -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. right. assumption.
-    * intros. discriminate.
-- unfold Policy.in_pub_imports.
-  intros cp idents.
-  simpl Policy.policy_import.
-  simpl.
-  destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl.
-  + destruct p; simpl; try discriminate.
-    * intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
-      -- inversion H0. auto.
-      -- contradiction.
-  + destruct p; simpl; try discriminate.
-    * destruct p; simpl; try discriminate.
-      -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
-  + intros. discriminate.
+  unfold Policy.in_pub, Policy.in_pub_exports, Policy.in_pub_imports; split;
+    intros cp idents;
+    unfold CompTree.get, CompTree.set, CompTree.empty,
+           COMPARTMENT_INDEXED_TYPE.index, comp_to_pos;
+    destruct cp as [| | i]; simpl; try discriminate;
+    [ destruct i; simpl; try discriminate;
+      repeat (try destruct i; simpl; try discriminate);
+      intros H id Hin; injection H; intros; subst; simpl in *;
+      repeat match goal with
+      | [H0: (_ , _) = (_, _) |- _] => injection H0; intros; subst
+      | [H0: _ \/ _ |- _] => destruct H0
+      | [H0: False |- _] => destruct H0
+      | [H0: In _ (_ :: _) |- _] => destruct H0
+      | [H0: In _ nil |- _] => destruct H0
+      | [H0: _ = _ |- _] => subst
+      end; try (left; reflexivity); try (right; left; reflexivity);
+      try (right; right; left; reflexivity);
+      tauto ..].
 Qed.
 Next Obligation.
 unfold agr_comps.

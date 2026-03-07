@@ -72,6 +72,32 @@ Fixpoint invalidate_regs (rl: list mreg) (k: Mach.code) :=
       Mop (invalidate_op r) nil r :: invalidate_regs rl k
   end.
 
+(** * Simplification of loads and stores *)
+
+(** Some memory loads and stores don't correspond directly to a processor
+    instruction.  For instance, there's only one "store 8 bits" instruction
+    for the three memory chunks [Mint8unsigned],  [Mint8signed], [Mbool].
+    Here, we map all three chunks to [Mint8unsigned] stores
+    and have only one processor instruction for the latter. *)
+
+Definition simplify_store (chunk: memory_chunk) : memory_chunk :=
+  match chunk with
+  | Mbool => Mint8unsigned
+  | Mint8signed => Mint8unsigned
+  | Mint16signed => Mint16unsigned
+  | _ => chunk
+  end.
+
+(** Likewise, there is no "load Boolean" instruction that does exactly
+    what a load with chunk [Mbool] does.  We replace [Mbool] loads
+    with [Mint8unsigned] loads, which are always more defined. *)
+
+Definition simplify_load (chunk: memory_chunk) : memory_chunk :=
+  match chunk with
+  | Mbool => Mint8unsigned
+  | _ => chunk
+  end.
+
 (** * Code transformation. *)
 
 (** Translation of operations and addressing mode.
@@ -114,7 +140,7 @@ Fixpoint transl_builtin_arg (fe: frame_env) (a: builtin_arg loc) : builtin_arg m
 (** Translation of a Linear instruction.  Prepends the corresponding
   Mach instructions to the given list of instructions.
   [Lgetstack] and [Lsetstack] moves between registers and stack slots
-  are turned into [Mgetstack], [Mgetparent] or [Msetstack] instructions
+  are turned into [Mgetstack], [Mgetparam] or [Msetstack] instructions
   at offsets determined by the frame environment.
   Instructions and addressing modes are modified as described previously.
   Code to restore the values of callee-save registers is inserted
@@ -144,9 +170,9 @@ Definition transl_instr
   | Lop op args res =>
       Mop (transl_op fe op) args res :: k
   | Lload chunk addr args dst =>
-      Mload chunk (transl_addr fe addr) args dst :: k
+      Mload (simplify_load chunk) (transl_addr fe addr) args dst :: k
   | Lstore chunk addr args src =>
-      Mstore chunk (transl_addr fe addr) args src :: k
+      Mstore (simplify_store chunk) (transl_addr fe addr) args src :: k
   | Lcall sig ros =>
       Mcall sig ros :: k
   | Ltailcall sig ros =>

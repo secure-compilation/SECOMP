@@ -12,7 +12,7 @@
 
 (** Instruction selection for 64-bit integer operations *)
 
-Require String.
+From Coq Require String.
 Require Import Coqlib.
 Require Import AST Integers Floats.
 Require Import Op CminorSel.
@@ -44,13 +44,13 @@ Class helper_functions := mk_helper_functions {
   i64_smulh: ident;                     (**r signed multiply high *)
 }.
 
-Definition sig_l_l := mksignature (Tlong :: nil) Tlong cc_default.
-Definition sig_l_f := mksignature (Tlong :: nil) Tfloat cc_default.
-Definition sig_l_s := mksignature (Tlong :: nil) Tsingle cc_default.
-Definition sig_f_l := mksignature (Tfloat :: nil) Tlong cc_default.
-Definition sig_ll_l := mksignature (Tlong :: Tlong :: nil) Tlong cc_default.
-Definition sig_li_l := mksignature (Tlong :: Tint :: nil) Tlong cc_default.
-Definition sig_ii_l := mksignature (Tint :: Tint :: nil) Tlong cc_default.
+Definition sig_l_l := [Xlong ---> Xlong]%asttyp.
+Definition sig_l_f := [Xlong ---> Xfloat]%asttyp.
+Definition sig_l_s := [Xlong ---> Xsingle]%asttyp.
+Definition sig_f_l := [Xfloat ---> Xlong]%asttyp.
+Definition sig_ll_l := [Xlong; Xlong ---> Xlong]%asttyp.
+Definition sig_li_l := [Xlong; Xint ---> Xlong]%asttyp.
+Definition sig_ii_l := [Xint; Xint ---> Xlong]%asttyp.
 
 Section SELECT.
 
@@ -338,5 +338,19 @@ Definition cmpl (c: comparison) (e1 e2: expr) :=
       then comp Cge (highlong e1) (Eop (Ointconst Int.zero) Enil)
       else cmpl_gen Cgt Cge e1 e2
   end.
+
+Definition select_long (cond: condition) (args: exprlist) (e1 e2: expr) :=
+  if select_supported Tlong then
+    select Tlong cond args e1 e2
+  else
+    bind_exprs (e1 ::: e2 ::: args) (fun al =>
+      match al with
+      | e1 ::: e2 ::: args =>
+          makelong
+            (select Tint cond args (Eop Ohighlong (e1 ::: Enil)) (Eop Ohighlong (e2 ::: Enil)))
+            (select Tint cond args (Eop Olowlong (e1 ::: Enil))  (Eop Olowlong (e2 ::: Enil)))
+
+      | _ => longconst Int64.zero    (*r cannot happen *)
+      end).
 
 End SELECT.

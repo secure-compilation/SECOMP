@@ -129,6 +129,28 @@ Proof.
   split. lia. apply align_le. lia. 
 Qed.
 
+Lemma fe_stack_data_pos:
+  forall b, 0 < fe_stack_data (make_env b).
+Proof.
+  intros; simpl.
+  set (w := if Archi.ptr64 then 8 else 4).
+  set (olink := align (4 * b.(bound_outgoing)) w).
+  set (oretaddr := olink + w).
+  set (ocs := oretaddr + w).
+  set (ol :=  align (size_callee_save_area b ocs) 8).
+  set (ostkdata := align (ol + 4 * b.(bound_local)) 8).
+  assert (0 < w) by (unfold w; destruct Archi.ptr64; lia).
+  generalize b.(bound_local_pos) b.(bound_outgoing_pos); intros.
+  assert (0 <= 4 * b.(bound_outgoing)) by lia.
+  assert (4 * b.(bound_outgoing) <= olink) by (apply align_le; lia).
+  assert (olink + w <= oretaddr) by (unfold oretaddr; lia).
+  assert (oretaddr + w <= ocs) by (unfold ocs; lia).
+  assert (ocs <= size_callee_save_area b ocs) by (apply size_callee_save_area_incr).
+  assert (size_callee_save_area b ocs <= ol) by (apply align_le; lia).
+  assert (ol + 4 * b.(bound_local) <= ostkdata) by (apply align_le; lia).
+  lia.
+Qed.
+
 Lemma frame_env_aligned:
   forall b,
   let fe := make_env b in

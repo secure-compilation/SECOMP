@@ -303,7 +303,7 @@ Section WFDELTA.
     | Vundef => false
     | Vint n =>
         match ch with
-        | Mint8signed | Mint8unsigned => true
+        | Mbool | Mint8signed | Mint8unsigned => true
         | Mint16signed | Mint16unsigned => true
         | Mint32 => true
         | _ => false
@@ -788,13 +788,13 @@ Section PROOFS.
   Definition external_call_conds
              (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
     match ef with
-    | EF_external name sg => visible_fo ge m (sig_args sg) args
+    | EF_external name sg => visible_fo ge m (proj_sig_args sg) args
     | EF_builtin name sg | EF_runtime name sg =>
                              match Builtins.lookup_builtin_function name sg with
-                             | None => visible_fo ge m (sig_args sg) args
+                             | None => visible_fo ge m (proj_sig_args sg) args
                              | _ => True
                              end
-    | EF_inline_asm txt sg clb => visible_fo ge m (sig_args sg) args
+    | EF_inline_asm txt sg clb => visible_fo ge m (proj_sig_args sg) args
     | EF_memcpy sz al => EF_memcpy_dest_not_pub ge args
     | EF_vstore ch => EF_vstore_load_whole_chunk ch args
     | _ => True
@@ -803,13 +803,13 @@ Section PROOFS.
   Definition external_call_unknowns
              (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
     match ef with
-    | EF_external name sg => visible_fo ge m (sig_args sg) args
+    | EF_external name sg => visible_fo ge m (proj_sig_args sg) args
     | EF_builtin name sg | EF_runtime name sg =>
                              match Builtins.lookup_builtin_function name sg with
-                             | None => visible_fo ge m (sig_args sg) args
+                             | None => visible_fo ge m (proj_sig_args sg) args
                              | _ => False
                              end
-    | EF_inline_asm txt sg clb => visible_fo ge m (sig_args sg) args
+    | EF_inline_asm txt sg clb => visible_fo ge m (proj_sig_args sg) args
     | _ => False
     end.
 
@@ -867,8 +867,8 @@ End VISIBLE.
     { eapply Mem.setN_in. rewrite encode_val_length. rewrite <- size_chunk_conv. auto. }
     remember (ZMap.get ofs (Mem.setN (encode_val ch v) ofs0 mcv)) as mv.
     clear - FO IN.
-    destruct ch; destruct v; ss; des; clarify.
-    1,2: des_ifs; ss; des; clarify.
+    destruct ch; destruct v; ss; des; clarify;
+    try (des_ifs; ss; des; clarify).
   Qed.
 
   Lemma list_forall_filter

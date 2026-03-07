@@ -130,7 +130,7 @@ Definition opt_set (e: S.typenv) (optid: option ident) (ty: typ) : res S.typenv 
   | Some id => S.set e id ty
   end.
 
-Fixpoint type_stmt (tret: rettype) (e: S.typenv) (s: stmt) : res S.typenv :=
+Fixpoint type_stmt (tret: xtype) (e: S.typenv) (s: stmt) : res S.typenv :=
   match s with
   | Sskip => OK e
   | Sassign id a => type_assign e id a
@@ -138,15 +138,15 @@ Fixpoint type_stmt (tret: rettype) (e: S.typenv) (s: stmt) : res S.typenv :=
       do e1 <- type_expr e a1 Tptr; type_expr e1 a2 (type_of_chunk chunk)
   | Scall optid sg fn args =>
       do e1 <- type_expr e fn Tptr;
-      do e2 <- type_exprlist e1 args sg.(sig_args);
+      do e2 <- type_exprlist e1 args (proj_sig_args sg);
       opt_set e2 optid (proj_sig_res sg)
   | Stailcall sg fn args =>
-      assertion (rettype_eq sg.(sig_res) tret);
+      assertion (xtype_eq sg.(sig_res) tret);
       do e1 <- type_expr e fn Tptr;
-      type_exprlist e1 args sg.(sig_args)
+      type_exprlist e1 args (proj_sig_args sg)
   | Sbuiltin optid ef args =>
       let sg := ef_sig ef in
-      do e1 <- type_exprlist e args sg.(sig_args);
+      do e1 <- type_exprlist e args (proj_sig_args sg);
       opt_set e1 optid (proj_sig_res sg)
   | Sseq s1 s2 =>
       do e1 <- type_stmt tret e s1; type_stmt tret e1 s2
@@ -165,11 +165,11 @@ Fixpoint type_stmt (tret: rettype) (e: S.typenv) (s: stmt) : res S.typenv :=
   | Sreturn opta =>
       match opta with
       | None => OK e
-      | Some a => type_expr e a (proj_rettype tret)
+      | Some a => type_expr e a (proj_xtype tret)
 (*
-          if rettype_eq tret Tvoid
+          if xtype_eq tret Tvoid
           then Error (msg "inconsistent return")
-          else type_expr e a (proj_rettype tret)
+          else type_expr e a (proj_xtype tret)
 *)
       end
   | Slabel lbl s1 =>
@@ -181,7 +181,7 @@ Fixpoint type_stmt (tret: rettype) (e: S.typenv) (s: stmt) : res S.typenv :=
 Definition typenv := ident -> typ.
 
 Definition type_function (f: function) : res typenv :=
-  do e1 <- S.set_list S.initial f.(fn_params) f.(fn_sig).(sig_args);
+  do e1 <- S.set_list S.initial f.(fn_params) (proj_sig_args f.(fn_sig));
   do e2 <- type_stmt f.(fn_sig).(sig_res) e1 f.(fn_body);
   S.solve e2.
 
@@ -190,7 +190,7 @@ Definition type_function (f: function) : res typenv :=
 Section SPEC.
 
 Variable env: ident -> typ.
-Variable tret: rettype.
+Variable tret: xtype.
 
 Inductive wt_expr: expr -> typ -> Prop :=
   | wt_Evar: forall id,
@@ -209,9 +209,9 @@ Inductive wt_expr: expr -> typ -> Prop :=
       wt_expr a1 Tptr ->
       wt_expr (Eload chunk a1) (type_of_chunk chunk).
 
-Definition wt_opt_assign (optid: option ident) (ty: rettype) : Prop :=
+Definition wt_opt_assign (optid: option ident) (ty: xtype) : Prop :=
   match optid with
-  | Some id => proj_rettype ty = env id
+  | Some id => proj_xtype ty = env id
   | _ => True
   end.
 
@@ -225,15 +225,15 @@ Inductive wt_stmt: stmt -> Prop :=
       wt_expr a1 Tptr -> wt_expr a2 (type_of_chunk chunk) ->
       wt_stmt (Sstore chunk a1 a2)
   | wt_Scall: forall optid sg a1 al,
-      wt_expr a1 Tptr -> list_forall2 wt_expr al sg.(sig_args) ->
+      wt_expr a1 Tptr -> list_forall2 wt_expr al (proj_sig_args sg) ->
       wt_opt_assign optid sg.(sig_res) ->
       wt_stmt (Scall optid sg a1 al)
   | wt_Stailcall: forall sg a1 al,
-      wt_expr a1 Tptr -> list_forall2 wt_expr al sg.(sig_args) ->
+      wt_expr a1 Tptr -> list_forall2 wt_expr al (proj_sig_args sg) ->
       sg.(sig_res) = tret ->
       wt_stmt (Stailcall sg a1 al)
   | wt_Sbuiltin: forall optid ef al,
-      list_forall2 wt_expr al (ef_sig ef).(sig_args) ->
+      list_forall2 wt_expr al (proj_sig_args (ef_sig ef)) ->
       wt_opt_assign optid (ef_sig ef).(sig_res) ->
       wt_stmt (Sbuiltin optid ef al)
   | wt_Sseq: forall s1 s2,
@@ -256,7 +256,7 @@ Inductive wt_stmt: stmt -> Prop :=
   | wt_Sreturn_none:
       wt_stmt (Sreturn None)
   | wt_Sreturn_some: forall a,
-      wt_expr a (proj_rettype tret) ->
+      wt_expr a (proj_xtype tret) ->
       wt_stmt (Sreturn (Some a))
   | wt_Slabel: forall lbl s1,
       wt_stmt s1 ->
@@ -269,7 +269,7 @@ End SPEC.
 Inductive wt_function (env: typenv) (f: function) : Prop :=
   wt_function_intro:
     type_function f = OK env ->     (**r to ensure uniqueness of [env] *)
-    List.map env f.(fn_params) = f.(fn_sig).(sig_args) ->
+    List.map env f.(fn_params) = proj_sig_args f.(fn_sig) ->
     wt_stmt env f.(fn_sig).(sig_res) f.(fn_body) ->
     wt_function env f.
 
@@ -418,9 +418,9 @@ Definition wt_env (env: typenv) (e: Cminor.env) : Prop :=
 Definition def_env (f: function) (e: Cminor.env) : Prop :=
   forall id, In id f.(fn_params) \/ In id f.(fn_vars) -> exists v, e!id = Some v.
 
-Inductive wt_cont_call: cont -> rettype -> Prop :=
+Inductive wt_cont_call: cont -> xtype -> Prop :=
   | wt_cont_Kstop:
-      wt_cont_call Kstop Tint
+      wt_cont_call Kstop Xint
   | wt_cont_Kcall: forall optid f sp e k tret env
         (WT_FN: wt_function env f)
         (WT_CONT: wt_cont env f.(fn_sig).(sig_res) k)
@@ -429,7 +429,7 @@ Inductive wt_cont_call: cont -> rettype -> Prop :=
         (WT_DEST: wt_opt_assign env optid tret),
       wt_cont_call (Kcall optid f sp e k) tret
 
-with wt_cont: typenv -> rettype -> cont -> Prop :=
+with wt_cont: typenv -> xtype -> cont -> Prop :=
   | wt_cont_Kseq: forall env tret s k,
       wt_stmt env tret s ->
       wt_cont env tret k ->
@@ -451,11 +451,11 @@ Inductive wt_state: state -> Prop :=
       wt_state (State f s k sp e m)
   | wt_call_state: forall f args k m cp
         (WT_FD: wt_fundef f)
-        (WT_ARGS: Val.has_type_list args (funsig f).(sig_args))
+        (WT_ARGS: Val.has_type_list args (proj_sig_args (funsig f)))
         (WT_CONT: wt_cont_call k (funsig f).(sig_res)),
       wt_state (Callstate f args k m cp)
   | wt_return_state: forall v k m cp tret sg
-        (WT_RES: Val.has_type v (proj_rettype tret))
+        (WT_RES: Val.has_type v (proj_xtype tret))
         (WT_CONT: wt_cont_call k tret),
       wt_state (Returnstate v k m sg cp).
 
@@ -675,10 +675,10 @@ Proof.
   { constructor. eapply call_cont_wt; eauto. }
   generalize (wt_find_label _ _ lbl _ _ H2 WT_CK).
   rewrite H. intros [WT_STMT' WT_CONT']. econstructor; eauto.
-- inv WT_FD. inversion H1; subst. econstructor; eauto.
+- inv WT_FD. inversion H2; subst. econstructor; eauto.
   constructor; auto.
-  apply wt_env_set_locals. apply wt_env_set_params. rewrite H2; auto.
-  red; intros. apply def_set_locals. destruct H4; auto. left; apply def_set_params; auto.
+  apply wt_env_set_locals. apply wt_env_set_params. rewrite H3; auto.
+  red; intros. apply def_set_locals. destruct H5; auto. left; apply def_set_params; auto.
 - exploit external_call_well_typed; eauto. intros.
   econstructor; eauto.
 - inv WT_CONT. econstructor; eauto using wt_Sskip.

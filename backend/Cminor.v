@@ -200,15 +200,15 @@ Definition env := PTree.t val.
 
 Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env :=
   match il, vl with
-  | i1 :: is, v1 :: vs => PTree.set i1 v1 (set_params vs is)
-  | i1 :: is, nil => PTree.set i1 Vundef (set_params nil is)
+  | i1 :: il, v1 :: vl => PTree.set i1 v1 (set_params vl il)
+  | i1 :: il, nil => PTree.set i1 Vundef (set_params nil il)
   | _, _ => PTree.empty val
   end.
 
 Fixpoint set_locals (il: list ident) (e: env) {struct il} : env :=
   match il with
   | nil => e
-  | i1 :: is => PTree.set i1 Vundef (set_locals is e)
+  | i1 :: il => PTree.set i1 Vundef (set_locals il e)
   end.
 
 Definition set_optvar (optid: option ident) (v: val) (e: env) : env :=
@@ -250,7 +250,7 @@ Inductive state: Type :=
       forall (v: val)                   (**r Return value *)
              (k: cont)                  (**r what to do next *)
              (m: mem)         (**r memory state *)
-             (ty: rettype)
+             (ty: xtype)
              (cp: compartment),
         state.
 
@@ -475,7 +475,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sstore chunk addr a) k sp e m)
         E0 (State f Sskip k sp e m')
 
-  | step_call: forall f optid sig a bl k sp e m vf vargs fd t,
+  | step_call: forall f optid sig a bl k sp e m m' vf vargs fd t,
       eval_expr sp e m (comp_of f) a vf ->
       eval_exprlist sp e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -483,9 +483,14 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Check that the call to the function pointer is allowed *)
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (proj_sig_args sig) t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m
+        else if cp_eq_dec (comp_of fd) bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Readable = Some m'
+             | _ => m' = m end),
       step (State f (Scall optid sig a bl) k sp e m)
-        t (Callstate fd vargs (Kcall optid f sp e k) m (comp_of f))
+        t (Callstate fd vargs (Kcall optid f sp e k) m' (comp_of f))
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
@@ -560,6 +565,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s' k' sp e m)
 
   | step_internal_function: forall f vargs k m cp m' sp e,
+      Val.has_argtype_list vargs f.(fn_sig).(sig_args) ->
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       step (Callstate (Internal f) vargs k m cp)
@@ -570,11 +576,16 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (External ef) vargs k m cp)
          t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 
-  | step_return: forall v optid f sp e cp k m ty t,
+  | step_return: forall v optid f sp e cp k m m' ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty t),
+      forall (SET_PERM:
+        if cp_eq_dec (comp_of f) cp then m' = m
+        else if cp_eq_dec cp bottom then m' = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Freeable = Some m'
+             | _ => False end),
       step (Returnstate v (Kcall optid f sp e k) m ty cp)
-        t (State f Sskip k sp (set_optvar optid v e) m).
+        t (State f Sskip k sp (set_optvar optid v e) m').
 
 End RELSEM.
 
@@ -678,6 +689,8 @@ Proof.
 - (* determ *)
   inv H; inv H0; Determ.
   + subst. rewrite H16 in H3; inv H3.
+    assert (m' = m'0) by (destruct (cp_eq_dec _ _); [congruence | destruct (cp_eq_dec _ _); [congruence | destruct sp; congruence]]).
+    subst m'0.
     inv EV; inv EV0; try congruence.
     split; [constructor | auto].
     inv H3; auto.
@@ -693,6 +706,8 @@ Proof.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
   + subst.
+    assert (m' = m'0) by (destruct (cp_eq_dec _ _); [congruence | destruct (cp_eq_dec _ _); [congruence | destruct sp; try contradiction; congruence]]).
+    subst m'0.
     inv EV; inv EV0; try congruence.
     split; [constructor | auto].
     assert (res0 = res) by now eapply eventval_match_determ_2; eauto. subst.
@@ -776,6 +791,7 @@ Inductive eval_funcall:
         mem -> val -> Prop :=
   | eval_funcall_internal:
       forall cp m f vargs m1 sp e t e2 m2 out vres m3,
+      list_forall2 Val.has_argtype vargs f.(fn_sig).(sig_args) ->
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
@@ -814,14 +830,25 @@ with exec_stmt:
       Mem.storev chunk m vaddr v (comp_of f) = Some m' ->
       exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
   | exec_Scall:
-      forall f sp e m optid sig a bl vf vargs fd t m' vres e' t' t'',
+      forall f sp e m optid sig a bl vf vargs fd t m_call m_ret vres e' t' t'' m',
       eval_expr ge sp e m (comp_of f) a vf ->
       eval_exprlist ge sp e m (comp_of f) bl vargs ->
-      Genv.find_funct ge vf = Some fd -> funsig fd = sig -> eval_funcall (comp_of f) m fd vargs t m' vres ->
+      Genv.find_funct ge vf = Some fd -> funsig fd = sig ->
+      forall (SET_PERM_CALL:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m_call = m
+        else if cp_eq_dec (comp_of fd) bottom then m_call = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Readable = Some m_call
+             | _ => m_call = m end),
+      eval_funcall (comp_of f) m_call fd vargs t m_ret vres ->
+      forall (SET_PERM_RETURN:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m' = m_ret
+        else if cp_eq_dec (comp_of fd) bottom then m' = m_ret
+        else match sp with Vptr bsp _ => Mem.set_perm m_ret bsp Freeable = Some m'
+             | _ => False end),
       e' = set_optvar optid vres e ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR_CALL: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t'),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (proj_sig_args sig) t'),
       forall (NO_CROSS_PTR_RETURN: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> not_ptr vres),
       forall (EV': return_trace ge (comp_of f) (comp_of fd) vres (sig_res sig) t''),
       exec_stmt f sp e m (Scall optid sig a bl) (t' ** t ** t'') e' m' Out_normal
@@ -914,6 +941,7 @@ CoInductive evalinf_funcall:
         mem -> fundef -> list val -> traceinf -> Prop :=
   | evalinf_funcall_internal:
       forall cp m f vargs m1 sp e t,
+      list_forall2 Val.has_argtype vargs f.(fn_sig).(sig_args) ->
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t ->
@@ -926,15 +954,20 @@ CoInductive evalinf_funcall:
 with execinf_stmt:
          function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
   | execinf_Scall:
-      forall f sp e m optid sig a bl vf vargs fd t t',
+      forall f sp e m optid sig a bl vf vargs fd t t' m_call,
       eval_expr ge sp e m (comp_of f) a vf ->
       eval_exprlist ge sp e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      evalinf_funcall (comp_of f) m fd vargs t ->
+      forall (SET_PERM_CALL:
+        if cp_eq_dec (comp_of f) (comp_of fd) then m_call = m
+        else if cp_eq_dec (comp_of fd) bottom then m_call = m
+        else match sp with Vptr bsp _ => Mem.set_perm m bsp Readable = Some m_call
+             | _ => m_call = m end),
+      evalinf_funcall (comp_of f) m_call fd vargs t ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t'),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (proj_sig_args sig) t'),
       execinf_stmt f sp e m (Scall optid sig a bl) (t' *** t)
   | execinf_Sifthenelse:
       forall f sp e m a s1 s2 v b t,
@@ -1072,79 +1105,71 @@ Lemma eval_funcall_exec_stmt_steps:
 Proof.
   apply eval_funcall_exec_stmt_ind2; intros.
 
-(* funcall internal *)
-  destruct (H2 k) as [S [A B]].
-  assert (call_cont k = k) by (apply call_cont_is_call_cont; auto).
+(* eval_funcall_internal *)
+  destruct (H3 k) as [S1 [A1 B1]].
   eapply star_left. econstructor; eauto.
-  eapply star_trans. eexact A.
-  inversion B; clear B; subst out; simpl in H3; simpl; try contradiction.
-  (* Out normal *)
-  subst vres. apply star_one. eapply step_skip_call; eauto.
-  (* Out_return None *)
-  subst vres. replace k with (call_cont k') by congruence.
-  apply star_one. eapply step_return_0; eauto.
-  (* Out_return Some *)
-  subst vres.
-  replace k with (call_cont k') by congruence.
-  apply star_one. eapply step_return_1; eauto.
-  (* Out_tailcall_return *)
-  subst vres. red in H4. subst m3. rewrite H6. apply star_refl.
-
-  reflexivity. traceEq.
-
-(* funcall external *)
-  apply star_one. econstructor; eauto.
-
-(* skip *)
-  econstructor; split.
-  apply star_refl.
-  constructor.
-
-(* assign *)
-  exists (State f Sskip k sp (PTree.set id v e) m); split.
-  apply star_one. constructor. auto.
-  constructor.
-
-(* store *)
-  econstructor; split.
-  apply star_one. econstructor; eauto.
-  constructor.
-
-(* call *)
-  econstructor; split. subst sig.
-  eapply star_left. econstructor; eauto.
-  eapply star_right. apply H4; simpl; eauto.
-  constructor.
-  trivial.
-  eauto.
-  reflexivity. traceEq.
-  subst e'. constructor.
-
-(* builtin *)
-  econstructor; split.
-  apply star_one. econstructor; eauto.
-  subst e'. constructor.
-
-(* ifthenelse *)
-  destruct (H2 k) as [S [A B]].
-  exists S; split.
-  apply star_left with E0 (State f (if b then s1 else s2) k sp e m) t.
-  econstructor; eauto. exact A.
+  eapply star_trans. eexact A1.
+  { inv B1; simpl in *.
+    - (* Out_normal *)
+      subst vres. apply star_one. apply step_skip_call; auto.
+    - (* Out_exit *)
+      contradiction.
+    - (* Out_return None *)
+      subst vres.
+      replace k with (call_cont k') by (rewrite H7; apply call_cont_is_call_cont; auto).
+      apply star_one. apply step_return_0; auto.
+    - (* Out_return (Some v) *)
+      subst vres.
+      replace k with (call_cont k') by (rewrite H7; apply call_cont_is_call_cont; auto).
+      apply star_one. eapply step_return_1; eauto.
+    - (* Out_tailcall_return *)
+      subst m3 vres.
+      rewrite (call_cont_is_call_cont k H6). apply star_refl. }
+  reflexivity.
   traceEq.
+
+(* eval_funcall_external *)
+  apply star_one. econstructor; eauto.
+
+(* exec_Sskip *)
+  econstructor; split. apply star_refl. constructor.
+
+(* exec_Sassign *)
+  econstructor; split. apply star_one. econstructor; eauto. constructor.
+
+(* exec_Sstore *)
+  econstructor; split. apply star_one. econstructor; eauto. constructor.
+
+(* exec_Scall *)
+  subst sig e'.
+  econstructor; split.
+  eapply star_left. econstructor; eauto.
+  eapply star_right. apply H4. simpl; auto.
+  econstructor; eauto.
+  reflexivity. traceEq.
+  constructor.
+
+(* exec_Sbuiltin *)
+  econstructor; split. apply star_one. econstructor; eauto. subst e'. constructor.
+
+(* exec_Sifthenelse *)
+  destruct (H2 k) as [S1 [A1 B1]].
+  exists S1; split.
+  eapply star_left. 2: eexact A1. econstructor; eauto. traceEq.
   auto.
 
-(* seq continue *)
+(* exec_Sseq_continue *)
   destruct (H0 (Kseq s2 k)) as [S1 [A1 B1]].
-  destruct (H2 k) as [S2 [A2 B2]].
   inv B1.
-  exists S2; split.
-  eapply star_left. constructor.
+  destruct (H2 k) as [S2 [A2 B2]].
+  econstructor; split.
+  eapply star_left. econstructor.
   eapply star_trans. eexact A1.
-  eapply star_left. constructor. eexact A2.
+  eapply star_left. econstructor. eexact A2.
   reflexivity. reflexivity. traceEq.
   auto.
 
-(* seq stop *)
+(* exec_Sseq_stop *)
   destruct (H0 (Kseq s2 k)) as [S1 [A1 B1]].
   set (S2 :=
     match out with
@@ -1152,24 +1177,30 @@ Proof.
     | _ => S1
     end).
   exists S2; split.
-  eapply star_left. constructor. eapply star_trans. eexact A1.
-  unfold S2; destruct out; try (apply star_refl).
-  inv B1. apply star_one. constructor.
-  reflexivity. traceEq.
-  unfold S2; inv B1; congruence || simpl; constructor; auto.
-
-(* loop loop *)
-  destruct (H0 (Kseq (Sloop s) k)) as [S1 [A1 B1]].
-  destruct (H2 k) as [S2 [A2 B2]].
-  inv B1.
-  exists S2; split.
-  eapply star_left. constructor.
+  eapply star_left. econstructor.
   eapply star_trans. eexact A1.
-  eapply star_left. constructor. eexact A2.
+  unfold S2; inv B1.
+    congruence.
+    apply star_one. econstructor.
+    apply star_refl.
+    apply star_refl.
+    apply star_refl.
+  reflexivity. traceEq.
+  unfold S2; inv B1; simpl; try congruence; econstructor; eauto.
+
+(* exec_Sloop_loop *)
+  destruct (H0 (Kseq (Sloop s) k)) as [S1 [A1 B1]].
+  inv B1.
+  destruct (H2 k) as [S2 [A2 B2]].
+  econstructor; split.
+  eapply star_left. econstructor.
+  eapply star_trans. eexact A1.
+  eapply star_left. econstructor.
+  eexact A2.
   reflexivity. reflexivity. traceEq.
   auto.
 
-(* loop stop *)
+(* exec_Sloop_stop *)
   destruct (H0 (Kseq (Sloop s) k)) as [S1 [A1 B1]].
   set (S2 :=
     match out with
@@ -1177,49 +1208,58 @@ Proof.
     | _ => S1
     end).
   exists S2; split.
-  eapply star_left. constructor. eapply star_trans. eexact A1.
-  unfold S2; destruct out; try (apply star_refl).
-  inv B1. apply star_one. constructor.
+  eapply star_left. econstructor.
+  eapply star_trans. eexact A1.
+  unfold S2; inv B1.
+    congruence.
+    apply star_one. econstructor.
+    apply star_refl.
+    apply star_refl.
+    apply star_refl.
   reflexivity. traceEq.
-  unfold S2; inv B1; congruence || simpl; constructor; auto.
+  unfold S2; inv B1; simpl; try congruence; econstructor; eauto.
 
-(* block *)
+(* exec_Sblock *)
   destruct (H0 (Kblock k)) as [S1 [A1 B1]].
   set (S2 :=
     match out with
     | Out_normal => State f Sskip k sp e1 m1
     | Out_exit O => State f Sskip k sp e1 m1
-    | Out_exit (S m) => State f (Sexit m) k sp e1 m1
+    | Out_exit (S n) => State f (Sexit n) k sp e1 m1
     | _ => S1
     end).
   exists S2; split.
-  eapply star_left. constructor. eapply star_trans. eexact A1.
-  unfold S2; destruct out; try (apply star_refl).
-  inv B1. apply star_one. constructor.
-  inv B1. apply star_one. destruct n; constructor.
+  eapply star_left. econstructor.
+  eapply star_trans. eexact A1.
+  unfold S2; inv B1.
+    apply star_one. econstructor.
+    destruct n. apply star_one. econstructor. apply star_one. econstructor.
+    apply star_refl.
+    apply star_refl.
+    apply star_refl.
   reflexivity. traceEq.
-  unfold S2; inv B1; simpl; try constructor; auto.
-  destruct n; constructor.
+  unfold S2; inv B1; simpl; try econstructor; eauto.
+  destruct n; econstructor; eauto.
 
-(* exit *)
-  econstructor; split. apply star_refl. constructor.
+(* exec_Sexit *)
+  econstructor; split. apply star_refl. econstructor.
 
-(* switch *)
-  econstructor; split.
-  apply star_one. econstructor; eauto. constructor.
+(* exec_Sswitch *)
+  econstructor; split. apply star_one. econstructor; eauto. econstructor.
 
-(* return none *)
-  econstructor; split. apply star_refl. constructor; auto.
+(* exec_Sreturn_none *)
+  econstructor; split. apply star_refl. econstructor; auto.
 
-(* return some *)
-  econstructor; split. apply star_refl. constructor; auto.
+(* exec_Sreturn_some *)
+  econstructor; split. apply star_refl. econstructor; eauto.
 
-(* tailcall *)
-  econstructor; split.
+(* exec_Stailcall *)
+  subst sig.
+  exists (Returnstate vres (call_cont k) m'' (sig_res (fn_sig f)) (comp_of f)).
+  split.
   eapply star_left. econstructor; eauto.
-  apply H5 ;eauto; try apply is_call_cont_call_cont.
+  rewrite <- SIG, COMP in H5. apply H5. apply is_call_cont_call_cont.
   traceEq.
-  rewrite COMP. subst sig. rewrite <- SIG.
   econstructor.
 Qed.
 
@@ -1247,66 +1287,62 @@ Lemma evalinf_funcall_forever:
   forever_plus step ge (Callstate fd args k m cp) T.
 Proof.
   cofix CIH_FUN.
-  assert (forall sp e m s T f k,
+  assert (CIH_STMT: forall f sp e m s T k,
           execinf_stmt ge f sp e m s T ->
           forever_plus step ge (State f s k sp e m) T).
-  cofix CIH_STMT.
+  { cofix CIH_STMT.
+    intros. inv H.
+
+  (* execinf_Scall *)
+    eapply forever_plus_intro.
+    apply plus_one. econstructor; eauto.
+    eapply CIH_FUN; eauto. traceEq.
+
+  (* execinf_Sifthenelse *)
+    eapply forever_plus_intro.
+    apply plus_one. econstructor; eauto.
+    eapply CIH_STMT; eauto. traceEq.
+
+  (* execinf_Sseq_1 *)
+    eapply forever_plus_intro.
+    apply plus_one. econstructor.
+    eapply CIH_STMT; eauto. traceEq.
+
+  (* execinf_Sseq_2 *)
+    destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 (Kseq s2 k)) as [S1 [A1 B1]].
+    inv B1.
+    eapply forever_plus_intro.
+    eapply plus_left. econstructor. eapply star_trans. eexact A1.
+    apply star_one. econstructor. reflexivity. reflexivity.
+    eapply CIH_STMT; eauto. traceEq.
+
+  (* execinf_Sloop_body *)
+    eapply forever_plus_intro.
+    apply plus_one. econstructor.
+    eapply CIH_STMT; eauto. traceEq.
+
+  (* execinf_Sloop_loop *)
+    destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 (Kseq (Sloop s0) k)) as [S1 [A1 B1]].
+    inv B1.
+    eapply forever_plus_intro.
+    eapply plus_left. econstructor. eapply star_trans. eexact A1.
+    apply star_one. econstructor. reflexivity. reflexivity.
+    eapply CIH_STMT; eauto. traceEq.
+
+  (* execinf_Sblock *)
+    eapply forever_plus_intro.
+    apply plus_one. econstructor.
+    eapply CIH_STMT; eauto. traceEq.
+
+  (* execinf_Stailcall *)
+    eapply forever_plus_intro.
+    apply plus_one. econstructor; eauto.
+    eapply CIH_FUN; eauto. traceEq. }
+
   intros. inv H.
-
-(* call *)
   eapply forever_plus_intro.
   apply plus_one. econstructor; eauto.
-  eapply CIH_FUN. eauto. traceEq.
-
-(* ifthenelse *)
-  eapply forever_plus_intro with (s2 := State f (if b then s1 else s2) k sp e m).
-  apply plus_one. econstructor; eauto.
-  eapply CIH_STMT. eauto. traceEq.
-
-(* seq 1 *)
-  eapply forever_plus_intro.
-  apply plus_one. constructor.
-  eapply CIH_STMT. eauto. traceEq.
-
-(* seq 2 *)
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 (Kseq s2 k))
-  as [S [A B]]. inv B.
-  eapply forever_plus_intro.
-  eapply plus_left. constructor.
-  eapply star_right. eexact A. constructor.
-  reflexivity. reflexivity.
-  eapply CIH_STMT. eauto. traceEq.
-
-(* loop body *)
-  eapply forever_plus_intro.
-  apply plus_one. econstructor; eauto.
-  eapply CIH_STMT. eauto. traceEq.
-
-(* loop loop *)
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 (Kseq (Sloop s0) k))
-  as [S [A B]]. inv B.
-  eapply forever_plus_intro.
-  eapply plus_left. constructor.
-  eapply star_right. eexact A. constructor.
-  reflexivity. reflexivity.
-  eapply CIH_STMT. eauto. traceEq.
-
-(* block *)
-  eapply forever_plus_intro.
-  apply plus_one. econstructor; eauto.
-  eapply CIH_STMT. eauto. traceEq.
-
-(* tailcall *)
-  eapply forever_plus_intro.
-  apply plus_one. econstructor; eauto.
-  eapply CIH_FUN. eauto. traceEq.
-
-(* function call *)
-  intros. inv H0.
-  eapply forever_plus_intro.
-  apply plus_one. econstructor; eauto.
-  eapply H. eauto.
-  traceEq.
+  eapply CIH_STMT; eauto. traceEq.
 Qed.
 
 Theorem bigstep_semantics_sound:
