@@ -1,5 +1,7 @@
 module Map = Map.Make (Int)
 
+let string_of_chars cl = String.init (List.length cl) (List.nth cl)
+
 type exports = int list Map.t
 type imports = (int * int) list Map.t
 type func_sigs = AST.signature Map.t
@@ -48,19 +50,22 @@ let sample_typ =
         (1, Tany64);
       ]
 
+let sample_xtype =
+  QCheck.Gen.map (fun t -> AST.inj_type t) sample_typ
+
 let sample_rettype =
   let open QCheck.Gen in
   let* f = float_range 0.0 1.0 in
-  if f < 1.0 /. 6.0 then map (fun t -> AST.Tret t) sample_typ
+  if f < 1.0 /. 6.0 then sample_xtype
   else
     frequencyl
       AST.
         [
-          (1, Tint8signed);
-          (1, Tint8unsigned);
-          (1, Tint16signed);
-          (1, Tint16unsigned);
-          (1, Tvoid);
+          (1, Xint8signed);
+          (1, Xint8unsigned);
+          (1, Xint16signed);
+          (1, Xint16unsigned);
+          (* Xvoid excluded: backtranslation always generates Sreturn (Some ...) *)
         ]
 
 let sample_calling_convention allow_vararg =
@@ -76,7 +81,7 @@ let sample_calling_convention allow_vararg =
 
 let sample_signature config =
   let open QCheck.Gen in
-  let* arg_types = list_size (int_bound config.max_arg_count) sample_typ in
+  let* arg_types = list_size (int_bound config.max_arg_count) sample_xtype in
   let* ret_type = sample_rettype in
   let* cc = sample_calling_convention (List.length arg_types > 0) in
   return AST.{ sig_args = arg_types; sig_res = ret_type; sig_cc = cc }
@@ -149,7 +154,7 @@ let sample_func_sigs config exports =
   let* sigs = list_repeat num_funcs (sample_signature config) in
   let sig_map = Map.of_seq (List.to_seq (List.combine all_funcs sigs)) in
   let main_sig =
-    AST.{ sig_args = []; sig_res = Tret Tint; sig_cc = cc_default }
+    AST.{ sig_args = []; sig_res = Xint; sig_cc = cc_default }
   in
   return (main, Map.add main main_sig sig_map)
 
@@ -160,7 +165,7 @@ let sample_external_funcs config =
     let* suffix = list_size (return 4) (char_range '0' '9') in
     let unique_name = name @ ['_'] @ suffix in
     let* sign = sample_signature config in
-    return (AST.EF_external (unique_name, sign)) in
+    return (AST.EF_external (string_of_chars unique_name, sign)) in
   list_repeat config.num_external_funcs gen
 
 let sample_builtins config =
@@ -169,7 +174,7 @@ let sample_builtins config =
     let unique_prefix = ['n'; 'o'; 't'; 'a'; 'c'; 'f'; 'u'; 'n'; '_'] in
     let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
     let* sign = sample_signature config in
-    return (AST.EF_builtin (unique_prefix @ name, sign)) in
+    return (AST.EF_builtin (string_of_chars (unique_prefix @ name), sign)) in
   list_repeat config.num_builtins gen
 
 let sample_runtime_funcs config =
@@ -178,7 +183,7 @@ let sample_runtime_funcs config =
     let unique_prefix = ['n'; 'o'; 't'; 'a'; 'c'; 'f'; 'u'; 'n'; '_'] in
     let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
     let* sign = sample_signature config in
-    return (AST.EF_runtime (unique_prefix @ name, sign)) in
+    return (AST.EF_runtime (string_of_chars (unique_prefix @ name), sign)) in
   list_repeat config.num_runtime_funcs gen
 
 let dump_exports exports =

@@ -21,6 +21,8 @@ let ident = positive
 let compartment = QCheck.Gen.map (fun p -> AST.COMP.Comp p) positive
 let ptrofs = QCheck.Gen.map (fun i -> Integers.Ptrofs.of_int i) coq_Z
 let char_list = QCheck.Gen.(small_list (char_range 'a' 'z'))
+let string_of_chars cl = String.init (List.length cl) (List.nth cl)
+let gen_string = QCheck.Gen.map string_of_chars char_list
 
 let binary_float =
   let open QCheck.Gen in
@@ -183,46 +185,49 @@ let sample_typ =
         (1, Tany64);
       ]
 
+let sample_xtype =
+  QCheck.Gen.map (fun t -> AST.inj_type t) sample_typ
+
 let sample_rettype =
   let open QCheck.Gen in
   let* f = float_range 0.0 1.0 in
-  if f < 1.0 /. 6.0 then map (fun t -> AST.Tret t) sample_typ
+  if f < 1.0 /. 6.0 then sample_xtype
   else
     frequencyl
       AST.
         [
-          (1, Tint8signed);
-          (1, Tint8unsigned);
-          (1, Tint16signed);
-          (1, Tint16unsigned);
-          (1, Tvoid);
+          (1, Xint8signed);
+          (1, Xint8unsigned);
+          (1, Xint16signed);
+          (1, Xint16unsigned);
+          (* Xvoid excluded: backtranslation always generates Sreturn (Some ...) *)
         ]
 
 let ef_annot _ =
   let open QCheck.Gen in
   let* pos = positive in
-  let* text = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
+  let* text = map string_of_chars (list_size (map Int.succ small_nat) (char_range 'a' 'z')) in
   let* types = list_size (int_range 0 10) sample_typ in
   return (AST.EF_annot (pos, text, types))
 
 let ef_annot_val _ =
   let open QCheck.Gen in
   let* pos = positive in
-  let* text = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
+  let* text = map string_of_chars (list_size (map Int.succ small_nat) (char_range 'a' 'z')) in
   let* typ = sample_typ in
   return (AST.EF_annot_val (pos, text, typ))
 
 let ef_inline_asm _ =
   let open QCheck.Gen in
-  let* text = list_size (int_range 0 10) (char_range 'a' 'z') in
+  let* text = map string_of_chars (list_size (int_range 0 10) (char_range 'a' 'z')) in
   let cc_vararg = Option.none in
   let cc_unproto = false in
   let cc_structret = false in
   let cc = ({ cc_vararg; cc_unproto; cc_structret } : AST.calling_convention) in
-  let* arg_types = list_size (int_range 0 10) sample_typ in
+  let* arg_types = list_size (int_range 0 10) sample_xtype in
   let* ret_type = sample_rettype in
   let sign = AST.{ sig_args = arg_types; sig_res = ret_type; sig_cc = cc } in
-  let* code = list_size (int_range 0 10) (list_size (int_range 1 10) (char_range 'a' 'z')) in
+  let* code = list_size (int_range 0 10) (map string_of_chars (list_size (int_range 1 10) (char_range 'a' 'z'))) in
   return (AST.EF_inline_asm (text, sign, code))
 
 let ef_debug _ =
@@ -269,19 +274,16 @@ let value_of_typ t =
   | Tany64 -> ev_long
 
 let args_for_sig sign rand_state =
-  List.map (fun t -> value_of_typ t rand_state) sign.AST.sig_args
+  List.map (fun t -> value_of_typ (AST.proj_xtype t) rand_state) sign.AST.sig_args
 
 let ret_val_for_sig sign =
   let open AST in
   (* TODO: implement me properly *)
   match sign.sig_res with
-  | Tint8signed -> ev_int
-  | Tint8unsigned -> ev_int
-  | Tint16signed -> ev_int
-  | Tint16unsigned -> ev_int
+  | Xint8signed | Xint8unsigned | Xint16signed | Xint16unsigned | Xbool -> ev_int
   (* TODO: what is actually a valid value of type void? *)
-  | Tvoid -> ev_int
-  | Tret t -> value_of_typ t
+  | Xvoid -> ev_int
+  | x -> value_of_typ (proj_xtype x)
 
 let bundle_call_ret ctx curr_comp rand_state =
   let open QCheck.Gen in

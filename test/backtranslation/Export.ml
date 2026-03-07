@@ -14,7 +14,7 @@ let rename_idents code =
   Str.global_replace regex "ident_\\1" code
 
 let prepend_header code =
-  "#include <math.h>\n" ^ code
+  "#define INFINITY (1.0/0.0)\n#define NAN (0.0/0.0)\n" ^ code
 
 let fix_incomplete_types code =
   let r_internal_const = Str.regexp "^void const \\(ident_[0-9]+ = {\\)" in

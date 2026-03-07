@@ -26,13 +26,13 @@ sub-folders that can be compiled and checked independently from the others.
 
 ## Requirements
 
-This development is built and tested with Coq 8.15.2. It is based on
+This development is built and tested with Rocq 9.1 and OCaml 5.2.1. It is based on
 CompCert 3.12 and its 64-bit RISC-V backend.
 
 General requirements:
- - OCaml version 4.5.0 or greater (OCaml 5 is not supported).
+ - OCaml version 5.2.1 (pass `-ignore-ocaml-version` to `configure`).
    + systematic testing needs OCaml version 4.14.0 or later (see below)
- - Coq version 8.15.2 (OPAM package: `coq`)
+ - Rocq version 9.1 (OPAM package: `coq`)
  - Menhir version 20190626 or greater (OPAM package: `menhir`).
 
 Extended requirements for systematic testing:
@@ -48,7 +48,8 @@ Here are the OPAM commands one can use to install all OCaml dependencies above:
 
 In addition to the above, some of the toolchain relies on the riscv64
 architecture version of the GCC compiler, available for example from the
-`gcc-riscv64-linux-gnu` package on Debian-based systems.
+`gcc-riscv64-linux-gnu` package on Debian-based systems, or `riscv64-elf-gcc`
+via Homebrew on macOS.
 
 System requirements can be verified through CompCert's `configure` script
 (see Building below).
@@ -67,8 +68,10 @@ CompCert build process, by running:
 
     $ ./configure -toolprefix "riscv64-linux-gnu-" rv64-linux
 
-where `riscv64-linux–gnu-` stands for the prefix used by the local GCC RISC-V
-compilation chain.
+where `riscv64-linux-gnu-` stands for the prefix used by the local GCC RISC-V
+compilation chain. On macOS with Homebrew, use:
+
+    $ ./configure -toolprefix "riscv64-elf-" rv64-linux
 
 One can then compile CompCert and check the proofs on that branch by running
 `make`, optionally with the `-j` command line option, where an optional
