@@ -199,20 +199,11 @@ Running `make` in `test/compartments` also generates `.compcert` binaries using
 CompCert's standard RISC-V backend, which are stripped from the compartment
 information and which one should be able to run on a standard RISC-V machine.
 
-If you wish to also run the compiled binaries, we suggest using [Fabrice Bellard's
-TinyEmu](https://bellard.org/tinyemu/), which is included in the virtual image.
-
-On the virtual image, you can use the following to run compiled programs:
-
-Start the emulator with `temu root_9p-riscv64.cfg` then `mount -t 9p /dev/root /mnt`
-in the guest to be able to access the content of the folder `/tmp` on the host.
-
-Then, compile a file and copy it to the `/tmp` directory:
+If you wish to also run the compiled binaries, we suggest using QEMU user-mode
+(on Ubuntu/Debian and Arch that's the `qemu-user` package):
 
     [compartments]$ make fib.compcert
-    [compartments]$ cp fib.compcert /tmp/fib.compcert
-
-Then, on the guest, run `/mnt/fib.compcert`.
+    [compartments]$ qemu-riscv64 /tmp/fib.compcert
 
 The `make` invocation above passes the `-static` flag to CompCert to statically
 link the libraries to avoid issues arising from version discrepancies between
