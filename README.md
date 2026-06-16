@@ -57,9 +57,8 @@ System requirements can be verified through CompCert's `configure` script
 ## Structure
 
 The development is currently split into 3 branches:
- - `ccs-main`: compiler correctness proof, recomposition proof, and testing infrastructure
+ - `ccs-main`: compiler correctness proof, recomposition proof, blame proof, and testing infrastructure
  - `ccs-backtranslation`: proof of back-translation
- - `ccs-blame`: proof of blame
 
 ## Building
 
@@ -162,11 +161,34 @@ File `security/Recomposition.v` contains the proof of recomposition: lemma
 `step_E0_strong`, `step_E0_weak`, and `step_t`.  The simulation invariants can
 be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
 
+This branch also contains the **blame proof**, which is also complete:
+
+The main blame theorem can be found in file `security/Blame.v`, theorem
+`does_prefix_star`.
+
+Definition 6 (Blame) can be found in file `security/Blame.v`, theorem
+`blame_program`.
+
+- This follows directly from `does_prefix_star` and uses a simple technical
+  lemma that is to be proved after integration on the `ccs-main` branch.
+
+- Theorem `blame` is a simple corollary that matches the one used in the
+  top-level security proof.
+
+Full program run lemmas: file `security/Blame.v`, theorems `parallel_exec` and
+`parallel_exec'`.
+
+Synchronized execution lemmas: file `security/Blame.v`, theorems `parallel_star_E0`
+and `parallel_exec1`.
+
+Stepwise lemmas: file `security/Blame.v`, theorems `parallel_concrete` and
+`parallel_abstract_t`.
+
 Finally, the **top-level secure compilation result** (Theorem 8.1) is formalized
 in file `security/RSC.v`, but this is not yet integrated with the proofs of recomposition,
 back-translation, and blame. These steps are also generally complete, but they
-are not yet integrated, and the back-translation and blame proofs are still on separate
-branches described below.
+are not yet integrated, and the back-translation proof is still on a separate
+branch described below.
 
 ### Examples
 
@@ -298,32 +320,3 @@ back-translation, starting from the intermediate language: `ir_to_clight`.
 
 The file `security/BacktranslationProof2.v` contains the complete proof from assembly
 to Clight: `backtranslation_proof`.
-
-## Blame proof branch: `ccs-blame`
-
-This branch contains the blame proof.
-Use `make depend && make proof` to replay the proof.
-
-The proof is complete, but some recent changes to the `ccs-main`
-branch are not yet integrated.
-
-The main blame theorem can be found in file `security/Blame.v`, theorem
-`does_prefix_star`.
-
-Definition 6 (Blame) can be found in file `security/Blame.v`, theorem
-`blame_program`.
-
-- This follows directly from `does_prefix_star` and uses a simple technical
-  lemma that is to be proved after integration on the `ccs-main` branch.
-
-- Theorem `blame` is a simple corollary that matches the one used in the
-  top-level security proof.
-
-Full program run lemmas: file `security/Blame.v`, theorems `parallel_exec` and
-`parallel_exec'`.
-
-Synchronized execution lemmas: file `security/Blame.v`, theorems `parallel_star_E0`
-and `parallel_exec1`.
-
-Stepwise lemmas: file `security/Blame.v`, theorems `parallel_concrete` and
-`parallel_abstract_t`.
