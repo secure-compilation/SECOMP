@@ -188,14 +188,14 @@ Section CODEPROOFS.
   Qed.
 
   Lemma code_bundle_trace_spec
-        (ge: genv) cp cnt tr
+        (ge: genv) fds cp cnt tr
         f e le m k
     :
     star step1 ge
-         (State f (code_bundle_trace ge cp cnt tr) k e le m)
+         (State f (code_bundle_trace ge fds cp cnt tr) k e le m)
          E0
-         (State f (switch_bundle_events ge cnt cp tr)
-                (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt cp tr)) Sskip k)
+         (State f (switch_bundle_events ge fds cnt cp tr)
+                (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge fds cnt cp tr)) Sskip k)
                 e le m).
   Proof.
     econs 2.
@@ -328,9 +328,9 @@ Section GENV.
   Lemma match_symbs_code_bundle_call
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp tr id evargs sg d
+        fds cp tr id evargs sg d
     :
-    code_bundle_call ge1 cp tr id evargs sg d = code_bundle_call ge2 cp tr id evargs sg d.
+    code_bundle_call ge1 fds cp tr id evargs sg d = code_bundle_call ge2 fds cp tr id evargs sg d.
   Proof. unfold code_bundle_call. erewrite match_symbs_code_mem_delta; eauto. Qed.
 
   Lemma match_symbs_code_bundle_return
@@ -352,9 +352,9 @@ Section GENV.
   Lemma match_symbs_code_bundle_events
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp
+        fds cp
     :
-    code_bundle_event ge1 cp = code_bundle_event ge2 cp.
+    code_bundle_event ge1 fds cp = code_bundle_event ge2 fds cp.
   Proof.
     extensionalities be. unfold code_bundle_event. des_ifs.
     eapply match_symbs_code_bundle_call; auto. eapply match_symbs_code_bundle_return; auto. eapply match_symbs_code_bundle_builtin; auto.
@@ -363,17 +363,17 @@ Section GENV.
   Lemma match_symbs_switch_bundle_events
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp cnt tr
+        fds cp cnt tr
     :
-    switch_bundle_events ge1 cnt cp tr = switch_bundle_events ge2 cnt cp tr.
+    switch_bundle_events ge1 fds cnt cp tr = switch_bundle_events ge2 fds cnt cp tr.
   Proof. unfold switch_bundle_events. erewrite match_symbs_code_bundle_events; eauto. Qed.
 
   Lemma match_symbs_code_bundle_trace
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp cnt tr
+        fds cp cnt tr
     :
-    code_bundle_trace ge1 cp cnt tr = code_bundle_trace ge2 cp cnt tr.
+    code_bundle_trace ge1 fds cp cnt tr = code_bundle_trace ge2 fds cp cnt tr.
   Proof. unfold code_bundle_trace. erewrite match_symbs_switch_bundle_events; eauto. Qed.
 
 
@@ -711,7 +711,7 @@ Section PROOF.
   Lemma sem_cast_ptr
         b ofs m
     :
-    Cop.sem_cast (Vptr b ofs) (Tpointer Tvoid noattr) (typ_to_type Tptr) m = Some (Vptr b ofs).
+    Cop.sem_cast (Vptr b ofs) byte_ptr_type (typ_to_type Tptr) m = Some (Vptr b ofs).
   Proof.
     unfold Tptr. destruct Archi.ptr64 eqn:ARCH; unfold Cop.sem_cast; simpl; rewrite ARCH; auto.
   Qed.
@@ -790,10 +790,10 @@ Section PROOF.
   Proof. induction tr1; ss. rewrite <- app_assoc. f_equal. auto. Qed.
 
   Lemma allowed_call_gen_function
-        cp (ge_i: Asm.genv) (ge_c: genv) next cnt params tr f_i f_c
+        cp (ge_i: Asm.genv) (ge_c: genv) next fds cnt params tr f_i f_c
         (GE: symbs_find ge_i ge_c)
         (GEPOL: eq_policy ge_i ge_c)
-        (GEN: f_c = gen_function ge_i cnt params tr f_i)
+        (GEN: f_c = gen_function ge_i fds cnt params tr f_i)
         (ALLOW : Genv.allowed_call ge_i cp (Vptr next Ptrofs.zero))
         (FINDF : Genv.find_funct ge_i (Vptr next Ptrofs.zero) = Some (AST.Internal f_i))
         (FINDF_C : Genv.find_funct ge_c (Vptr next Ptrofs.zero) = Some (Internal f_c))
@@ -823,7 +823,7 @@ Section PROOF.
         (FINDF_C : Genv.find_funct ge_c (Vptr next Ptrofs.zero) =
                      Some (External ef
                                     (list_typ_to_typelist (sig_args (ef_sig ef)))
-                                    (rettype_to_type (sig_res (ef_sig ef)))
+                                    (rettype_to_type_ext (sig_res (ef_sig ef)))
                                     (sig_cc (ef_sig ef))))
     :
     Genv.allowed_call ge_c cp (Vptr next Ptrofs.zero).

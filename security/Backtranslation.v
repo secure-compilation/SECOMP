@@ -208,13 +208,21 @@ Section CONV.
   Definition list_eventval_to_list_val (vs: list eventval): list val :=
     List.map (eventval_to_val) vs.
 
+  (* Addresses of globals are computed at type [unsigned char *].  The
+     pointed-to type must be complete: [Cshmgen.make_add] calls
+     [Cshmgen.sizeof] on it, which rejects [Tvoid] with "incomplete type"
+     (SECOMP issue #13).  For the semantics only its size matters, and
+     [sizeof (Tint I8 Unsigned noattr) = sizeof Tvoid = 1]. *)
+  Definition byte_type: type := Tint I8 Unsigned noattr.
+  Definition byte_ptr_type: type := Tpointer byte_type noattr.
+
   Definition eventval_to_type (v: eventval): type :=
     match v with
     | EVint _ => Tint I32 Signed noattr
     | EVlong _ => Tlong Signed noattr
     | EVfloat _ => Tfloat F64 noattr
     | EVsingle _ => Tfloat F32 noattr
-    | EVptr_global id _ => Tpointer Tvoid noattr
+    | EVptr_global id _ => byte_ptr_type
     end.
 
   Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
@@ -228,19 +236,19 @@ Section CONV.
     if Archi.ptr64
     then
       Ebinop Cop.Oadd
-             (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
+             (Eaddrof (Evar id byte_type) byte_ptr_type)
              (Econst_long (Ptrofs.to_int64 ofs) (Tlong Signed noattr))
-             (Tpointer Tvoid noattr)
+             byte_ptr_type
     else
       Ebinop Cop.Oadd
-             (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
+             (Eaddrof (Evar id byte_type) byte_ptr_type)
              (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
-             (Tpointer Tvoid noattr).
+             byte_ptr_type.
 
   Lemma ptr_of_id_ofs_typeof
         i i0
     :
-    typeof (ptr_of_id_ofs i i0) = Tpointer Tvoid noattr.
+    typeof (ptr_of_id_ofs i i0) = byte_ptr_type.
   Proof. unfold ptr_of_id_ofs. destruct Archi.ptr64; simpl; auto. Qed.
 
   Definition eventval_to_expr (v: eventval): expr :=
@@ -316,16 +324,55 @@ Section CODEAUX.
     destruct t; simpl in *; auto; try congruence.
   Qed.
 
+  (* Faithful C types for the results of external functions.  Cshmgen accepts
+     a declaration [External ef targs tres cc] only if
+     [signature_of_type targs tres cc = ef_sig ef] (SECOMP issue #13), so
+     [rettype_of_type (rettype_to_type_ext rt)] must be [rt], which holds for
+     every [rt] except [Tret Tany32] and [Tret Tany64]: [void] must stay
+     [void] and small integers must keep their size and signedness.
+     ([rettype_to_type] is kept for internal functions, whose return values
+     must be passed through unchanged.)  Arguments need no such variant:
+     [typ_to_type] already round-trips for every [typ] except
+     [Tany32]/[Tany64], which no C declaration produces. *)
+  Definition rettype_to_type_ext: rettype -> type :=
+    fun rt: rettype =>
+      match rt with
+      | Tint8signed => Tint I8 Signed noattr
+      | Tint8unsigned => Tint I8 Unsigned noattr
+      | Tint16signed => Tint I16 Signed noattr
+      | Tint16unsigned => Tint I16 Unsigned noattr
+      | AST.Tvoid => Tvoid
+      | Tret t => typ_to_type t
+      end.
+
+  Lemma proj_rettype_to_type_ext_rettype_of_type_eq
+        ge evres rt res
+        (EVM: eventval_match ge evres (proj_rettype rt) res)
+    :
+    proj_rettype (rettype_of_type (rettype_to_type_ext rt)) = proj_rettype rt.
+  Proof.
+    inv EVM; destruct rt; simpl; auto.
+    all: try (destruct t; simpl in *; auto; try congruence).
+    all: unfold Tptr in *; destruct Archi.ptr64 eqn:ARCH; simpl in *; try congruence.
+    all: destruct t; simpl in *; auto; try congruence.
+  Qed.
+
   (* Wanted internal function data from signature *)
   Record fun_data : Type := mkfundata { dargs: typelist; dret: type; dcc: calling_convention }.
   Definition funs_data : Type := (PTree.tree fun_data).
 
+  (* For internal functions: the widest C types, so that argument casts at
+     cross-compartment calls and the cast at return are the identity. *)
   Definition from_sig_fun_data (sig: signature): fun_data :=
     mkfundata (list_typ_to_typelist sig.(sig_args)) (rettype_to_type sig.(sig_res)) (sig.(sig_cc)).
 
+  (* For external functions: the faithful types, see [rettype_to_type_ext]. *)
+  Definition from_sig_fun_data_ext (sig: signature): fun_data :=
+    mkfundata (list_typ_to_typelist sig.(sig_args)) (rettype_to_type_ext sig.(sig_res)) (sig.(sig_cc)).
+
   (* Extract from Asm *)
   Definition from_asmfun_fun_data (af: Asm.function): fun_data := from_sig_fun_data af.(fn_sig).
-  Definition from_extfun_fun_data (ef: external_function): fun_data := from_sig_fun_data (ef_sig ef).
+  Definition from_extfun_fun_data (ef: external_function): fun_data := from_sig_fun_data_ext (ef_sig ef).
   Definition from_asmfd_fun_data (fd: Asm.fundef): fun_data :=
     match fd with | AST.Internal af => from_asmfun_fun_data af | AST.External ef => from_extfun_fun_data ef end.
   Definition from_asmgd_fun_data (gd: globdef Asm.fundef unit): option fun_data :=
@@ -334,6 +381,19 @@ Section CODEAUX.
   Definition from_asm_funs_data (asm: Asm.program): funs_data :=
     let defs := Genv.genv_defs (Genv.globalenv asm) in
     PTree.map_filter1 from_asmgd_fun_data defs.
+
+  (* The same, keyed by identifier.  Clight's [step_call] requires the C type
+     at a call site to equal [type_of_fundef] of the callee.  Call sites take
+     their type from this table, which is computed from the same Asm
+     definitions from which [gen_fundef] builds the callee's Clight
+     definition, so the two agree. *)
+  Definition funs_data_of_defs (gds: list (ident * globdef Asm.fundef unit)): funs_data :=
+    PTree_Properties.of_list
+      (fold_right (fun '(id, gd) acc =>
+                     match from_asmgd_fun_data gd with
+                     | Some fd => (id, fd) :: acc
+                     | None => acc
+                     end) nil gds).
 
   (* Extract from Clight *)
   Definition from_clfun_fun_data (cf: Clight.function): fun_data := mkfundata (type_of_params cf.(fn_params)) cf.(fn_return) cf.(fn_callconv).
@@ -353,7 +413,7 @@ Section CONV.
 
   Variable ge: Senv.t.
 
-  (* Type: Tvoid has size 1, which is what we want *)
+  (* The address [&id + ofs], see [ptr_of_id_ofs] *)
   Definition expr_of_addr (id: ident) (ofs: ptrofs): expr :=
     ptr_of_id_ofs id ofs.
 
@@ -403,6 +463,8 @@ Section CODE.
   (** converting *informative* trace to code **)
 
   Variable ge: Senv.t.
+  (* C types of the callable functions, keyed by identifier *)
+  Variable fds: funs_data.
 
   Definition code_mem_delta_storev cp0 (d: mem_delta_storev): statement :=
     let '(ch, ptr, v, cp) := d in
@@ -432,7 +494,7 @@ Section CODE.
     fold_right Ssequence snext (map (code_mem_delta_kind cp) d).
 
   Definition code_bundle_call cp (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (d: mem_delta): statement :=
-    let tys := from_sig_fun_data sg in
+    let tys := match fds ! id with Some tys => tys | None => from_sig_fun_data sg end in
     code_mem_delta cp d (Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs)).
 
   Definition code_bundle_return cp (tr: trace) (evr: eventval) (d: mem_delta): statement :=
@@ -463,7 +525,7 @@ Section GEN.
 
   Definition list_typ_to_list_type (ts: list typ): list type := map typ_to_type ts.
 
-  Definition gen_function (ge: Senv.t) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
+  Definition gen_function (ge: Senv.t) (fds: funs_data) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
     let a_sg := Asm.fn_sig a_f in
     let tret := rettype_to_type a_sg.(sig_res) in
     let cc := a_sg.(sig_cc) in
@@ -474,13 +536,13 @@ Section GEN.
                params
                []
                []
-               (code_bundle_trace ge cp cnt tr).
+               (code_bundle_trace ge fds cp cnt tr).
 
-  Definition gen_fundef (ge: Senv.t) (cnt: ident) params (tr: bundle_trace) (a_fd: Asm.fundef): Clight.fundef :=
+  Definition gen_fundef (ge: Senv.t) (fds: funs_data) (cnt: ident) params (tr: bundle_trace) (a_fd: Asm.fundef): Clight.fundef :=
     match a_fd with
-    | AST.Internal a_f => Internal (gen_function ge cnt params tr a_f)
+    | AST.Internal a_f => Internal (gen_function ge fds cnt params tr a_f)
     | AST.External ef =>
-        let dsg := from_sig_fun_data (ef_sig ef) in
+        let dsg := from_extfun_fun_data ef in
         External ef dsg.(dargs) dsg.(dret) dsg.(dcc)
     end.
 
@@ -490,9 +552,9 @@ Section GEN.
   Definition default_globvar: globvar type :=
     mkglobvar Tvoid default_compartment [] false false.
 
-  Definition gen_globdef ge cnt params tr (a_gd: globdef Asm.fundef unit): globdef Clight.fundef type :=
+  Definition gen_globdef ge fds cnt params tr (a_gd: globdef Asm.fundef unit): globdef Clight.fundef type :=
     match a_gd with
-    | Gfun a_fd => Gfun (gen_fundef ge cnt params tr a_fd)
+    | Gfun a_fd => Gfun (gen_fundef ge fds cnt params tr a_fd)
     | Gvar a_gv => Gvar (gen_globvar a_gv)
     end.
 
@@ -534,9 +596,9 @@ Section GEN.
     PTree_Properties.of_list params'.
 
 
-  Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
+  Definition gen_progdef (ge: Senv.t) (fds: funs_data) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
     match ocnt, oparams with
-    | Some (cnt, _), Some params => gen_globdef ge cnt params tr a_gd
+    | Some (cnt, _), Some params => gen_globdef ge fds cnt params tr a_gd
     | _, _ => Gvar default_globvar
     end.
 
@@ -548,7 +610,8 @@ Section GEN.
     let cnt_defs := map snd (PTree.elements cnts) in
     let m1 := next_id cnt_defs in
     let params := gen_params m1 gds in
-    (map (fun '(id, gd) => (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds) ++ cnt_defs.
+    let fds := funs_data_of_defs gds in
+    (map (fun '(id, gd) => (id, gen_progdef a_ge fds (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds) ++ cnt_defs.
 
   Program Definition gen_program tr (a_p: Asm.program): Clight.program :=
     let a_ge := Genv.globalenv a_p in
