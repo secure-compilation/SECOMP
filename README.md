@@ -26,12 +26,11 @@ sub-folders that can be compiled and checked independently from the others.
 
 ## Requirements
 
-This development is built and tested with Rocq 9.1 and OCaml 5.2.1. It is based on
-CompCert 3.12 and its 64-bit RISC-V backend.
+This development is built and tested with Rocq 9.1 and OCaml 4.14.2 or 5.2.1.
+It is based on CompCert 3.12 and its 64-bit RISC-V backend.
 
 General requirements:
- - OCaml version 5.2.1 (pass `-ignore-ocaml-version` to `configure`).
-   + systematic testing needs OCaml version 4.14.0 or later (see below)
+ - OCaml version 4.14.2 or later, or 5.2.1 (then pass `-ignore-ocaml-version` to `configure`).
  - Rocq version 9.1 (OPAM package: `coq`)
  - Menhir version 20190626 or greater (OPAM package: `menhir`).
 
@@ -42,9 +41,9 @@ Extended requirements for systematic testing:
 
 Here are the OPAM commands one can use to install all OCaml dependencies above:
 
-    $ opam switch create 4.14.2
-    $ eval $(opam env --switch=4.14.2)
-    $ opam install coq.8.15.2 menhir qcheck menhirLib
+    $ opam switch create 4.14.2-rocq-9.1 4.14.2
+    $ eval $(opam env --switch=4.14.2-rocq-9.1 --set-switch)
+    $ opam install rocq-prover.9.1.0 menhir qcheck menhirLib
 
 In addition to the above, some of the toolchain relies on the riscv64
 architecture version of the GCC compiler, available for example from the
@@ -56,8 +55,9 @@ System requirements can be verified through CompCert's `configure` script
 
 ## Structure
 
-The development is currently split into 3 branches:
- - `ccs-main`: compiler correctness proof, recomposition proof, blame proof, and testing infrastructure
+The development is currently split into 2 branches:
+ - `ccs-main`: compiler correctness proof, recomposition proof,
+               blame proof, and testing infrastructure
  - `ccs-backtranslation`: proof of back-translation
 
 ## Building
