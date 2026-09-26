@@ -294,6 +294,18 @@ respectively.
 If one is interested in reproduction, we have run the large-scale testing
 experiments for the CCS'24 paper using QCheck 0.21.3.
 
+The regression test `test_compiles` checks that the Clight program produced by
+the back-translation is accepted by `Compiler.transf_clight_program`, for a
+fixed set of synthetic programs and traces and for the C programs in
+`test/compartments` and `test/backtranslation/programs` (see issue #13).
+Unlike `test_backtranslation`, it compiles the generated Clight program itself
+rather than a C rendering of it, and it does not need QCheck. From the same
+folder, run:
+
+    [backtranslation]$ touch .depend
+    [backtranslation]$ make depend
+    [backtranslation]$ make run_test_compiles
+
 A few more details are provided in `test/backtranslation/README.md`.
 
 ### Back-translation proof branch: `ccs-backtranslation`
