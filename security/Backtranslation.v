@@ -472,7 +472,13 @@ Section CODE.
         | Some id =>
             match chunk_to_type ch, chunk_val_to_expr ge ch v with
             | Some ty, Some ve =>
-                if ((Senv.public_symbol ge id) && (flowsto_dec cp cp0)) (* TODO: check direction *)
+                (* Replay exactly the deltas that the well-formedness relation
+                   applies ([mem_delta_apply_wf]): stores to public symbols, by
+                   the current compartment, of a value that matches the chunk.
+                   Other deltas can yield ill-typed code, e.g. an int constant
+                   stored with Mint64, which the Cminor type check run by
+                   instruction selection rejects. *)
+                if wf_mem_delta_storev_b ge cp0 d
                 then Sassign (Ederef (expr_of_addr id ofs) ty) ve
                 else Sskip
             | _, _ => Sskip
