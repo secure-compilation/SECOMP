@@ -38,3 +38,21 @@ The commands below exemplarily show how to run the tests in test- and reproducti
 $ ./test_backtranslation -num_asm_progs 5 -num_traces 20
 $ ./test_backtranslation -root_seed 4 -asm_seed 3 -trace_seed 8
 ```
+
+### 5) Check that the output of the back-translation compiles
+Assumption 1 requires the output of the back-translation to be accepted by the compiler (see issue #13).
+The regression test `test_compiles` checks this for synthetic Asm programs with external declarations, retained
+stores of every chunk and kind of value, and builtins, and for the C programs in `test/compartments` and
+`test/backtranslation/programs`, each with an empty and a synthetic trace. Unlike `test_backtranslation`, which
+prints the generated program as C and recompiles the text with `ccomp`, it compiles the generated Clight program
+itself. Besides compilation, it checks which stores are replayed and the types at call sites, but not what the
+generated code computes. It does not need QCheck. After step 1, run:
+```
+$ cd ./test/backtranslation
+$ touch .depend
+$ make depend
+$ make run_test_compiles
+```
+Run `make depend` again if your `.depend` predates `test_compiles.ml`. The C programs are preprocessed as `ccomp`
+does, with the RISC-V toolchain configured in step 1: `make run_test_compiles` sets `COMPCERT_CONFIG` to
+`../../compcert.ini`. The test prints every failing check, and fails if any check fails.
