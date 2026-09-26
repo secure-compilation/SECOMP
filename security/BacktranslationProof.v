@@ -46,18 +46,18 @@ Section INVS.
     :
     wf_c_cont ge m ck.
 
-  Definition wf_c_stmt (ge: Senv.t) cp cnts id tr stmt :=
-    forall cnt, (cnts ! id = Some cnt) -> stmt = code_bundle_trace ge cp cnt (get_id_tr tr id).
+  Definition wf_c_stmt (ge: Senv.t) (fds: funs_data) cp cnts id tr stmt :=
+    forall cnt, (cnts ! id = Some cnt) -> stmt = code_bundle_trace ge fds cp cnt (get_id_tr tr id).
 
   Definition wf_c_nb (ge: Clight.genv) (m: mem) :=
     (Genv.genv_next ge <= Mem.nextblock m)%positive.
 
-  Definition wf_c_state ge_a (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
+  Definition wf_c_state ge_a (ge: Clight.genv) (fds: funs_data) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
     match cst with
     | State f stmt k_c e le m_c =>
         wf_counters ge_a ge m_c tr cnts /\
           (exists m_c', Mem.free_list m_c (blocks_of_env ge e) (comp_of f) = Some m_c' /\ wf_c_cont ge m_c' k_c) /\
-          wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
+          wf_c_stmt ge fds (comp_of f) cnts id ttr stmt /\
           (wf_env ge e /\ (not_global_blks (ge) (blocks_of_env2 ge e)) /\ (wf_c_nb ge m_c))
     | _ => False
     end.
@@ -74,23 +74,23 @@ Section INVS.
       (exists f_i, Genv.find_funct_ptr ge_i cur = Some (AST.Internal f_i)) /\
       (Genv.invert_symbol ge_i cur = Some id).
 
-  Definition match_find_def (ge_i: Asm.genv) (ge_c: Clight.genv) (cnts: cnt_ids) (pars: params_of) tr :=
+  Definition match_find_def (ge_i: Asm.genv) (ge_c: Clight.genv) (fds: funs_data) (cnts: cnt_ids) (pars: params_of) tr :=
     forall b gd_i id,
       Genv.find_def ge_i b = Some gd_i ->
       Senv.invert_symbol ge_i b = Some id ->
       match (cnts ! id), (pars ! id) with
       | Some cnt, Some params =>
-          Genv.find_def ge_c b = Some (gen_globdef ge_i cnt params (get_id_tr tr id) gd_i)
+          Genv.find_def ge_c b = Some (gen_globdef ge_i fds cnt params (get_id_tr tr id) gd_i)
       | _, _ => False
       end.
 
-  Inductive match_cont (ge: Clight.genv) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
+  Inductive match_cont (ge: Clight.genv) (fds: funs_data) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
   | match_cont_nil
       ck ik
       (CK: ck = Kstop)
       (IK: ik = nil)
     :
-    match_cont ge tr cnts ck ik
+    match_cont ge fds tr cnts ck ik
   | match_cont_cons
       ck ik
       f e le cnt id ck'
@@ -98,11 +98,11 @@ Section INVS.
       (FUN: Genv.find_funct_ptr ge b = Some (Internal f))
       (ID: Genv.invert_symbol ge b = Some id)
       (CNT: cnts ! id = Some cnt)
-      (CK: ck = Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt (comp_of f) (get_id_tr tr id))) Sskip ck'))
+      (CK: ck = Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge fds cnt (comp_of f) (get_id_tr tr id))) Sskip ck'))
       (IK: ik = (ir_cont b) :: ik')
-      (IND: match_cont ge tr cnts ck' ik')
+      (IND: match_cont ge fds tr cnts ck' ik')
     :
-    match_cont ge tr cnts ck ik.
+    match_cont ge fds tr cnts ck ik.
 
   Definition match_params pars (ge_c: genv) (ge_i: Asm.genv) :=
     (wf_params_of pars) /\ (wf_params_of_sig pars ge_i) /\ (wf_params_of_symb pars ge_c).
@@ -111,12 +111,20 @@ Section INVS.
     forall id cnt cnt_b, (cnts ! id = Some cnt) -> (Genv.find_symbol ge_c cnt = Some cnt_b) ->
                     (forall b ofs, k b <> Some (cnt_b, ofs)).
 
-  Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (k: meminj) tr cnts pars id (ist: ir_state) (cst: Clight.state) :=
+  (* The C types of the callable functions, keyed by identifier, are those of
+     their Asm definitions ([funs_data_of_defs] satisfies this, see
+     BacktranslationProof2.v).  Needed because the C type at a call site must
+     be the type of the callee. *)
+  Definition wf_fds (fds: funs_data) (ge: Asm.genv) :=
+    forall id b fd, (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some fd) ->
+               (fds ! id = Some (from_asmfd_fun_data fd)).
+
+  Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (fds: funs_data) (k: meminj) tr cnts pars id (ist: ir_state) (cst: Clight.state) :=
     match ist, cst with
     | Some (cur, m_i, k_i), State f _ k_c e le m_c =>
         (match_genv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\
-          (match_cur_fun ge_i ge_c cur f id) /\ (match_find_def ge_i ge_c cnts pars tr) /\
-          (match_cont ge_c tr cnts k_c k_i) /\
+          (match_cur_fun ge_i ge_c cur f id) /\ (match_find_def ge_i ge_c fds cnts pars tr) /\
+          (match_cont ge_c fds tr cnts k_c k_i) /\
           (match_params pars ge_c ge_i) /\
           (match_cnts cnts ge_c k)
     | _, _ => False
@@ -129,15 +137,15 @@ End INVS.
 Section PROOF.
 
   Lemma cur_fun_def
-        ge_i (ge_c: genv) cur f (f_i_cur : Asm.function) id_cur cnts pars ttr
+        ge_i (ge_c: genv) cur f (f_i_cur : Asm.function) id_cur cnts pars fds ttr
         (FINDF_C_CUR : Genv.find_funct_ptr ge_c cur = Some (Internal f))
         (FINDF_I_CUR : Genv.find_funct_ptr ge_i cur = Some (AST.Internal f_i_cur))
         (INV_CUR : Genv.invert_symbol ge_i cur = Some id_cur)
-        (MS3 : match_find_def ge_i ge_c cnts pars ttr)
+        (MS3 : match_find_def ge_i ge_c fds cnts pars ttr)
     :
     exists cnt_cur params_cur,
       (cnts ! id_cur = Some cnt_cur) /\ (pars ! id_cur = Some params_cur) /\
-        (f = gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur).
+        (f = gen_function ge_i fds cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur).
   Proof.
     exploit MS3. eapply Genv.find_funct_ptr_iff. eauto. eapply INV_CUR. intros. des_ifs.
     esplits; eauto. apply Genv.find_funct_ptr_iff in FINDF_C_CUR.
@@ -160,19 +168,19 @@ Section PROOF.
   Qed.
 
   Lemma star_cut_middle
-        stepk ge_a ge_c cst1 ev pretr ttr cnts ge_i pars ist2
+        stepk ge_a ge_c cst1 ev pretr ttr cnts ge_i pars fds ist2
         (CUT: exists tr1 cst',
             (star stepk ge_c cst1 tr1 cst') /\
               exists tr2 cst2,
                 (star stepk ge_c cst' tr2 cst2) /\
-                  ((exists id', (wf_c_state ge_a ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
-                             exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
+                  ((exists id', (wf_c_state ge_a ge_c fds (pretr ++ [ev]) ttr cnts id' cst2) /\
+                             exists k, (match_state ge_i ge_c fds k ttr cnts pars id' ist2 cst2))
                    \/ (ist2 = None)) /\
                   (unbundle ev = tr1 ++ tr2))
     :
     exists cst2, (star stepk ge_c cst1 (unbundle ev) cst2) /\
-              ((exists id', (wf_c_state ge_a ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
-                         exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
+              ((exists id', (wf_c_state ge_a ge_c fds (pretr ++ [ev]) ttr cnts id' cst2) /\
+                         exists k, (match_state ge_i ge_c fds k ttr cnts pars id' ist2 cst2))
                \/ (ist2 = None)).
   Proof.
     destruct CUT as (tr1 & cts' & STAR1 & tr2 & cst2 & STAR2 & PROP & TR).
@@ -223,7 +231,8 @@ Section PROOF.
   Lemma ir_to_clight_step_cce_1
         (ge_i: Asm.genv) (ge_c: genv)
         (WFGE : wf_ge ge_i)
-        cnts pars k_i cur m_i pretr btr (tr tr' : trace) id0 evargs ef id_cur d
+        cnts pars fds k_i cur m_i pretr btr (tr tr' : trace) id0 evargs ef id_cur d
+        (WFFDS : wf_fds fds ge_i)
         (BOUND : Z.of_nat
                    (Datatypes.length
                       (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr)) <
@@ -232,9 +241,9 @@ Section PROOF.
         (MS0 : match_genv ge_i ge_c)
         (MS1 : match_mem ge_i k_c m_i m_c)
         (MS2 : match_cur_fun ge_i ge_c cur f id)
-        (MS4 : match_cont ge_c (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) cnts
+        (MS4 : match_cont ge_c fds (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) cnts
                           k0 k_i)
-        (MS3 : match_find_def ge_i ge_c cnts pars
+        (MS3 : match_find_def ge_i ge_c fds cnts pars
                               (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr))
         (MS5 : match_params pars ge_c ge_i)
         (MCNTS : match_cnts cnts ge_c k_c)
@@ -249,7 +258,7 @@ Section PROOF.
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
-        (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id
+        (WFC2 : wf_c_stmt ge_c fds (comp_of f) cnts id
                           (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) stmt)
         (WFC3 : wf_env ge_c e)
         (WFC4 : not_global_blks ge_c (blocks_of_env2 ge_c e))
@@ -271,16 +280,16 @@ Section PROOF.
     :
     exists cnt_cur cnt_cur_b,
       (cnts ! id_cur = Some cnt_cur /\ Senv.find_symbol ge_c cnt_cur = Some cnt_cur_b /\ Senv.public_symbol ge_c cnt_cur = false) /\
-        let dsg := from_sig_fun_data (ef_sig ef) in
+        let dsg := from_extfun_fun_data ef in
         let fd_next := (External ef (dargs dsg) (dret dsg) (dcc dsg)) in
         exists m_c',
           (star step1 ge_c (State f stmt k0 e le m_c)
                 (tr)
                 (Callstate fd_next vargs
-                           (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) id_cur))) Sskip k0)) m_c'))
+                           (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) id_cur))) Sskip k0)) m_c'))
           /\
             (exists m_cu,
-                (Mem.storev Mint64 m_c (Vptr cnt_cur_b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr pretr id_cur)))) Int64.one)) (comp_of f) = Some m_cu) /\
+                (Mem.storev Mint64 m_c (Vptr cnt_cur_b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i fds (comp_of f) (snd ib)) (get_id_tr pretr id_cur)))) Int64.one)) (comp_of f) = Some m_cu) /\
                   (d = [] -> m_c' = m_cu) /\
                   ((public_first_order ge_i m2) ->
                    (mem_delta_apply_wf ge_i (comp_of f) d (Some m_cu) = Some m_c') /\
@@ -296,6 +305,8 @@ Section PROOF.
     { eapply Genv.find_funct_ptr_iff. erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
     { eapply Genv.find_invert_symbol; eauto. }
     intros FINDF_C. des_ifs. rename id0 into id_next, i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
+    assert (FDS_NEXT: fds ! id_next = Some (from_extfun_fun_data ef)).
+    { eapply (WFFDS _ _ (AST.External ef) FINDB). erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
     set (pretr ++ (id_cur, Bundle_call tr' id_next evargs (ef_sig ef) d) :: btr) as ttr in *.
     assert (FIND_CUR_I: Genv.find_symbol ge_i id_cur = Some cur).
     { apply Genv.invert_find_symbol in IDCUR. auto. }
@@ -308,10 +319,10 @@ Section PROOF.
     intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
     exists cnt_cur, cnt_cur_b. split. auto.
-    set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
+    set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr' id_next evargs (ef_sig ef) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
-    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
+    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i fds (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
     { rewrite map_length. eapply Z.le_lt_trans. 2: eauto. unfold get_id_tr.
       apply inj_le. apply list_length_filter_le.
     }
@@ -331,7 +342,7 @@ Section PROOF.
     eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
     { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
     instantiate (1:=le).
-    instantiate (1:=(Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
+    instantiate (1:=(Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
     instantiate (1:=Sreturn None).
     intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
 
@@ -364,7 +375,7 @@ Section PROOF.
     rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
     eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: apply MS0.
     clear BOUND2 CUR_SWITCH_STAR.
-    unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+    unfold code_bundle_call. rewrite FDS_NEXT. eapply star_trans. eapply code_mem_delta_correct. auto.
     { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C. apply MS0. }
     2: ss.
     unfold unbundle. simpl. rename b into next.
@@ -417,7 +428,8 @@ Section PROOF.
   Lemma ir_to_clight_step_cce_2
         (ge_i: Asm.genv) (ge_c: genv)
         (WFGE : wf_ge ge_i)
-        cnts pars k_i cur m_i pretr btr (tr1 tr2 tr' : trace) id0 vargs ef id_cur d
+        cnts pars fds k_i cur m_i pretr btr (tr1 tr2 tr' : trace) id0 vargs ef id_cur d
+        (WFFDS : wf_fds fds ge_i)
         (BOUND : Z.of_nat
                    (Datatypes.length
                       (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr)) <
@@ -426,8 +438,8 @@ Section PROOF.
         (MS0 : match_genv ge_i ge_c)
         (MS1 : match_mem ge_i k_c m_i m_c)
         (MS2 : match_cur_fun ge_i ge_c cur f id)
-        (MS4 : match_cont ge_c (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) cnts k0 k_i)
-        (MS3 : match_find_def ge_i ge_c cnts pars (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr))
+        (MS4 : match_cont ge_c fds (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) cnts k0 k_i)
+        (MS3 : match_find_def ge_i ge_c fds cnts pars (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr))
         (MS5 : match_params pars ge_c ge_i)
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
@@ -441,7 +453,7 @@ Section PROOF.
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
-        (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id
+        (WFC2 : wf_c_stmt ge_c fds (comp_of f) cnts id
                           (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) stmt)
         (WFC3 : wf_env ge_c e)
         (WFC4 : not_global_blks ge_c (blocks_of_env2 ge_c e))
@@ -466,16 +478,16 @@ Section PROOF.
     :
     exists cnt_cur cnt_cur_b,
       (cnts ! id_cur = Some cnt_cur /\ Senv.find_symbol ge_c cnt_cur = Some cnt_cur_b /\ Senv.public_symbol ge_c cnt_cur = false) /\
-        let dsg := from_sig_fun_data (ef_sig ef) in
+        let dsg := from_extfun_fun_data ef in
         exists m_c',
           (exists vres m_next,
               (star step1 ge_c (State f stmt k0 e le m_c)
                     (tr1 ++ tr2)
-                    (Returnstate vres (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) id_cur))) Sskip k0)) m_next (rettype_of_type (dret dsg)) (comp_of ef))) /\
+                    (Returnstate vres (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) id_cur))) Sskip k0)) m_next (rettype_of_type (dret dsg)) (comp_of ef))) /\
                 (external_call ef ge_c vargs m_c' tr2 vres m_next))
           /\
             (exists m_cu,
-                (Mem.storev Mint64 m_c (Vptr cnt_cur_b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr pretr id_cur)))) Int64.one)) (comp_of f) = Some m_cu) /\
+                (Mem.storev Mint64 m_c (Vptr cnt_cur_b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i fds (comp_of f) (snd ib)) (get_id_tr pretr id_cur)))) Int64.one)) (comp_of f) = Some m_cu) /\
                   (d = [] -> m_c' = m_cu) /\
                   ((public_first_order ge_i m1') ->
                    (mem_delta_apply_wf ge_i (comp_of f) d (Some m_cu) = Some m_c') /\
@@ -541,9 +553,10 @@ Section PROOF.
   Lemma ir_to_clight_step_1
         ge_i ge_c
         (WFGE : wf_ge ge_i)
-        cnts pars k_i cur m_i
+        cnts pars fds k_i cur m_i
         pretr btr
         tr id0 evargs f_next d id_cur
+        (WFFDS : wf_fds fds ge_i)
         (BOUND : Z.of_nat
                    (Datatypes.length
                       (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr)) <
@@ -552,9 +565,9 @@ Section PROOF.
         (MS0 : match_genv ge_i ge_c)
         (MS1 : match_mem ge_i k_c m_i m_c)
         (MS2 : match_cur_fun ge_i ge_c cur f id)
-        (MS4 : match_cont ge_c (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr)
+        (MS4 : match_cont ge_c fds (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr)
                           cnts k0 k_i)
-        (MS3 : match_find_def ge_i ge_c cnts pars
+        (MS3 : match_find_def ge_i ge_c fds cnts pars
                               (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr))
         (MS5 : match_params pars ge_c ge_i)
         (MCNTS : match_cnts cnts ge_c k_c)
@@ -569,7 +582,7 @@ Section PROOF.
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
-        (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id
+        (WFC2 : wf_c_stmt ge_c fds (comp_of f) cnts id
                           (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr) stmt)
         (WFC3 : wf_env ge_c e)
         (WFC4 : not_global_blks ge_c (blocks_of_env2 ge_c e))
@@ -592,10 +605,10 @@ Section PROOF.
       star step1 ge_c (State f stmt k0 e le m_c)
            (unbundle (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d)) cst2 /\
         ((exists id' : positive,
-             wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d)])
+             wf_c_state ge_i ge_c fds (pretr ++ [(id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d)])
                         (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr) cnts id' cst2 /\
                (exists k : meminj,
-                   match_state ge_i ge_c k
+                   match_state ge_i ge_c fds k
                                (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr) cnts pars
                                id' (Some (b, m2, ir_cont cur :: k_i)) cst2)) \/
            Some (b, m2, ir_cont cur :: k_i) = None).
@@ -609,8 +622,10 @@ Section PROOF.
     { eapply Genv.find_funct_ptr_iff. erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
     { eapply Genv.find_invert_symbol; eauto. }
     intros FINDF_C. des_ifs. rename id0 into id_next, i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
+    assert (FDS_NEXT: fds ! id_next = Some (from_sig_fun_data (fn_sig fi_next))).
+    { eapply (WFFDS _ _ (AST.Internal fi_next) FINDB). erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
     set (pretr ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: btr) as ttr in *.
-    set (gen_function ge_i cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next in *.
+    set (gen_function ge_i fds cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next in *.
     set (fn_body f_next) as stmt_next.
     hexploit Genv.invert_find_symbol. eapply IDCUR. intros FIND_CUR_I.
     destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
@@ -621,10 +636,10 @@ Section PROOF.
 
     exploit WFC0. apply FIND_CUR_I. rewrite <- Genv.find_funct_ptr_iff. apply FINDF_I_CUR.
     intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
-    set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
+    set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
-    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
+    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i fds (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
     { rewrite map_length. eapply Z.le_lt_trans. 2: eauto. unfold get_id_tr.
       apply inj_le. apply list_length_filter_le.
     }
@@ -647,7 +662,7 @@ Section PROOF.
     eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
     { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
     instantiate (1:=le).
-    instantiate (1:=(Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
+    instantiate (1:=(Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
     instantiate (1:=Sreturn None).
     intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
 
@@ -679,7 +694,7 @@ Section PROOF.
     des.
     set (create_undef_temps (fn_temps f_next)) as le_next.
     set (State f_next (fn_body f_next)
-               (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0))
+               (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0))
                e_next le_next m_c_next) as cst2.
 
     assert (ENV_NGLOB: not_global_blks (ge_c) (blocks_of_env2 ge_c e_next)).
@@ -702,7 +717,7 @@ Section PROOF.
     assert (ENV_NINJ: not_inj_blks (meminj_public ge_c) (blocks_of_env2 ge_c e_next)).
     { eapply not_global_is_not_inj_bloks. auto. }
 
-    assert (WFC_NEXT: wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
+    assert (WFC_NEXT: wf_c_state ge_i ge_c fds (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
     { subst cst2; ss. splits; auto.
       - unfold wf_counters. splits; auto.
         clear CUR_SWITCH_STAR. move WFC0 after le_next.
@@ -727,7 +742,7 @@ Section PROOF.
           * subst id. clarify. ss. rewrite FIND_CNT_CUR in WFC6. clarify.
             replace (comp_of gd) with 
                     (comp_of
-                       (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)).
+                       (gen_function ge_i fds cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)).
             2:{ rewrite Genv.find_funct_ptr_iff in FINDF_I_CUR. rewrite FINDF_I_CUR in H0.
                 clarify.
             }
@@ -801,7 +816,7 @@ Section PROOF.
         do 5 (etransitivity; eauto).
     }
 
-    assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ir_cont cur :: k_i)) cst2).
+    assert (MS_NEXT: match_state ge_i ge_c fds (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ir_cont cur :: k_i)) cst2).
     { clear CUR_SWITCH_STAR WFC_NEXT. subst cst2. ss.
       rewrite app_nil_r in ENV_ALLOC. splits; auto.
       - unfold match_mem. splits; auto.
@@ -830,7 +845,7 @@ Section PROOF.
     rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR. rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
     eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: auto.
     clear BOUND2 CUR_SWITCH_STAR.
-    unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+    unfold code_bundle_call. rewrite FDS_NEXT. eapply star_trans. eapply code_mem_delta_correct. auto.
     { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C.
       destruct MS0 as (MSYMB & _). auto. }
     2: ss. 2,3: destruct MS0 as (MSENV & _); apply MSENV.
@@ -892,16 +907,16 @@ Section PROOF.
   Lemma ir_to_clight_step_2
         ge_i ge_c
         (WFGE : wf_ge ge_i)
-        cnts pars cur m_i pretr btr tr evretv d id_cur
+        cnts pars fds cur m_i pretr btr tr evretv d id_cur
         (BOUND : Z.of_nat (Datatypes.length (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr)) <
                    Int64.modulus)
         k_c id f stmt k0 e le m_c
         (MS0 : match_genv ge_i ge_c)
         (MS1 : match_mem ge_i k_c m_i m_c)
         (MS2 : match_cur_fun ge_i ge_c cur f id)
-        (MS3 : match_find_def ge_i ge_c cnts pars (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr))
+        (MS3 : match_find_def ge_i ge_c fds cnts pars (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr))
         next ik_tl
-        (MS4 : match_cont ge_c (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) cnts k0
+        (MS4 : match_cont ge_c fds (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) cnts k0
                           (ir_cont next :: ik_tl))
         (MS5 : match_params pars ge_c ge_i)
         (MCNTS : match_cnts cnts ge_c k_c)
@@ -916,7 +931,7 @@ Section PROOF.
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
-        (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr)
+        (WFC2 : wf_c_stmt ge_c fds (comp_of f) cnts id (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr)
                           stmt)
         (WFC3 : wf_env ge_c e)
         (WFC4 : not_global_blks ge_c (blocks_of_env2 ge_c e))
@@ -937,10 +952,10 @@ Section PROOF.
       star step1 ge_c (State f stmt k0 e le m_c) (unbundle (id_cur, Bundle_return tr evretv d))
            cst2 /\
         ((exists id' : positive,
-             wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_return tr evretv d)])
+             wf_c_state ge_i ge_c fds (pretr ++ [(id_cur, Bundle_return tr evretv d)])
                         (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) cnts id' cst2 /\
                (exists k : meminj,
-                   match_state ge_i ge_c k (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) cnts
+                   match_state ge_i ge_c fds k (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) cnts
                                pars id' (Some (next, m2, ik_tl)) cst2)) \/ Some (next, m2, ik_tl) = None).
   Proof.
     assert (id = id_cur).
@@ -958,7 +973,7 @@ Section PROOF.
     { eapply INV_ID_NEXT. }
     intros FINDF_C. des_ifs. rename i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
     set (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) as ttr in *.
-    set (gen_function ge_i cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next in *.
+    set (gen_function ge_i fds cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next in *.
     set (fn_body f_next) as stmt_next.
     assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
     { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
@@ -971,7 +986,7 @@ Section PROOF.
     { inv MS4. inv IK. inv CK. }
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_return tr evretv d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
-    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
+    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i fds (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
     { rewrite map_length. eapply Z.le_lt_trans. 2: eauto. unfold get_id_tr.
       apply inj_le. apply list_length_filter_le.
     }
@@ -999,9 +1014,9 @@ Section PROOF.
     eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
     { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
     instantiate (1:=le).
-    instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur)))
+    instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur)))
                              Sskip
-                             (Kcall None f_next e_next le_next (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_next (comp_of f_next) (get_id_tr ttr id_next))) Sskip ck_next)))).
+                             (Kcall None f_next e_next le_next (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_next (comp_of f_next) (get_id_tr ttr id_next))) Sskip ck_next)))).
     instantiate (1:=Sreturn None).
     intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
 
@@ -1043,7 +1058,7 @@ Section PROOF.
 
     set (State f_next (fn_body f_next) ck_next e_next le_next m_c_next) as cst2.
 
-    assert (WFC_NEXT: wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_return tr evretv d)]) ttr cnts id_next cst2).
+    assert (WFC_NEXT: wf_c_state ge_i ge_c fds (pretr ++ [(id_cur, Bundle_return tr evretv d)]) ttr cnts id_next cst2).
     { clear CUR_SWITCH_STAR. ss. splits; auto.
       - unfold wf_counters. split. auto.
         move WFC0 after cst2.
@@ -1106,7 +1121,7 @@ Section PROOF.
         Unshelve. all: try (exact 0%nat). all: try (exact (fun _ _ => True)).
     }
 
-    assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ik')) cst2).
+    assert (MS_NEXT: match_state ge_i ge_c fds (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ik')) cst2).
     { clear CUR_SWITCH_STAR WFC_NEXT. ss. splits; auto.
       - unfold match_mem. splits; auto.
         + eapply SimplLocalsproof.free_list_right_inject. eapply MEMINJ_CNT. eapply FREENEXT.
@@ -1156,7 +1171,7 @@ Section PROOF.
     ss. econs 2.
     { assert (CPEQ1: comp_of f_next = (Genv.find_comp ge_i (Vptr next Ptrofs.zero))).
       { subst f_next. unfold comp_of, gen_function. ss. unfold Genv.find_comp. setoid_rewrite INTERNAL. ss. }
-      assert (CPEQ2: (comp_of (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
+      assert (CPEQ2: (comp_of (gen_function ge_i fds cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
       { unfold comp_of, gen_function. ss. unfold Genv.find_comp. setoid_rewrite FINDFD. ss. }
       eapply step_returnstate.
       - move NPTR after EVRETV. i. rewrite EVRETV. apply NPTR. rr. rewrite CPEQ1 in H. setoid_rewrite CPEQ2 in H. apply H.
@@ -1179,7 +1194,8 @@ Section PROOF.
   Lemma ir_to_clight_step_3
         ge_i ge_c
         (WFGE : wf_ge ge_i)
-        cnts pars k_i cur m_i pretr btr tr id0 ef d vargs id_cur
+        cnts pars fds k_i cur m_i pretr btr tr id0 ef d vargs id_cur
+        (WFFDS : wf_fds fds ge_i)
         (BOUND : Z.of_nat
                    (Datatypes.length
                       (pretr ++
@@ -1189,11 +1205,11 @@ Section PROOF.
         (MS0 : match_genv ge_i ge_c)
         (MS1 : match_mem ge_i k_c m_i m_c)
         (MS2 : match_cur_fun ge_i ge_c cur f id)
-        (MS4 : match_cont ge_c
+        (MS4 : match_cont ge_c fds
                           (pretr ++
                                  (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) cnts
                           k0 k_i)
-        (MS3 : match_find_def ge_i ge_c cnts pars
+        (MS3 : match_find_def ge_i ge_c fds cnts pars
                               (pretr ++
                                      (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr))
         (MS5 : match_params pars ge_c ge_i)
@@ -1209,7 +1225,7 @@ Section PROOF.
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
-        (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id
+        (WFC2 : wf_c_stmt ge_c fds (comp_of f) cnts id
                           (pretr ++
                                  (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr)
                           stmt)
@@ -1232,13 +1248,13 @@ Section PROOF.
     star step1 ge_c (State f stmt k0 e le m_c)
       (unbundle (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d)) cst2 /\
     ((exists id' : positive,
-        wf_c_state ge_i ge_c
+        wf_c_state ge_i ge_c fds
           (pretr ++ [(id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d)])
           (pretr ++
            (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) cnts
           id' cst2 /\
         (exists k : meminj,
-           match_state ge_i ge_c k
+           match_state ge_i ge_c fds k
              (pretr ++
               (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr)
              cnts pars id' (Some (cur, m2, k_i)) cst2)) \/ Some (cur, m2, k_i) = None).
@@ -1260,7 +1276,7 @@ Section PROOF.
     intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
-    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
+    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i fds (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
     { rewrite map_length. eapply Z.le_lt_trans. 2: eauto. unfold get_id_tr.
       apply inj_le. apply list_length_filter_le.
     }
@@ -1282,18 +1298,20 @@ Section PROOF.
     eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
     { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
     instantiate (1:=le).
-    instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
+    instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
     instantiate (1:=Sreturn None).
     intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
     rename MEM into DELTA. move ECCASES after CUR_SWITCH_STAR.
 
     assert (FIND_F_C: Genv.find_funct ge_c (Vptr b_ext Ptrofs.zero) =
-                        Some (External ef (list_typ_to_typelist (sig_args (ef_sig ef))) (rettype_to_type (sig_res (ef_sig ef))) (sig_cc (ef_sig ef)))).
+                        Some (External ef (list_typ_to_typelist (sig_args (ef_sig ef))) (rettype_to_type_ext (sig_res (ef_sig ef))) (sig_cc (ef_sig ef)))).
     { unfold match_find_def in MS3. hexploit MS3.
       unfold Genv.find_funct in FINDF. rewrite pred_dec_true in FINDF; auto. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq.
       eapply Senv.find_invert_symbol; eapply FINDB.
       intros. des_ifs. ss. rewrite pred_dec_true; auto. rewrite Genv.find_funct_ptr_iff. auto.
     }
+    assert (FDS_NEXT: fds ! id_next = Some (from_extfun_fun_data ef)).
+    { eapply (WFFDS _ _ (AST.External ef) FINDB). erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
     assert (COMP_F_C: comp_of f = Genv.find_comp ge_c (Vptr b_ext Ptrofs.zero)).
     { unfold Genv.type_of_call in INTRA. des_ifs.
       setoid_rewrite CP_CUR. apply Peqb_true_eq in Heq. rewrite Heq.
@@ -1314,7 +1332,7 @@ Section PROOF.
         rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
         eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: destruct MS0 as (MS & _); auto.
         clear BOUND2 CUR_SWITCH_STAR.
-        unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+        unfold code_bundle_call. rewrite FDS_NEXT. eapply star_trans. eapply code_mem_delta_correct. auto.
         { unfold mem_delta_apply_wf. simpl. reflexivity. }
         2: ss. econs 2. 2: econs 1. 2: traceEq.
         eapply step_call. ss.
@@ -1428,7 +1446,7 @@ Section PROOF.
         rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
         eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: destruct MS0 as (MS & _); auto.
         clear BOUND2 CUR_SWITCH_STAR CNT_CUR_STORE.
-        unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+        unfold code_bundle_call. rewrite FDS_NEXT. eapply star_trans. eapply code_mem_delta_correct. auto.
         { erewrite <- match_symbs_mem_delta_apply_wf. rewrite CP_CUR. eapply DELTA_C.
           destruct MS0 as (MSYMB & _). auto.
         }
@@ -1561,7 +1579,7 @@ Section PROOF.
   Lemma ir_to_clight_step_4
         ge_i ge_c
         (WFGE : wf_ge ge_i)
-        cnts pars k_i cur m_i pretr btr tr ef d vargs id_cur
+        cnts pars fds k_i cur m_i pretr btr tr ef d vargs id_cur
         (BOUND : Z.of_nat
                    (Datatypes.length
                       (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr)) <
@@ -1570,10 +1588,10 @@ Section PROOF.
         (MS0 : match_genv ge_i ge_c)
         (MS1 : match_mem ge_i k_c m_i m_c)
         (MS2 : match_cur_fun ge_i ge_c cur f id)
-        (MS4 : match_cont ge_c
+        (MS4 : match_cont ge_c fds
                           (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr) cnts
                           k0 k_i)
-        (MS3 : match_find_def ge_i ge_c cnts pars
+        (MS3 : match_find_def ge_i ge_c fds cnts pars
                               (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr))
         (MS5 : match_params pars ge_c ge_i)
         (MCNTS : match_cnts cnts ge_c k_c)
@@ -1588,7 +1606,7 @@ Section PROOF.
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
-        (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id
+        (WFC2 : wf_c_stmt ge_c fds (comp_of f) cnts id
                           (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr) stmt)
         (WFC3 : wf_env ge_c e)
         (WFC4 : not_global_blks ge_c (blocks_of_env2 ge_c e))
@@ -1606,12 +1624,12 @@ Section PROOF.
     star step1 ge_c (State f stmt k0 e le m_c)
       (unbundle (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d)) cst2 /\
     ((exists id' : positive,
-        wf_c_state ge_i ge_c
+        wf_c_state ge_i ge_c fds
           (pretr ++ [(id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d)])
           (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr) cnts
           id' cst2 /\
         (exists k : meminj,
-           match_state ge_i ge_c k
+           match_state ge_i ge_c fds k
              (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr)
              cnts pars id' (Some (cur, m2, k_i)) cst2)) \/ Some (cur, m2, k_i) = None).
   Proof.
@@ -1632,7 +1650,7 @@ Section PROOF.
     intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
-    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
+    assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i fds (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
     { rewrite map_length. eapply Z.le_lt_trans. 2: eauto. unfold get_id_tr.
       apply inj_le. apply list_length_filter_le.
     }
@@ -1653,7 +1671,7 @@ Section PROOF.
     eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
     { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
     instantiate (1:=le).
-    instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
+    instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c fds cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
     instantiate (1:=Sreturn None).
     intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
     assert (COMP_SAME: comp_of f = comp_of ef).
@@ -1888,18 +1906,19 @@ Section PROOF.
   Lemma ir_to_clight_step
         (ge_i: Asm.genv) (ge_c: Clight.genv)
         (WFGE: wf_ge ge_i)
-        cnts pars ist1 ev ist2
+        cnts pars fds ist1 ev ist2
+        (WFFDS: wf_fds fds ge_i)
         (STEP: ir_step ge_i ist1 ev ist2)
         ttr pretr btr
         (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
         (TOTAL: ttr = pretr ++ ev :: btr)
         cst1 k id
-        (WFC: wf_c_state ge_i ge_c pretr ttr cnts id cst1)
-        (MS: match_state ge_i ge_c k ttr cnts pars id ist1 cst1)
+        (WFC: wf_c_state ge_i ge_c fds pretr ttr cnts id cst1)
+        (MS: match_state ge_i ge_c fds k ttr cnts pars id ist1 cst1)
     :
     exists cst2, (star step1 ge_c cst1 (unbundle ev) cst2) /\
-              ((exists id', (wf_c_state ge_i ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
-                         exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
+              ((exists id', (wf_c_state ge_i ge_c fds (pretr ++ [ev]) ttr cnts id' cst2) /\
+                         exists k, (match_state ge_i ge_c fds k ttr cnts pars id' ist2 cst2))
                \/ (ist2 = None)).
   Proof.
     unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
@@ -1982,7 +2001,7 @@ Section PROOF.
           - i. apply NPTR0. rewrite COMP_CUR_F. apply H.
           - move TR3 after COMP_CUR_F. rewrite COMP_CUR_F in TR3. instantiate (1:=tr3).
             inv TR3. econs; [auto |]. ss.
-            erewrite proj_rettype_to_type_rettype_of_type_eq. 2: apply H0.
+            erewrite proj_rettype_to_type_ext_rettype_of_type_eq. 2: apply H0.
             eapply match_symbs_eventval_match. apply MS0. auto.
         }
         ss. econs 2.
@@ -2068,7 +2087,7 @@ Section PROOF.
           - i. eapply val_inject_not_ptr; eauto.
           - move TR3 after COMP_CUR_F. rewrite COMP_CUR_F in TR3. instantiate (1:=tr3).
             inv TR3. econs; [auto |]. ss.
-            erewrite proj_rettype_to_type_rettype_of_type_eq. 2: apply H0.
+            erewrite proj_rettype_to_type_ext_rettype_of_type_eq. 2: apply H0.
 
             hexploit not_ptr_val_inject_eq; eauto. i; subst vres2.
             eapply match_symbs_eventval_match. apply MS0. auto.
@@ -2186,10 +2205,11 @@ Section PROOF.
         (PREIR: istar (ir_step) ge_i pist pretr ist)
         pcst cst
         (PREC: star step1 ge_c pcst (unbundle_trace pretr) cst)
-        ttr cnts pars k id
+        ttr cnts pars fds k id
+        (WFFDS: wf_fds fds ge_i)
         (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
-        (WFC: wf_c_state ge_i ge_c pretr ttr cnts id cst)
-        (MS: match_state ge_i ge_c k ttr cnts pars id ist cst)
+        (WFC: wf_c_state ge_i ge_c fds pretr ttr cnts id cst)
+        (MS: match_state ge_i ge_c fds k ttr cnts pars id ist cst)
         btr ist'
         (TOTAL: ttr = pretr ++ btr)
         (STAR: istar (ir_step) ge_i ist btr ist')
@@ -2215,11 +2235,13 @@ Section PROOF.
   Theorem ir_to_clight
           (ge_i: Asm.genv) (ge_c: Clight.genv)
           (WFGE: wf_ge ge_i)
+          fds
+          (WFFDS: wf_fds fds ge_i)
           ist cst
           ttr cnts pars k id
           (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
-          (WFC: wf_c_state ge_i ge_c [] ttr cnts id cst)
-          (MS: match_state ge_i ge_c k ttr cnts pars id ist cst)
+          (WFC: wf_c_state ge_i ge_c fds [] ttr cnts id cst)
+          (MS: match_state ge_i ge_c fds k ttr cnts pars id ist cst)
           ist'
           (STAR: istar (ir_step) ge_i ist ttr ist')
     :

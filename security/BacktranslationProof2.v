@@ -203,6 +203,39 @@ Section GENPROOFS.
     eapply gen_params_one_wf; eauto.
   Qed.
 
+  Lemma funs_data_of_defs_get
+        (gds: list (ident * globdef Asm.fundef unit))
+        (NR: list_norepet (map fst gds))
+        id fd
+        (IN: In (id, Gfun fd) gds)
+    :
+    (funs_data_of_defs gds) ! id = Some (from_asmfd_fun_data fd).
+  Proof.
+    unfold funs_data_of_defs. apply PTree_Properties.of_list_norepet.
+    - clear id fd IN. induction gds as [|[id0 gd0] gds IH]; simpl in *.
+      { econs. }
+      inv NR. destruct gd0; simpl; auto. econs; auto.
+      clear - H1. intros IN. apply H1; clear H1.
+      induction gds as [|[id1 gd1] gds IH]; ss.
+      destruct gd1; ss; des; auto.
+    - clear NR. induction gds as [|[id0 gd0] gds IH]; simpl in *; [contradiction|].
+      des; clarify.
+      + simpl. auto.
+      + destruct gd0; simpl; auto.
+  Qed.
+
+  Lemma funs_data_of_defs_wf_fds
+        (p: Asm.program)
+        (WFP: wf_program p)
+    :
+    wf_fds (funs_data_of_defs (AST.prog_defs p)) (Genv.globalenv p).
+  Proof.
+    intros id b fd FIND FINDF. apply funs_data_of_defs_get.
+    { exact WFP. }
+    apply in_prog_defmap. rewrite Genv.find_def_symbol. esplits; eauto.
+    rewrite <- Genv.find_funct_ptr_iff. auto.
+  Qed.
+
 End GENPROOFS.
 
 Definition wf_program_public {F V} (p: AST.program F V) :=
@@ -213,29 +246,29 @@ Definition wf_program_public {F V} (p: AST.program F V) :=
 Section PROOFGENV.
 
   Lemma gen_prog_defs_props_1
-        (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit))
+        (a_ge: Senv.t) fds tr (gds: list (ident * globdef Asm.fundef unit))
         (gen_gds1: list (ident * globdef Clight.fundef type))
         cnts params
-        (GEN: gen_gds1 = (map (fun '(id, gd) => (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds))
+        (GEN: gen_gds1 = (map (fun '(id, gd) => (id, gen_progdef a_ge fds (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds))
     :
     Forall (fun '(id, gd_c) =>
-              exists gd_a, (In (id, gd_a) gds) /\ (gd_c = gen_progdef a_ge (get_id_tr tr id) gd_a (cnts ! id) (params ! id)))
+              exists gd_a, (In (id, gd_a) gds) /\ (gd_c = gen_progdef a_ge fds (get_id_tr tr id) gd_a (cnts ! id) (params ! id)))
            gen_gds1.
   Proof.
     subst gen_gds1. rewrite Forall_map. apply Forall_forall. i. des_ifs. esplits; eauto.
   Qed.
 
   Lemma gen_prog_defs_inv_1
-        (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit))
+        (a_ge: Senv.t) fds tr (gds: list (ident * globdef Asm.fundef unit))
         (gen_gds1: list (ident * globdef Clight.fundef type))
         cnts params
-        (GEN: gen_gds1 = (map (fun '(id, gd) => (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds))
+        (GEN: gen_gds1 = (map (fun '(id, gd) => (id, gen_progdef a_ge fds (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds))
         id gd
         (IN: In (id, gd) gds)
     :
-    In (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id)) gen_gds1.
+    In (id, gen_progdef a_ge fds (get_id_tr tr id) gd (cnts ! id) (params ! id)) gen_gds1.
   Proof.
-    eapply (in_map (fun '(id0, gd0) => (id0, gen_progdef a_ge (get_id_tr tr id0) gd0 cnts ! id0 params ! id0))) in IN. clarify.
+    eapply (in_map (fun '(id0, gd0) => (id0, gen_progdef a_ge fds (get_id_tr tr id0) gd0 cnts ! id0 params ! id0))) in IN. clarify.
   Qed.
 
   Lemma gen_counter_defs_inv
@@ -305,11 +338,12 @@ Section PROOFGENV.
          let cnt_defs := map snd (PTree.elements cnts) in
          let m1 := next_id cnt_defs in
          let params := gen_params m1 gds in
-         gd_c = gen_progdef (Genv.globalenv p_a) (get_id_tr btr id) gd_a (cnts ! id) (params ! id)).
+         let fds := funs_data_of_defs gds in
+         gd_c = gen_progdef (Genv.globalenv p_a) fds (get_id_tr btr id) gd_a (cnts ! id) (params ! id)).
   Proof.
     ss. esplits. 2: eauto. unfold gen_prog_defs. apply in_or_app. left. subst.
     eapply (in_map (fun '(id0, gd) =>
-                      (id0, gen_progdef (Genv.globalenv p_a) (get_id_tr btr id0) gd
+                      (id0, gen_progdef (Genv.globalenv p_a) (funs_data_of_defs (AST.prog_defs p_a)) (get_id_tr btr id0) gd
                                         (gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)) ! id0
                                         (gen_params (next_id (map snd (PTree.elements (gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)))))
                                                     (AST.prog_defs p_a)) ! id0))) in IN. ss.
@@ -427,7 +461,7 @@ Section PROOFGENV.
     unfold Genv.globalenv. ss. unfold gen_prog_defs. rewrite Genv.add_globals_app. rewrite genv_find_symbol_add_globals_other.
     { eapply genv_find_symbol_add_globals_map; eauto. ss. extensionalities. des_ifs. f_equal.
       instantiate (1:= fun '(i, g) => 
-                         gen_progdef (Genv.globalenv p_a) (get_id_tr btr i) g (gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)) ! i
+                         gen_progdef (Genv.globalenv p_a) (funs_data_of_defs (AST.prog_defs p_a)) (get_id_tr btr i) g (gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)) ! i
                                      (gen_params (next_id (map snd (PTree.elements (gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)))))
                                                  (AST.prog_defs p_a)) ! i). ss.
     }
@@ -481,7 +515,7 @@ Section PROOFGENV.
               prog_defs := (map
                               (fun '(id, gd) =>
                                  (id,
-                                   gen_progdef (Genv.globalenv p_a) (get_id_tr btr id) gd
+                                   gen_progdef (Genv.globalenv p_a) (funs_data_of_defs (AST.prog_defs p_a)) (get_id_tr btr id) gd
                                                (gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)) ! id
                                                (gen_params
                                                   (next_id (map snd (PTree.elements (gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)))))
@@ -548,7 +582,7 @@ Section PROOFGENV.
         (NR_GEN: list_norepet (prog_defs_names p_c))
     :
     (prog_defmap p_c) ! id =
-      Some (gen_globdef ge_a cnt ps (get_id_tr btr id) gd_a).
+      Some (gen_globdef ge_a (funs_data_of_defs gds) cnt ps (get_id_tr btr id) gd_a).
   Proof.
     subst. apply in_prog_defmap in FD. eapply in_prog_defs_gen_program in FD; eauto.
     des. assert (FD': In (id, gd_c) (AST.prog_defs (gen_program btr p_a))).
@@ -617,6 +651,8 @@ Section PROOFGENV.
         (GE_C: ge_c = globalenv p_c)
         gds
         (GDS: gds = AST.prog_defs p_a)
+        fds
+        (FDS: fds = funs_data_of_defs gds)
         x0 cnts
         (X0: x0 = next_id gds)
         (CNTS: cnts = get_cnt_ids (gen_counter_defs x0 gds))
@@ -625,7 +661,7 @@ Section PROOFGENV.
         (PARS: pars = gen_params x1 gds)
         (NR: list_norepet (prog_defs_names p_a))
     :
-    match_find_def ge_a ge_c cnts pars btr.
+    match_find_def ge_a ge_c fds cnts pars btr.
   Proof.
     subst. ii. assert (FD: (prog_defmap p_a) ! id = Some gd_i).
     { rewrite Genv.find_def_symbol. apply Senv.invert_find_symbol in H0. ss. esplits; eauto. }
@@ -774,12 +810,12 @@ Section PROOFINIT.
         (SF: symbs_find ge_a ge_c)
         m0 id gd m1
         (AG: Genv.alloc_global ge_a m0 (id, gd) = Some m1)
-        btr cnt ps
+        fds btr cnt ps
     :
-    Genv.alloc_global ge_c m0 (id, gen_progdef ge_a btr gd (Some cnt) (Some ps)) = Some m1.
+    Genv.alloc_global ge_c m0 (id, gen_progdef ge_a fds btr gd (Some cnt) (Some ps)) = Some m1.
   Proof.
     ss. destruct cnt as (cnt & cnt_def). destruct gd; ss.
-    { replace (comp_of (gen_fundef ge_a cnt ps btr f)) with (comp_of f).
+    { replace (comp_of (gen_fundef ge_a fds cnt ps btr f)) with (comp_of f).
       2:{ unfold gen_fundef. des_ifs. }
       ss.
     }
@@ -798,12 +834,12 @@ Section PROOFINIT.
         (gds: list (ident * globdef Asm.fundef unit))
         m0 m_a
         (MEMA : Genv.alloc_globals ge_a m0 gds = Some m_a)
-        btr cnts pars
+        btr fds cnts pars
         (CNTS: forall id, In id (map fst gds) -> exists cnt, cnts ! id = Some cnt)
         (PARS: forall id, In id (map fst gds) -> exists ps, pars ! id = Some ps)
     :
     Genv.alloc_globals ge_c m0
-                       (map (fun '(id, gd) => (id, gen_progdef ge_a (get_id_tr btr id) gd cnts ! id pars ! id)) gds) = Some m_a.
+                       (map (fun '(id, gd) => (id, gen_progdef ge_a fds (get_id_tr btr id) gd cnts ! id pars ! id)) gds) = Some m_a.
   Proof.
     revert_until gds. induction gds; i; ss. eauto.
     destruct (Genv.alloc_global ge_a m0 a) eqn:ALLOC; ss.
@@ -830,7 +866,7 @@ Section PROOFINIT.
                        (map
                           (fun '(id, gd) =>
                              (id,
-                               gen_progdef ge_a (get_id_tr btr id) gd
+                               gen_progdef ge_a (funs_data_of_defs (AST.prog_defs p)) (get_id_tr btr id) gd
                                            (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p)) ! id
                                            (gen_params
                                               (next_id
@@ -1092,7 +1128,7 @@ Section PROOFINIT.
               prog_defs := (map
                               (fun '(id, gd) =>
                                  (id,
-                                   gen_progdef ge_a (get_id_tr btr id) gd
+                                   gen_progdef ge_a (funs_data_of_defs gds) (get_id_tr btr id) gd
                                                (gen_counter_defs (next_id gds) gds) ! id
                                                (gen_params
                                                   (next_id (map snd (PTree.elements (gen_counter_defs (next_id gds) gds))))
@@ -1115,7 +1151,7 @@ Section PROOFINIT.
         ss.
       }
       { instantiate (1:= fun '(id0, gd) => 
-   gen_progdef ge_a (get_id_tr btr id0) gd (gen_counter_defs (next_id gds) gds) ! id0
+   gen_progdef ge_a (funs_data_of_defs gds) (get_id_tr btr id0) gd (gen_counter_defs (next_id gds) gds) ! id0
      (gen_params (next_id (map snd (PTree.elements (gen_counter_defs (next_id gds) gds)))) gds)
      ! id0). ss.
       }
@@ -1127,7 +1163,7 @@ Section PROOFINIT.
                 (let
                  '(id, gd) := x in
                   (id,
-                  gen_progdef ge_a (get_id_tr btr id) gd
+                  gen_progdef ge_a (funs_data_of_defs gds) (get_id_tr btr id) gd
                     (gen_counter_defs (next_id gds) gds) ! id
                     (gen_params
                        (next_id (map snd (PTree.elements (gen_counter_defs (next_id gds) gds))))
@@ -1302,13 +1338,14 @@ Section PROOF.
       subst ge0. setoid_rewrite H5 in H. clarify. ss.
     }
     subst b. ss. rewrite <- Genv.find_funct_ptr_iff in MFD.
-    assert (f_cur = (gen_function (Genv.globalenv p) i l (get_id_tr btr id_cur) f)).
+    assert (f_cur = (gen_function (Genv.globalenv p) (funs_data_of_defs (AST.prog_defs p)) i l (get_id_tr btr id_cur) f)).
     { subst ge0. setoid_rewrite H6 in MFD. clarify. }
     clear MFD.
     hexploit gen_program_match_genv; eauto. instantiate (1:=btr). intros MGENV.
 
     hexploit ir_to_clight.
     { eapply wf_program_wf_ge; eauto. }
+    { eapply funs_data_of_defs_wf_fds; eauto. }
     4: eapply ISTAR.
     { hexploit bundle_trace_bounded; auto. apply ISTAR. clear - BOUND. i. lia. }
     { instantiate (1:=State f_cur (fn_body f_cur) Kstop empty_env (PTree.empty val) m_c).
@@ -1349,7 +1386,7 @@ Section PROOF.
         eapply Mem.loadbytes_can_access_block_inj; eauto.
       - esplits; eauto. econs.
       - unfold wf_c_stmt. i. subst f_cur. ss. rewrite CNT_CUR in H8. clarify.
-        replace (comp_of (gen_function (Genv.globalenv p) cnt [] (get_id_tr btr id_cur) f)) with
+        replace (comp_of (gen_function (Genv.globalenv p) (funs_data_of_defs (AST.prog_defs p)) cnt [] (get_id_tr btr id_cur) f)) with
           (Asm.fn_comp f).
         2:{ ss. }
         apply match_symbs_code_bundle_trace. apply MGENV.
@@ -1392,7 +1429,7 @@ Section PROOF.
               (map
                  (fun '(id, gd) =>
                   (id,
-                  gen_progdef (Genv.globalenv p) (get_id_tr btr id) gd
+                  gen_progdef (Genv.globalenv p) (funs_data_of_defs (AST.prog_defs p)) (get_id_tr btr id) gd
                     (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p)) ! id
                     (gen_params
                        (next_id
