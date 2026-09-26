@@ -209,13 +209,21 @@ Section CONV.
   Definition list_eventval_to_list_val (vs: list eventval): list val :=
     List.map (eventval_to_val) vs.
 
+  (* Addresses of globals are computed at type [unsigned char *].  The
+     pointed-to type must be complete: [Cshmgen.make_add] calls
+     [Cshmgen.sizeof] on it, which rejects [Tvoid] with "incomplete type"
+     (SECOMP issue #13).  For the semantics only its size matters, and
+     [sizeof (Tint I8 Unsigned noattr) = sizeof Tvoid = 1]. *)
+  Definition byte_type: type := Tint I8 Unsigned noattr.
+  Definition byte_ptr_type: type := Tpointer byte_type noattr.
+
   Definition eventval_to_type (v: eventval): type :=
     match v with
     | EVint _ => Tint I32 Signed noattr
     | EVlong _ => Tlong Signed noattr
     | EVfloat _ => Tfloat F64 noattr
     | EVsingle _ => Tfloat F32 noattr
-    | EVptr_global id _ => Tpointer Tvoid noattr
+    | EVptr_global id _ => byte_ptr_type
     end.
 
   Fixpoint list_eventval_to_typelist (vs: list eventval): list type :=
@@ -229,19 +237,19 @@ Section CONV.
     if Archi.ptr64
     then
       Ebinop Cop.Oadd
-             (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
+             (Eaddrof (Evar id byte_type) byte_ptr_type)
              (Econst_long (Ptrofs.to_int64 ofs) (Tlong Signed noattr))
-             (Tpointer Tvoid noattr)
+             byte_ptr_type
     else
       Ebinop Cop.Oadd
-             (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
+             (Eaddrof (Evar id byte_type) byte_ptr_type)
              (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
-             (Tpointer Tvoid noattr).
+             byte_ptr_type.
 
   (* Lemma ptr_of_id_ofs_typeof *)
   (*       i i0 *)
   (*   : *)
-  (*   typeof (ptr_of_id_ofs i i0) = Tpointer Tvoid noattr. *)
+  (*   typeof (ptr_of_id_ofs i i0) = byte_ptr_type. *)
   (* Proof. unfold ptr_of_id_ofs. destruct Archi.ptr64; simpl; auto. Qed. *)
 
   Definition eventval_to_expr (v: eventval): expr :=
@@ -358,7 +366,7 @@ Section CONV.
 
   Variable ge: Senv.t.
 
-  (* Type: Tvoid has size 1, which is what we want *)
+  (* The address [&id + ofs], see [ptr_of_id_ofs] *)
   Definition expr_of_addr (id: ident) (ofs: ptrofs): expr :=
     ptr_of_id_ofs id ofs.
 
