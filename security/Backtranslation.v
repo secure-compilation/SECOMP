@@ -301,6 +301,18 @@ Section CODEAUX.
     | cons t ts' => cons (typ_to_type t) (list_typ_to_typelist ts')
     end.
 
+  (* The widest C type of each xtype, for the results of internal functions
+     (their arguments use [typ_to_type]), so that results pass through
+     unchanged.  [Xvoid] maps to [int], as on the ccs-backtranslation branch:
+     in Asm, a cross-compartment return from a function whose signature
+     returns [Xvoid] carries the value of register a0 (recorded as an [EVint]
+     by [return_trace_cross], since [proj_xtype Xvoid = Tint]), which the
+     back-translation returns with [Sreturn (Some _)]; RTLgen rejects that in
+     a [void] function ("type mismatch on return"), and [Sreturn None] would
+     return [Vundef], which cannot match the event.  Such Asm traces arise
+     from compiled C, e.g. from a cross-compartment call to
+     [void f(int x) { g = x; }], although the C source is undefined at that
+     return in SECOMP's C semantics. *)
   Definition xtype_to_type: xtype -> type :=
     fun rt: xtype =>
       match rt with
@@ -310,7 +322,7 @@ Section CODEAUX.
       | Xfloat => Tfloat F64 noattr
       | Xsingle => Tfloat F32 noattr
       | Xptr => if Archi.ptr64 then Tlong Signed noattr else Tint I32 Signed noattr
-      | Xvoid => Tvoid
+      | Xvoid => Tint I32 Signed noattr
       end.
 
   (* Lemma proj_xtype_to_type_rettype_of_type_eq *)
