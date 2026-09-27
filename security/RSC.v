@@ -52,7 +52,8 @@ Section RSC.
 
   Hypothesis W_t_is_Ct_p_compiled: link p_compiled Ct = Some W_t.
   (* TODO: move to Linker.v *)
-  Lemma link_pol: forall p p' p'',
+  Lemma link_pol {F V: Type} {CF: has_comp F} {LF: Linker F} {LV: Linker V}
+    {HLF: Linker_Side LF}: forall (p p' p'': AST.program F V),
       link p p' = Some p'' ->
       prog_pol p = prog_pol p''.
   Proof.
@@ -61,6 +62,16 @@ Section RSC.
 
   (* TODO: What does blame mean? *)
   Axiom c_program_blame: Clight.program -> Clight.program -> trace -> Prop.
+
+  (* An admitted lemma in cfrontend/Clight.v until 3bd55926, restored
+     unchanged.  It does not hold as stated: Clight linking fails, for
+     instance, for two programs with different main functions, or when both
+     programs declare the same external function with different parameter
+     types, such as [char *] and [void *]. *)
+  Axiom link_compatible: forall s p p',
+    clight_compatible s p p' ->
+    Ctypes.prog_pol p = Ctypes.prog_pol p' ->
+    exists W, link p p' = Some W.
 
   Axiom backtranslation: Policy.t -> split -> trace -> Clight.program * Clight.program.
   Axiom backtranslation_correct:
@@ -110,7 +121,7 @@ Section RSC.
 
   Definition comp_of_event_or_default (e: event) (cp: compartment) :=
     match e with
-    | Event_syscall _ _ _ => cp
+    | Event_syscall _ _ _ _ _ => cp
     | Event_vload _ _ _ _ => cp
     | Event_vstore _ _ _ _ => cp
     | Event_annot _ _ => cp
@@ -125,7 +136,7 @@ Section RSC.
     end.
 
   Definition last_comp_in_trace (t: trace): compartment :=
-    last_comp_in_trace' t default_compartment.
+    last_comp_in_trace' t bottom.
 
   Definition blame_on_program (t: trace) :=
     s (last_comp_in_trace t) = Left.
