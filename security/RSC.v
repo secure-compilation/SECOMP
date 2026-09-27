@@ -126,7 +126,7 @@ Section RSC.
     | Event_vstore _ _ _ _ => cp
     | Event_annot _ _ => cp
     | Event_call _ cp' _ _ => cp'
-    | Event_return _ cp' _ => cp'
+    | Event_return cp' _ _ => cp'
     end.
 
   Fixpoint last_comp_in_trace' (t: trace) (cp: compartment): compartment :=
