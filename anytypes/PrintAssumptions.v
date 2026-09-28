@@ -1,0 +1,45 @@
+Require anytypes.AnyTypes anytypes.AnyTypesExtra anytypes.NoAnyExternals anytypes.RecompNoAny anytypes.RecompNoAnyClosed.
+Locate anytypes.AnyTypes.signature_of_type_no_any.
+Print Assumptions anytypes.AnyTypes.signature_of_type_no_any.
+Locate anytypes.AnyTypes.transl_fundef_external_no_any.
+Print Assumptions anytypes.AnyTypes.transl_fundef_external_no_any.
+Locate anytypes.AnyTypes.gen_fundef_external_accepted.
+Print Assumptions anytypes.AnyTypes.gen_fundef_external_accepted.
+Locate anytypes.AnyTypes.bt_defs_rejected.
+Print Assumptions anytypes.AnyTypes.bt_defs_rejected.
+Locate anytypes.AnyTypes.assumption1_fails.
+Print Assumptions anytypes.AnyTypes.assumption1_fails.
+Locate anytypes.AnyTypes.transf_clight_program_no_any.
+Print Assumptions anytypes.AnyTypes.transf_clight_program_no_any.
+Locate anytypes.AnyTypes.transf_c_program_no_any.
+Print Assumptions anytypes.AnyTypes.transf_c_program_no_any.
+Locate anytypes.AnyTypes.link_no_any.
+Print Assumptions anytypes.AnyTypes.link_no_any.
+Locate anytypes.AnyTypes.W_t_no_any.
+Print Assumptions anytypes.AnyTypes.W_t_no_any.
+Locate anytypes.AnyTypes.bt_externals_accepted.
+Print Assumptions anytypes.AnyTypes.bt_externals_accepted.
+Locate anytypes.AnyTypes.gen_program_obligation_4_false.
+Print Assumptions anytypes.AnyTypes.gen_program_obligation_4_false.
+Locate anytypes.AnyTypesExtra.bt_split_general.
+Print Assumptions anytypes.AnyTypesExtra.bt_split_general.
+Locate anytypes.AnyTypesExtra.bt_split_incl.
+Print Assumptions anytypes.AnyTypesExtra.bt_split_incl.
+Locate anytypes.AnyTypesExtra.compiles_no_any_decl.
+Print Assumptions anytypes.AnyTypesExtra.compiles_no_any_decl.
+Locate anytypes.AnyTypesExtra.gen_program_obligation_3_false.
+Print Assumptions anytypes.AnyTypesExtra.gen_program_obligation_3_false.
+Locate anytypes.NoAnyExternals.no_any_externals_b_spec.
+Print Assumptions anytypes.NoAnyExternals.no_any_externals_b_spec.
+Locate anytypes.NoAnyExternals.link_no_any_externals.
+Print Assumptions anytypes.NoAnyExternals.link_no_any_externals.
+Locate anytypes.NoAnyExternals.W_t_no_any_externals.
+Print Assumptions anytypes.NoAnyExternals.W_t_no_any_externals.
+Locate anytypes.NoAnyExternals.bt_declarations_accepted.
+Print Assumptions anytypes.NoAnyExternals.bt_declarations_accepted.
+Locate anytypes.RecompNoAny.match_prog_external_same.
+Print Assumptions anytypes.RecompNoAny.match_prog_external_same.
+Locate anytypes.RecompNoAny.recomposition_premise_no_any.
+Print Assumptions anytypes.RecompNoAny.recomposition_premise_no_any.
+Locate anytypes.RecompNoAnyClosed.W_t_any_external_no_recomposition.
+Print Assumptions anytypes.RecompNoAnyClosed.W_t_any_external_no_recomposition.
