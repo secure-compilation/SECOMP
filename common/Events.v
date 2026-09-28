@@ -2062,19 +2062,6 @@ Definition external_call (ef: external_function): extcall_sem :=
   | EF_debug kind txt targs => extcall_debug_sem
   end.
 
-Definition has_fo (ef: external_function) :=
-  match ef with
-  | EF_external _ _ | EF_builtin _ _ | EF_runtime _ _ | EF_inline_asm _ _ _ => True
-  | _ => False
-  end.
-
-(** External calls fail if public symbols are not first order *)
-Axiom ec_public_first_order: forall (ef: external_function),
-    has_fo ef ->
-    forall (ge: Senv.t) cp vargs m1 t vres m2,
-      external_call ef ge cp vargs m1 t vres m2 ->
-      Senv.public_first_order ge m1 cp.
-
 Ltac external_call_caller_independent :=
   intros ????????? CALL;
   inv CALL;
