@@ -1115,6 +1115,10 @@ Definition get_loc (rs: regset) (sp: val) (m: mem) (l: loc): option val :=
   | S Incoming ofs ty =>
       let bofs := Stacklayout.fe_ofs_arg + 4 * ofs in
       Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp (Ptrofs.repr bofs)) top
+  (* Arguments of external calls ([loc_arguments]), cf. [extcall_arg_stack] *)
+  | S Outgoing ofs ty =>
+      let bofs := Stacklayout.fe_ofs_arg + 4 * ofs in
+      Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp (Ptrofs.repr bofs)) top
   | _ => None
   end.
 
@@ -2112,6 +2116,28 @@ Section ExecSem.
         unfold get_builtin_args in IHbl2. rewrite IHbl2; auto.
   Qed.
 
+  (* Calls to external functions: [exec_step_external_call] executes the call
+     instruction and the external function in one step, with the caller's
+     compartment, and returns to the instruction after the call. *)
+  Definition find_external (ge: genv) (b: block): option external_function :=
+    match Genv.find_funct_ptr ge b with
+    | Some (External ef) => Some ef
+    | _ => None
+    end.
+
+  Definition take_external_call (ge: genv) (w: world) (st: stack) (f: function)
+             (rs rs': regset) (m': mem) (ofs': ptrofs) (ef: external_function)
+    : option (trace * state) :=
+    check (Ptrofs.eq ofs' Ptrofs.zero);
+    check (Genv.allowed_syscall_b ge (comp_of f) ef);
+    do vargs <- get_extcall_arguments rs' (rs' X2) m' (ef_sig ef);
+    do res_external <- do_external fundef unit ge do_external_function do_inline_assembly
+                                  ef (comp_of f) w vargs m';
+    let '(w', t, res, m'') := res_external in
+    let rs'' := (invalidate_return (set_pair (loc_external_result (ef_sig ef)) res rs')
+                                   (ef_sig ef)) # PC <- (Val.offset_ptr (rs PC) Ptrofs.one) in
+    Some (t, State st rs'' m'' (comp_of f)).
+
   Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
     let comp_of_main := comp_of_main p in
     match s with
@@ -2166,8 +2192,12 @@ Section ExecSem.
                         let cp' := Genv.find_comp_of_block ge b' in
                         check (cp_eq_dec (comp_of f) cp');
                         Some (E0, State st rs' m' (comp_of f))
-                    | Some sig, false => (* exec_step_internal_call *)
+                    | Some sig, false =>
                         do Vptr b' ofs' <- rs' PC;
+                        match find_external ge b' with
+                        | Some ef => (* exec_step_external_call *)
+                            take_external_call ge w st f rs rs' m' ofs' ef
+                        | None => (* exec_step_internal_call *)
                         check (Genv.allowed_call_b ge (comp_of f) (Vptr b' Ptrofs.zero));
                         do st' <- update_stack_call ge st sig (comp_of f) rs' m';
                         let '(st'', rs'', m'') := st' in
@@ -2184,6 +2214,7 @@ Section ExecSem.
                                end);
                         do t <- get_call_trace fundef unit ge (comp_of f) cp' (Vptr b' ofs') vargs (proj_sig_args sig);
                         Some (t, State st'' (invalidate_call rs'' sig) m'' (comp_of f))
+                        end
                     | None, true => (* exec_step_internal_return *)
                         (* check (Genv.allowed_call_b ge (comp_of f) (rs' PC)); *)
                         Some (E0, ReturnState st rs' m' (fn_sig f) (comp_of f))
@@ -2284,7 +2315,10 @@ Section ExecSem.
       rewrite H1, H2, H3, H4.
       destruct i; try now inv H4.
       + simpl.
-        rewrite NEXTPC. apply Genv.allowed_call_reflect in ALLOWED.
+        rewrite NEXTPC.
+        rewrite <- Genv.find_funct_ptr_iff in NEXT_INT.
+        unfold find_external; rewrite NEXT_INT.
+        apply Genv.allowed_call_reflect in ALLOWED.
         rewrite ALLOWED. rewrite STUPD.
         unfold get_call_trace. unfold Genv.type_of_call in *.
         destruct flowsto_dec.
