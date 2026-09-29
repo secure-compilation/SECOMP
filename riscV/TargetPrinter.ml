@@ -337,6 +337,16 @@ module Target : TARGET =
          fprintf oc "	lw	%a, %a(%a)\n" ireg rd offset ofs ireg ra
       | Pld(rd, ra, ofs, priv) | Pld_a(rd, ra, ofs, priv) -> assert Archi.ptr64;
          fprintf oc "	ld	%a, %a(%a)\n" ireg rd offset ofs ireg ra
+      (* Loads of stack-passed parameters from the caller's frame
+         (Mgetparam, see Asmgen.loadarg): ordinary loads from [ofs(ra)] *)
+      | Pld_arg((Mint32 | Many32), Datatypes.Coq_inl rd, ra, ofs) ->
+         fprintf oc "	lw	%a, %a(%a)\n" ireg rd offset ofs ireg ra
+      | Pld_arg((Mint64 | Many64), Datatypes.Coq_inl rd, ra, ofs) -> assert Archi.ptr64;
+         fprintf oc "	ld	%a, %a(%a)\n" ireg rd offset ofs ireg ra
+      | Pld_arg(Mfloat32, Datatypes.Coq_inr fd, ra, ofs) ->
+         fprintf oc "	flw	%a, %a(%a)\n" freg fd offset ofs ireg ra
+      | Pld_arg((Mfloat64 | Many64), Datatypes.Coq_inr fd, ra, ofs) ->
+         fprintf oc "	fld	%a, %a(%a)\n" freg fd offset ofs ireg ra
 
       | Psb(rd, ra, ofs) ->
          fprintf oc "	sb	%a, %a(%a)\n" ireg rd offset ofs ireg ra
