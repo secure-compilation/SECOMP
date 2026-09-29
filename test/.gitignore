@@ -11,3 +11,10 @@
 *.imports
 *.interp
 *.interp-asm
+# From CompCert-small-tests
+*.o
+*.so
+# OCaml-generated files
+*.cmi
+*.cmo
+*.cmx

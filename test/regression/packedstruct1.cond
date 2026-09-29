@@ -1,0 +1,5 @@
+# Unaligned memory accesses are supported on some ARM systems, but not all
+case "$ARCH" in
+  arm) exit $SKIP;;
+    *) exit $RUN;;
+esac
