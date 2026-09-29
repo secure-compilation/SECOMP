@@ -793,6 +793,11 @@ let tospill_instr alloc instr ts =
       addros_tospill alloc vos ts
   | Xbuiltin((EF_annot _ | EF_debug _), _, _) ->
       ts
+  | Xbuiltin((EF_external _ | EF_runtime _), args, res) ->
+      (* The arguments of calls to external and runtime functions made as
+         builtins may stay in stack slots, like those of annotations (see
+         [spill_instr]); only the result must be in a register. *)
+      addlist_tospill alloc (params_of_builtin_res res) ts
   | Xbuiltin(ef, args, res) ->
       addlist_tospill alloc (params_of_builtin_args args)
          (addlist_tospill alloc (params_of_builtin_res res) ts)
@@ -985,6 +990,9 @@ let spill_instr tospill eqs instr =
       ([instr], [])
   | Xbuiltin((EF_annot _ | EF_debug _), args, res) ->
       ([instr], eqs)
+  | Xbuiltin((EF_external _ | EF_runtime _ as ef), args, res) ->
+      let (res', c2, eqs2) = save_res tospill eqs res in
+      (Xbuiltin(ef, args, res') :: c2, eqs2)
   | Xbuiltin(ef, args, res) ->
       let (args', c1, eqs1) = reload_args tospill eqs args in
       let (res', c2, eqs2) = save_res tospill eqs1 res in
